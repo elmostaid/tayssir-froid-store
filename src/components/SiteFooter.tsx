@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
 
 export function SiteFooter() {
@@ -8,8 +9,17 @@ export function SiteFooter() {
   return (
     <footer className="border-t border-neutral-200 bg-white">
       <div className="mx-auto max-w-6xl px-4 py-8 text-sm text-neutral-600">
-        <p className="font-semibold text-neutral-800">Tayssir Froid</p>
-        <p className="mt-1">
+        <div className="flex items-center gap-2">
+          <Image
+            src="/brand/icon-snowflake.png"
+            alt=""
+            width={28}
+            height={28}
+            className="h-7 w-7"
+          />
+          <span className="font-semibold text-neutral-800">Tayssir Froid</span>
+        </div>
+        <p className="mt-3">
           بيع قطع غيار الغسالات والثلاجات والمجمدات والمكيفات بالجملة —
           للتجار والصنايعية ومحلات قطع الغيار.
         </p>
@@ -22,7 +32,7 @@ export function SiteFooter() {
           href={whatsappLink}
           target="_blank"
           rel="noopener noreferrer"
-          className="mt-3 inline-block font-medium text-brand-dark underline"
+          className="mt-3 inline-block font-medium text-whatsapp-dark underline"
         >
           تواصل معنا عبر واتساب
         </a>

@@ -33,7 +33,9 @@ export default async function CategoryPage({ params }: Props) {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
-      <h1 className="text-xl font-bold text-neutral-800">{category.name_ar}</h1>
+      <h1 className="border-r-4 border-brand-turquoise pr-3 text-xl font-bold text-neutral-800">
+        {category.name_ar}
+      </h1>
       {category.description_ar && (
         <p className="mt-1 text-sm text-neutral-600">{category.description_ar}</p>
       )}

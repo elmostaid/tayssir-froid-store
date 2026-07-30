@@ -32,11 +32,13 @@ export function ProductCard({
         )}
       </div>
       <div className="flex flex-1 flex-col gap-1 p-3">
-        <span className="text-xs text-neutral-500">{product.category_name_ar}</span>
-        <h3 className="line-clamp-2 text-sm font-semibold text-neutral-800 group-hover:text-brand-dark">
+        <span className="text-xs font-medium text-brand-turquoise-dark">
+          {product.category_name_ar}
+        </span>
+        <h3 className="line-clamp-2 text-sm font-semibold text-neutral-800 group-hover:text-brand-turquoise-dark">
           {product.name_ar}
         </h3>
-        <span className="mt-auto text-base font-bold text-brand-dark">
+        <span className="mt-auto text-base font-bold text-brand-orange">
           {formatMad(product.sale_price)}
         </span>
         <span className="text-xs text-neutral-500">

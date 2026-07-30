@@ -19,20 +19,23 @@ export default async function HomePage() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
-      <section className="rounded-2xl bg-brand-dark px-5 py-8 text-white">
-        <h1 className="text-2xl font-bold sm:text-3xl">
+      <section className="rounded-2xl bg-brand-turquoise-tint px-5 py-8">
+        <span className="inline-block rounded-full bg-brand-orange px-3 py-1 text-xs font-semibold text-white">
+          البيع بالجملة فقط
+        </span>
+        <h1 className="mt-3 text-2xl font-bold text-neutral-900 sm:text-3xl">
           Tayssir Froid — قطع غيار التبريد بالجملة
         </h1>
-        <p className="mt-2 max-w-2xl text-sm text-white/90 sm:text-base">
+        <p className="mt-2 max-w-2xl text-sm text-neutral-700 sm:text-base">
           قطع غيار الغسالات والثلاجات والمجمدات والمكيفات، للتجار والصنايعية
-          ومحلات قطع الغيار في المغرب. البيع بالجملة فقط، الحد الأدنى للطلبية
-          1000 درهم، والدفع عند الاستلام.
+          ومحلات قطع الغيار في المغرب. الحد الأدنى للطلبية 1000 درهم، والدفع
+          عند الاستلام.
         </p>
         <a
           href={whatsappLink}
           target="_blank"
           rel="noopener noreferrer"
-          className="mt-4 inline-flex items-center gap-2 rounded-full bg-[#25D366] px-5 py-2.5 text-sm font-semibold text-white"
+          className="mt-4 inline-flex items-center gap-2 rounded-full bg-whatsapp px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-whatsapp-dark"
         >
           تواصل معنا عبر واتساب
         </a>
@@ -40,13 +43,15 @@ export default async function HomePage() {
 
       {categories.length > 0 && (
         <section className="mt-8">
-          <h2 className="text-lg font-bold text-neutral-800">التصنيفات</h2>
+          <h2 className="border-r-4 border-brand-turquoise pr-3 text-lg font-bold text-neutral-800">
+            التصنيفات
+          </h2>
           <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
             {categories.map((category) => (
               <Link
                 key={category.id}
                 href={`/category/${category.slug}`}
-                className="rounded-xl border border-neutral-200 bg-white p-4 text-center text-sm font-medium text-neutral-700 hover:border-brand hover:text-brand-dark"
+                className="rounded-xl border border-neutral-200 bg-white p-4 text-center text-sm font-medium text-neutral-700 transition-colors hover:border-brand-turquoise hover:text-brand-turquoise-dark"
               >
                 {category.name_ar}
               </Link>
@@ -56,7 +61,9 @@ export default async function HomePage() {
       )}
 
       <section className="mt-8">
-        <h2 className="text-lg font-bold text-neutral-800">أحدث المنتجات</h2>
+        <h2 className="border-r-4 border-brand-turquoise pr-3 text-lg font-bold text-neutral-800">
+          أحدث المنتجات
+        </h2>
         {products.length === 0 ? (
           <p className="mt-3 text-sm text-neutral-500">
             لا توجد منتجات منشورة بعد.

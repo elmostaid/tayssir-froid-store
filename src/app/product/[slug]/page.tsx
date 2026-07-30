@@ -53,7 +53,7 @@ export default async function ProductPage({ params }: Props) {
         {" / "}
         <Link
           href={`/category/${product.category_slug}`}
-          className="hover:underline"
+          className="hover:text-brand-turquoise-dark hover:underline"
         >
           {product.category_name_ar}
         </Link>
@@ -104,7 +104,7 @@ export default async function ProductPage({ params }: Props) {
             {product.name_fr && ` — ${product.name_fr}`}
           </p>
 
-          <p className="mt-4 text-2xl font-bold text-brand-dark">
+          <p className="mt-4 text-2xl font-bold text-brand-orange">
             {formatMad(product.sale_price)}
             <span className="text-sm font-normal text-neutral-500">
               {" "}
@@ -129,7 +129,7 @@ export default async function ProductPage({ params }: Props) {
               <dt className="text-neutral-500">الحالة</dt>
               <dd
                 className={`font-semibold ${
-                  inStock ? "text-green-700" : "text-red-700"
+                  inStock ? "text-brand-turquoise-dark" : "text-red-700"
                 }`}
               >
                 {inStock ? "متوفر" : "غير متوفر حالياً"}
@@ -152,7 +152,7 @@ export default async function ProductPage({ params }: Props) {
                 {variants.map((variant) => (
                   <li
                     key={variant.id}
-                    className="rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-xs text-neutral-700"
+                    className="rounded-full border border-brand-turquoise-tint bg-brand-turquoise-tint px-3 py-1.5 text-xs font-medium text-brand-turquoise-dark"
                   >
                     {variant.variant_name} — {formatMad(variant.sale_price)}
                   </li>
@@ -185,7 +185,7 @@ export default async function ProductPage({ params }: Props) {
             href={whatsappLink}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-6 flex w-full items-center justify-center gap-2 rounded-full bg-[#25D366] px-5 py-3 text-sm font-semibold text-white"
+            className="mt-6 flex w-full items-center justify-center gap-2 rounded-full bg-whatsapp px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-whatsapp-dark"
           >
             اطلب عبر واتساب
           </a>

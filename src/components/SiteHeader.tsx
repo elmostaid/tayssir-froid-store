@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { getCategories } from "@/lib/queries/catalog";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
@@ -11,11 +12,16 @@ export async function SiteHeader() {
   return (
     <header className="sticky top-0 z-40 border-b border-neutral-200 bg-white/95 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
-        <Link href="/" className="flex flex-col leading-tight">
-          <span className="text-lg font-bold text-brand-dark">
-            Tayssir Froid
-          </span>
-          <span className="text-xs text-neutral-500">
+        <Link href="/" className="flex flex-col items-start gap-1">
+          <Image
+            src="/brand/logo-tayssir-froid.png"
+            alt="Tayssir Froid"
+            width={169}
+            height={60}
+            priority
+            className="h-9 w-auto sm:h-10"
+          />
+          <span className="text-[11px] text-neutral-500">
             قطع غيار التبريد بالجملة — مراكش
           </span>
         </Link>
@@ -24,7 +30,7 @@ export async function SiteHeader() {
           href={whatsappLink}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 rounded-full bg-[#25D366] px-4 py-2 text-sm font-semibold text-white shadow-sm active:scale-95"
+          className="inline-flex items-center gap-2 rounded-full bg-whatsapp px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-whatsapp-dark active:scale-95"
         >
           واتساب
         </a>
@@ -39,7 +45,7 @@ export async function SiteHeader() {
             <Link
               key={category.id}
               href={`/category/${category.slug}`}
-              className="shrink-0 rounded-full border border-neutral-200 px-3 py-1.5 text-neutral-700 hover:border-brand hover:text-brand-dark"
+              className="shrink-0 rounded-full border border-neutral-200 px-3 py-1.5 text-neutral-700 transition-colors hover:border-brand-turquoise hover:text-brand-turquoise-dark"
             >
               {category.name_ar}
             </Link>
