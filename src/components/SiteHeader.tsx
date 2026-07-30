@@ -4,7 +4,15 @@ import { getCategories } from "@/lib/queries/catalog";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
 
 export async function SiteHeader() {
-  const categories = await getCategories();
+  let categories: Awaited<ReturnType<typeof getCategories>> = [];
+  try {
+    categories = await getCategories();
+  } catch (error) {
+    // نسجّل الخطأ في سجلات الخادم فقط للمطور. لا نعرض أي تفاصيل تقنية
+    // للزائر؛ الموقع يستمر في العمل والرأس يُعرض بدون قائمة التصنيفات.
+    console.error("SiteHeader: تعذّر جلب التصنيفات من قاعدة البيانات", error);
+  }
+
   const whatsappLink = buildWhatsAppLink(
     "مرحباً، عندي سؤال بخصوص منتجات Tayssir Froid."
   );
