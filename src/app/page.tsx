@@ -1,16 +1,24 @@
 import Link from "next/link";
 import { getCategories, getProducts } from "@/lib/queries/catalog";
+import { getSettings } from "@/lib/queries/settings";
 import { ProductCard } from "@/components/ProductCard";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
+import { safeQuery } from "@/lib/safeQuery";
+import { formatMad } from "@/lib/format";
 
 // تُعرض هذه الصفحة ديناميكياً عند كل طلب (وليس عند البناء) لأن بيانات
 // المنتجات والأسعار تأتي من قاعدة البيانات ويجب أن تكون محدَّثة دائماً.
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const [categories, products] = await Promise.all([
-    getCategories(),
-    getProducts({ limit: 12 }),
+  const [categories, products, settings] = await Promise.all([
+    safeQuery(() => getCategories(), [], "home.getCategories"),
+    safeQuery(() => getProducts({ limit: 12 }), [], "home.getProducts"),
+    safeQuery(
+      () => getSettings(),
+      { minOrderAmountMad: 1000, deliveryFeePerCartonMad: 45, whatsappNumber: "+212722083458", storeCity: "" },
+      "home.getSettings"
+    ),
   ]);
 
   const whatsappLink = buildWhatsAppLink(
@@ -28,8 +36,8 @@ export default async function HomePage() {
         </h1>
         <p className="mt-2 max-w-2xl text-sm text-neutral-700 sm:text-base">
           قطع غيار الغسالات والثلاجات والمجمدات والمكيفات، للتجار والصنايعية
-          ومحلات قطع الغيار في المغرب. الحد الأدنى للطلبية 1000 درهم، والدفع
-          عند الاستلام.
+          ومحلات قطع الغيار في المغرب. الحد الأدنى للطلبية{" "}
+          {formatMad(settings.minOrderAmountMad)}، والدفع عند الاستلام.
         </p>
         <a
           href={whatsappLink}
