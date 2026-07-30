@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+/*
+ * الهوية البصرية مستخرجة مباشرة من شعار Tayssir Froid الرسمي:
+ * - البرتقالي (#FB5A01): اللون الرئيسي — للأزرار والعناصر المهمة فقط، باعتدال.
+ * - الفيروزي (#03AFB9): لون ثانوي هادئ — للتفاصيل والتصنيفات.
+ * - الأبيض الدافئ: خلفية الموقع.
+ * - الرمادي الداكن: كل النصوص.
+ * - الأخضر: محجوز حصرياً لأزرار واتساب، ولا يُستعمل في أي مكان آخر.
+ */
+:root {
+  --background: #fdfbf8;
+  --foreground: #292524;
+
+  --brand-orange: #fb5a01;
+  --brand-orange-dark: #d94e00;
+  --brand-orange-tint: #fff1e9;
+
+  --brand-turquoise: #03afb9;
+  --brand-turquoise-dark: #028189;
+  --brand-turquoise-tint: #e6f8f9;
+
+  --whatsapp: #25d366;
+  --whatsapp-dark: #1da851;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-brand-orange: var(--brand-orange);
+  --color-brand-orange-dark: var(--brand-orange-dark);
+  --color-brand-orange-tint: var(--brand-orange-tint);
+
+  --color-brand-turquoise: var(--brand-turquoise);
+  --color-brand-turquoise-dark: var(--brand-turquoise-dark);
+  --color-brand-turquoise-tint: var(--brand-turquoise-tint);
+
+  --color-whatsapp: var(--whatsapp);
+  --color-whatsapp-dark: var(--whatsapp-dark);
+
+  --font-sans: var(--font-arabic);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  /* خط عربي واضح بدون الاعتماد على تحميل خط خارجي عبر الشبكة */
+  --font-arabic: "Segoe UI", Tahoma, Geneva, Arial, sans-serif;
+  font-family: var(--font-arabic);
+}
