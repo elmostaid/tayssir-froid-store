@@ -1,11 +1,14 @@
-import { afterAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { randomUUID } from "node:crypto";
 import { sql } from "@/lib/db";
 import { createOrder } from "@/lib/orders/createOrder";
 import type { CreateOrderInput } from "@/lib/orders/types";
 
 // هذه اختبارات تكامل حقيقية تحتاج قاعدة بيانات حية (محلية أو حاوية CI)
-// عليها مخطط ومنتجات المرحلة الأولى التجريبية (DEMO-001/002/003).
+// عليها مخطط ومنتج DEMO-003 التجريبي الباقي (بعد حذف DEMO-001/002
+// وتصنيفاتهما القديمة). TEST-FIXTURE-001/002 منتجا اختبار مؤقتان (تُنشأان
+// وتُحذفان في هذا الملف فقط) بنفس مواصفات DEMO-001/002 السابقة لتغطية
+// حالات الحد الأدنى ودرجة الزيادة ومخزون منتجين مختلفين.
 
 const TEST_PHONE = "0600000099";
 
@@ -26,10 +29,33 @@ async function getRawProduct(sku: string) {
   return rows[0];
 }
 
+beforeAll(async () => {
+  const [category] = await sql<{ id: number }[]>`
+    select id from public.categories order by id limit 1
+  `;
+
+  await sql`
+    insert into public.products (
+      sku, slug, category_id, name_ar, unit_label,
+      min_order_qty, qty_increment, purchase_price, sale_price, stock_quantity, status
+    ) values
+    (
+      'TEST-FIXTURE-001', 'test-fixture-001', ${category.id}, 'منتج اختبار مؤقت 1',
+      'قطعة', 5, 5, 8.00, 18.00, 120, 'published'
+    ),
+    (
+      'TEST-FIXTURE-002', 'test-fixture-002', ${category.id}, 'منتج اختبار مؤقت 2',
+      'قطعة', 10, 10, 15.00, 25.00, 50, 'published'
+    )
+    on conflict (sku) do nothing
+  `;
+});
+
 afterAll(async () => {
   // تنظيف كل الطلبات التي أنشأتها هذه الاختبارات (order_items وسجل الحالة
-  // يُحذَفان تلقائياً عبر on delete cascade)
+  // يُحذَفان تلقائياً عبر on delete cascade)، ثم منتجا الاختبار المؤقتان.
   await sql`delete from public.orders where customer_phone = ${TEST_PHONE}`;
+  await sql`delete from public.products where sku in ('TEST-FIXTURE-001', 'TEST-FIXTURE-002')`;
 });
 
 describe("createOrder — الحد الأدنى للطلبية", () => {
@@ -50,7 +76,7 @@ describe("createOrder — الحد الأدنى للطلبية", () => {
   });
 
   test("يقبل طلباً بمنتجات مختلطة يصل مجموعها إلى 1000 درهم أو أكثر", async () => {
-    const demo001 = await getRawProduct("DEMO-001"); // 18 درهم، حد أدنى 5
+    const demo001 = await getRawProduct("TEST-FIXTURE-001"); // 18 درهم، حد أدنى 5
     const demo003 = await getRawProduct("DEMO-003"); // 120 درهم، حد أدنى 1
 
     const input: CreateOrderInput = {
@@ -69,7 +95,7 @@ describe("createOrder — الحد الأدنى للطلبية", () => {
 
 describe("createOrder — الكمية الدنيا ودرجة الزيادة", () => {
   test("يرفض كمية أقل من الحد الأدنى للمنتج", async () => {
-    const demo001 = await getRawProduct("DEMO-001"); // حد أدنى 5
+    const demo001 = await getRawProduct("TEST-FIXTURE-001"); // حد أدنى 5
 
     const input: CreateOrderInput = {
       items: [{ productId: demo001.id, variantId: null, quantity: 3 }],
@@ -85,7 +111,7 @@ describe("createOrder — الكمية الدنيا ودرجة الزيادة", 
   });
 
   test("يرفض كمية غير مطابقة لدرجة الزيادة", async () => {
-    const demo002 = await getRawProduct("DEMO-002"); // حد أدنى 10، درجة زيادة 10
+    const demo002 = await getRawProduct("TEST-FIXTURE-002"); // حد أدنى 10، درجة زيادة 10
 
     const input: CreateOrderInput = {
       items: [{ productId: demo002.id, variantId: null, quantity: 15 }],
@@ -100,7 +126,7 @@ describe("createOrder — الكمية الدنيا ودرجة الزيادة", 
 
 describe("createOrder — عدم الثقة بالسعر القادم من المتصفح", () => {
   test("يحتسب السعر من قاعدة البيانات وقت الطلب وليس أي قيمة مفترضة سابقاً", async () => {
-    const demo002 = await getRawProduct("DEMO-002");
+    const demo002 = await getRawProduct("TEST-FIXTURE-002");
     const originalPrice = demo002.sale_price;
 
     try {
@@ -134,7 +160,7 @@ describe("createOrder — عدم الثقة بالسعر القادم من ال�
 
 describe("createOrder — منتج غير متوفر", () => {
   test("يرفض طلب منتج نفدت كميته من المخزون", async () => {
-    const demo001 = await getRawProduct("DEMO-001");
+    const demo001 = await getRawProduct("TEST-FIXTURE-001");
     const originalStock = demo001.stock_quantity;
 
     try {
@@ -184,7 +210,7 @@ describe("createOrder — منع الطلبات المكررة (idempotency)", (
 
 describe("createOrder — حالة غير متوفر للطلب", () => {
   test("يرفض طلب منتج حالته out_of_stock حتى لو كان المخزون أكبر من صفر", async () => {
-    const demo001 = await getRawProduct("DEMO-001");
+    const demo001 = await getRawProduct("TEST-FIXTURE-001");
 
     try {
       await sql`update public.products set status = 'out_of_stock' where id = ${demo001.id}`;
