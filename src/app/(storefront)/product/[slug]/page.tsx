@@ -56,7 +56,13 @@ export default async function ProductPage({ params }: Props) {
 
   const mainImage = images[0];
   const whatsappLink = buildProductWhatsAppLink(product.name_ar, product.sku);
-  const inStock = product.stock_quantity > 0;
+  const isUnavailable = product.status === "out_of_stock" || product.stock_quantity <= 0;
+  const statusLabel =
+    product.status === "out_of_stock"
+      ? "غير متوفر للطلب"
+      : product.stock_quantity <= 0
+        ? "نفدت الكمية"
+        : "متوفر";
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
@@ -145,10 +151,10 @@ export default async function ProductPage({ params }: Props) {
               <dt className="text-neutral-500">الحالة</dt>
               <dd
                 className={`font-semibold ${
-                  inStock ? "text-brand-turquoise-dark" : "text-red-700"
+                  isUnavailable ? "text-red-700" : "text-brand-turquoise-dark"
                 }`}
               >
-                {inStock ? "متوفر" : "غير متوفر حالياً"}
+                {statusLabel}
               </dd>
             </div>
             <div className="rounded-lg bg-neutral-100 p-3">

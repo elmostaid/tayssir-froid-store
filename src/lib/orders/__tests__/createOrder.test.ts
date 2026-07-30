@@ -182,6 +182,80 @@ describe("createOrder — منع الطلبات المكررة (idempotency)", (
   });
 });
 
+describe("createOrder — حالة غير متوفر للطلب", () => {
+  test("يرفض طلب منتج حالته out_of_stock حتى لو كان المخزون أكبر من صفر", async () => {
+    const demo001 = await getRawProduct("DEMO-001");
+
+    try {
+      await sql`update public.products set status = 'out_of_stock' where id = ${demo001.id}`;
+
+      const input: CreateOrderInput = {
+        items: [{ productId: demo001.id, variantId: null, quantity: 5 }],
+        customer: baseCustomer(),
+        idempotencyKey: randomUUID(),
+      };
+
+      const result = await createOrder(input);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.errors.some((e) => e.message.includes("غير متوفر"))).toBe(true);
+      }
+    } finally {
+      await sql`update public.products set status = 'published' where id = ${demo001.id}`;
+    }
+  });
+});
+
+describe("createOrder — حدود طول بيانات الزبون", () => {
+  test("يرفض اسماً كاملاً أطول من 100 حرف", async () => {
+    const demo003 = await getRawProduct("DEMO-003");
+
+    const input: CreateOrderInput = {
+      items: [{ productId: demo003.id, variantId: null, quantity: 10 }],
+      customer: { ...baseCustomer(), fullName: "أ".repeat(101) },
+      idempotencyKey: randomUUID(),
+    };
+
+    const result = await createOrder(input);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.some((e) => e.field === "fullName")).toBe(true);
+    }
+  });
+
+  test("يرفض عنواناً أطول من 300 حرف", async () => {
+    const demo003 = await getRawProduct("DEMO-003");
+
+    const input: CreateOrderInput = {
+      items: [{ productId: demo003.id, variantId: null, quantity: 10 }],
+      customer: { ...baseCustomer(), address: "ب".repeat(301) },
+      idempotencyKey: randomUUID(),
+    };
+
+    const result = await createOrder(input);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.some((e) => e.field === "address")).toBe(true);
+    }
+  });
+
+  test("يرفض ملاحظات أطول من 500 حرف", async () => {
+    const demo003 = await getRawProduct("DEMO-003");
+
+    const input: CreateOrderInput = {
+      items: [{ productId: demo003.id, variantId: null, quantity: 10 }],
+      customer: { ...baseCustomer(), notes: "ج".repeat(501) },
+      idempotencyKey: randomUUID(),
+    };
+
+    const result = await createOrder(input);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.some((e) => e.field === "notes")).toBe(true);
+    }
+  });
+});
+
 describe("createOrder — تأجيل احتساب التوصيل", () => {
   test("الطلب الجديد لا يحتوي على عدد كرطونات أو مصاريف توصيل أو مجموع نهائي", async () => {
     const demo003 = await getRawProduct("DEMO-003");

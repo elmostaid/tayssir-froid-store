@@ -34,6 +34,10 @@ yarn-error.log*
 .env*
 !.env.example
 
+# صور المنتجات المرفوعة محلياً (بديل مؤقت قبل ربط Supabase Storage) —
+# لا تُحفظ في المستودع، صور الديمو التجريبية فقط داخل demo-images/ مُستثناة
+/public/product-images/
+
 # vercel
 .vercel
 

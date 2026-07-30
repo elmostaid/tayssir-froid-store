@@ -31,6 +31,11 @@ export function ProductCard({
             بدون صورة
           </div>
         )}
+        {(product.status === "out_of_stock" || product.stock_quantity <= 0) && (
+          <span className="absolute right-2 top-2 rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white">
+            غير متوفر
+          </span>
+        )}
       </div>
       <div className="flex flex-1 flex-col gap-1 p-3">
         <span className="text-xs font-medium text-brand-turquoise-dark">

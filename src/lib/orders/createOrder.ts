@@ -29,6 +29,8 @@ function validateStructure(input: CreateOrderInput): CreateOrderFieldError[] {
 
   if (!input.customer.fullName?.trim()) {
     errors.push({ field: "fullName", message: "الاسم الكامل إجباري." });
+  } else if (input.customer.fullName.trim().length > 100) {
+    errors.push({ field: "fullName", message: "الاسم طويل جداً (100 حرف كحد أقصى)." });
   }
 
   if (!input.customer.phone?.trim() || !isValidMoroccanPhone(input.customer.phone)) {
@@ -40,10 +42,18 @@ function validateStructure(input: CreateOrderInput): CreateOrderFieldError[] {
 
   if (!input.customer.city?.trim()) {
     errors.push({ field: "city", message: "المدينة إجبارية." });
+  } else if (input.customer.city.trim().length > 100) {
+    errors.push({ field: "city", message: "اسم المدينة طويل جداً (100 حرف كحد أقصى)." });
   }
 
   if (!input.customer.address?.trim()) {
     errors.push({ field: "address", message: "العنوان إجباري." });
+  } else if (input.customer.address.trim().length > 300) {
+    errors.push({ field: "address", message: "العنوان طويل جداً (300 حرف كحد أقصى)." });
+  }
+
+  if (input.customer.notes && input.customer.notes.trim().length > 500) {
+    errors.push({ field: "notes", message: "الملاحظات طويلة جداً (500 حرف كحد أقصى)." });
   }
 
   if (!input.idempotencyKey?.trim()) {
@@ -131,6 +141,14 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
         effectiveIncrement = variant.qty_increment;
         effectiveStock = variant.stock_quantity;
         variantName = variant.variant_name;
+      }
+
+      if (product.status === "out_of_stock") {
+        itemErrors.push({
+          field: fieldKey,
+          message: `"${product.name_ar}" غير متوفر للطلب حالياً. الرجاء إزالته من السلة.`,
+        });
+        continue;
       }
 
       if (effectiveStock <= 0) {

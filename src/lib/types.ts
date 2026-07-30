@@ -28,6 +28,8 @@ export type CatalogProduct = {
   meta_title: string | null;
   meta_description: string | null;
   primary_image_path: string | null;
+  /** "published" أو "out_of_stock" فقط (الـview لا تعرض "draft"/"archived" إطلاقاً) */
+  status: "published" | "out_of_stock";
 };
 
 export type CatalogProductVariant = {
