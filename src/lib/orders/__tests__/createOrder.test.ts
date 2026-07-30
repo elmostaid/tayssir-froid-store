@@ -4,11 +4,10 @@ import { sql } from "@/lib/db";
 import { createOrder } from "@/lib/orders/createOrder";
 import type { CreateOrderInput } from "@/lib/orders/types";
 
-// هذه اختبارات تكامل حقيقية تحتاج قاعدة بيانات حية (محلية أو حاوية CI)
-// عليها مخطط ومنتج DEMO-003 التجريبي الباقي (بعد حذف DEMO-001/002
-// وتصنيفاتهما القديمة). TEST-FIXTURE-001/002 منتجا اختبار مؤقتان (تُنشأان
-// وتُحذفان في هذا الملف فقط) بنفس مواصفات DEMO-001/002 السابقة لتغطية
-// حالات الحد الأدنى ودرجة الزيادة ومخزون منتجين مختلفين.
+// هذه اختبارات تكامل حقيقية تحتاج قاعدة بيانات حية (محلية أو حاوية CI).
+// كل منتجات المرحلة الأولى التجريبية (DEMO-001/002/003) وتصنيفاتها
+// القديمة حُذفت الآن. TEST-FIXTURE-001/002/003 منتجات اختبار مؤقتة
+// (تُنشأ وتُحذف في هذا الملف فقط) بنفس مواصفات DEMO-001/002/003 السابقة.
 
 const TEST_PHONE = "0600000099";
 
@@ -46,6 +45,10 @@ beforeAll(async () => {
     (
       'TEST-FIXTURE-002', 'test-fixture-002', ${category.id}, 'منتج اختبار مؤقت 2',
       'قطعة', 10, 10, 15.00, 25.00, 50, 'published'
+    ),
+    (
+      'TEST-FIXTURE-003', 'test-fixture-003', ${category.id}, 'منتج اختبار مؤقت 3',
+      'قطعة', 1, 1, 90.00, 120.00, 30, 'published'
     )
     on conflict (sku) do nothing
   `;
@@ -53,14 +56,14 @@ beforeAll(async () => {
 
 afterAll(async () => {
   // تنظيف كل الطلبات التي أنشأتها هذه الاختبارات (order_items وسجل الحالة
-  // يُحذَفان تلقائياً عبر on delete cascade)، ثم منتجا الاختبار المؤقتان.
+  // يُحذَفان تلقائياً عبر on delete cascade)، ثم منتجات الاختبار المؤقتة.
   await sql`delete from public.orders where customer_phone = ${TEST_PHONE}`;
-  await sql`delete from public.products where sku in ('TEST-FIXTURE-001', 'TEST-FIXTURE-002')`;
+  await sql`delete from public.products where sku in ('TEST-FIXTURE-001', 'TEST-FIXTURE-002', 'TEST-FIXTURE-003')`;
 });
 
 describe("createOrder — الحد الأدنى للطلبية", () => {
   test("يرفض طلباً مجموعه أقل من الحد الأدنى (1000 درهم)", async () => {
-    const demo003 = await getRawProduct("DEMO-003"); // سعره 120 درهم
+    const demo003 = await getRawProduct("TEST-FIXTURE-003"); // سعره 120 درهم
     const input: CreateOrderInput = {
       items: [{ productId: demo003.id, variantId: null, quantity: 1 }],
       customer: baseCustomer(),
@@ -77,7 +80,7 @@ describe("createOrder — الحد الأدنى للطلبية", () => {
 
   test("يقبل طلباً بمنتجات مختلطة يصل مجموعها إلى 1000 درهم أو أكثر", async () => {
     const demo001 = await getRawProduct("TEST-FIXTURE-001"); // 18 درهم، حد أدنى 5
-    const demo003 = await getRawProduct("DEMO-003"); // 120 درهم، حد أدنى 1
+    const demo003 = await getRawProduct("TEST-FIXTURE-003"); // 120 درهم، حد أدنى 1
 
     const input: CreateOrderInput = {
       items: [
@@ -185,7 +188,7 @@ describe("createOrder — منتج غير متوفر", () => {
 
 describe("createOrder — منع الطلبات المكررة (idempotency)", () => {
   test("نفس مفتاح idempotency مرتين ينتج عنه نفس الطلب وليس طلبين", async () => {
-    const demo003 = await getRawProduct("DEMO-003");
+    const demo003 = await getRawProduct("TEST-FIXTURE-003");
     const idempotencyKey = randomUUID();
 
     const input: CreateOrderInput = {
@@ -234,7 +237,7 @@ describe("createOrder — حالة غير متوفر للطلب", () => {
 
 describe("createOrder — حدود طول بيانات الزبون", () => {
   test("يرفض اسماً كاملاً أطول من 100 حرف", async () => {
-    const demo003 = await getRawProduct("DEMO-003");
+    const demo003 = await getRawProduct("TEST-FIXTURE-003");
 
     const input: CreateOrderInput = {
       items: [{ productId: demo003.id, variantId: null, quantity: 10 }],
@@ -250,7 +253,7 @@ describe("createOrder — حدود طول بيانات الزبون", () => {
   });
 
   test("يرفض عنواناً أطول من 300 حرف", async () => {
-    const demo003 = await getRawProduct("DEMO-003");
+    const demo003 = await getRawProduct("TEST-FIXTURE-003");
 
     const input: CreateOrderInput = {
       items: [{ productId: demo003.id, variantId: null, quantity: 10 }],
@@ -266,7 +269,7 @@ describe("createOrder — حدود طول بيانات الزبون", () => {
   });
 
   test("يرفض ملاحظات أطول من 500 حرف", async () => {
-    const demo003 = await getRawProduct("DEMO-003");
+    const demo003 = await getRawProduct("TEST-FIXTURE-003");
 
     const input: CreateOrderInput = {
       items: [{ productId: demo003.id, variantId: null, quantity: 10 }],
@@ -284,7 +287,7 @@ describe("createOrder — حدود طول بيانات الزبون", () => {
 
 describe("createOrder — تأجيل احتساب التوصيل", () => {
   test("الطلب الجديد لا يحتوي على عدد كرطونات أو مصاريف توصيل أو مجموع نهائي", async () => {
-    const demo003 = await getRawProduct("DEMO-003");
+    const demo003 = await getRawProduct("TEST-FIXTURE-003");
 
     const input: CreateOrderInput = {
       items: [{ productId: demo003.id, variantId: null, quantity: 10 }],

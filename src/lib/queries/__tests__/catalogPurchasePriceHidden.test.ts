@@ -1,10 +1,33 @@
-import { describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { sql } from "@/lib/db";
 import { getProducts } from "@/lib/queries/catalog";
 
-// اختبار ضد ظهور ثمن الشراء في أي مكان عام. لا يعتمد على منتج معيّن —
-// يتحقق من عمود قاعدة البيانات نفسه (مخطط catalog_products) ومن نتيجة
-// استعلام catalog_products الفعلي المُستعمل في صفحات الموقع العامة.
+// اختبار ضد ظهور ثمن الشراء في أي مكان عام. الجزء الأول يتحقق من عمود
+// قاعدة البيانات نفسه (مخطط catalog_products) بغض النظر عن وجود منتجات.
+// الجزء الثاني يحتاج منتجاً واحداً منشوراً فعلياً ليتحقق من نتيجة
+// getProducts() الفعلية، فيُنشئ منتج اختبار مؤقتاً (يُحذف بعد الاختبار).
+const TEST_SKU = "TEST-FIXTURE-PPH-001";
+
+beforeAll(async () => {
+  const [category] = await sql<{ id: number }[]>`
+    select id from public.categories order by id limit 1
+  `;
+  await sql`
+    insert into public.products (
+      sku, slug, category_id, name_ar, unit_label,
+      min_order_qty, qty_increment, purchase_price, sale_price, stock_quantity, status
+    ) values (
+      ${TEST_SKU}, 'test-fixture-purchase-price-hidden', ${category.id}, 'منتج اختبار مؤقت',
+      'قطعة', 1, 1, 50.00, 100.00, 10, 'published'
+    )
+    on conflict (sku) do nothing
+  `;
+});
+
+afterAll(async () => {
+  await sql`delete from public.products where sku = ${TEST_SKU}`;
+});
+
 describe("catalog_products — ثمن الشراء لا يظهر أبداً للزوار", () => {
   test("عرض catalog_products لا يحتوي عمود purchase_price إطلاقاً", async () => {
     const columns = await sql<{ column_name: string }[]>`
