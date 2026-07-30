@@ -10,6 +10,9 @@ import {
 import { resolveImageUrl } from "@/lib/images";
 import { formatMad } from "@/lib/format";
 import { buildProductWhatsAppLink } from "@/lib/whatsapp";
+import { safeQuery } from "@/lib/safeQuery";
+import { AddToCartForm } from "@/components/AddToCartForm";
+import { ServiceUnavailable } from "@/components/ServiceUnavailable";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +22,11 @@ type Props = {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
-  const product = await getProductBySlug(slug);
+  const product = await safeQuery(
+    () => getProductBySlug(slug),
+    null,
+    "product.generateMetadata"
+  );
   if (!product) return {};
   return {
     title: product.meta_title ?? product.name_ar,
@@ -29,15 +36,22 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function ProductPage({ params }: Props) {
   const { slug } = await params;
-  const product = await getProductBySlug(slug);
+
+  let product: Awaited<ReturnType<typeof getProductBySlug>>;
+  try {
+    product = await getProductBySlug(slug);
+  } catch (error) {
+    console.error("ProductPage: تعذّر الاتصال بقاعدة البيانات", error);
+    return <ServiceUnavailable />;
+  }
 
   if (!product) {
     notFound();
   }
 
   const [images, variants] = await Promise.all([
-    getProductImages(product.id),
-    getProductVariants(product.id),
+    safeQuery(() => getProductImages(product.id), [], "product.getProductImages"),
+    safeQuery(() => getProductVariants(product.id), [], "product.getProductVariants"),
   ]);
 
   const mainImage = images[0];
@@ -69,6 +83,7 @@ export default async function ProductPage({ params }: Props) {
                 fill
                 sizes="(max-width: 768px) 100vw, 500px"
                 className="object-cover"
+                unoptimized
                 priority
               />
             ) : (
@@ -90,6 +105,7 @@ export default async function ProductPage({ params }: Props) {
                     fill
                     sizes="120px"
                     className="object-cover"
+                    unoptimized
                   />
                 </div>
               ))}
@@ -143,23 +159,11 @@ export default async function ProductPage({ params }: Props) {
             </div>
           </dl>
 
-          {variants.length > 0 && (
-            <div className="mt-4">
-              <h2 className="text-sm font-semibold text-neutral-800">
-                المقاسات / الأنواع المتوفرة
-              </h2>
-              <ul className="mt-2 flex flex-wrap gap-2">
-                {variants.map((variant) => (
-                  <li
-                    key={variant.id}
-                    className="rounded-full border border-brand-turquoise-tint bg-brand-turquoise-tint px-3 py-1.5 text-xs font-medium text-brand-turquoise-dark"
-                  >
-                    {variant.variant_name} — {formatMad(variant.sale_price)}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <AddToCartForm
+            product={product}
+            variants={variants}
+            imageUrl={mainImage?.storage_path ?? null}
+          />
 
           {product.description_ar && (
             <div className="mt-4">
@@ -185,9 +189,9 @@ export default async function ProductPage({ params }: Props) {
             href={whatsappLink}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-6 flex w-full items-center justify-center gap-2 rounded-full bg-whatsapp px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-whatsapp-dark"
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-full border border-whatsapp px-5 py-3 text-sm font-semibold text-whatsapp-dark transition-colors hover:bg-whatsapp hover:text-white"
           >
-            اطلب عبر واتساب
+            استفسار عبر واتساب
           </a>
         </div>
       </div>

@@ -2,16 +2,17 @@ import Image from "next/image";
 import Link from "next/link";
 import { getCategories } from "@/lib/queries/catalog";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
+import { safeQuery } from "@/lib/safeQuery";
+import { CartBadge } from "@/components/CartBadge";
 
 export async function SiteHeader() {
-  let categories: Awaited<ReturnType<typeof getCategories>> = [];
-  try {
-    categories = await getCategories();
-  } catch (error) {
-    // نسجّل الخطأ في سجلات الخادم فقط للمطور. لا نعرض أي تفاصيل تقنية
-    // للزائر؛ الموقع يستمر في العمل والرأس يُعرض بدون قائمة التصنيفات.
-    console.error("SiteHeader: تعذّر جلب التصنيفات من قاعدة البيانات", error);
-  }
+  // لا نثق بتوفّر قاعدة البيانات دائماً: إن تعذّر الجلب، يستمر الموقع
+  // بالعمل والرأس يُعرض بدون قائمة التصنيفات بدل انهيار الصفحة بالكامل.
+  const categories = await safeQuery(
+    () => getCategories(),
+    [],
+    "SiteHeader.getCategories"
+  );
 
   const whatsappLink = buildWhatsAppLink(
     "مرحباً، عندي سؤال بخصوص منتجات Tayssir Froid."
@@ -34,14 +35,17 @@ export async function SiteHeader() {
           </span>
         </Link>
 
-        <a
-          href={whatsappLink}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 rounded-full bg-whatsapp px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-whatsapp-dark active:scale-95"
-        >
-          واتساب
-        </a>
+        <div className="flex items-center gap-2">
+          <CartBadge />
+          <a
+            href={whatsappLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 rounded-full bg-whatsapp px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-whatsapp-dark active:scale-95"
+          >
+            واتساب
+          </a>
+        </div>
       </div>
 
       {categories.length > 0 && (

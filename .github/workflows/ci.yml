@@ -16,11 +16,30 @@ permissions:
 jobs:
   checks:
     runs-on: ubuntu-latest
+
+    # قاعدة بيانات PostgreSQL 16 حقيقية كخدمة داخل CI فقط لهذا التشغيل —
+    # بدون Supabase خارجي وبدون أي سر. تُستعمل لتطبيق المخطط واختبارات
+    # التكامل الخاصة بالسلة والطلبات، ولبناء next build (الصفحات الديناميكية
+    # تتحمّل عدم توفرها بفضل safeQuery، لكن وجودها هنا يجعل الاختبارات حقيقية).
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: tayssir_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     env:
-      # قيمة وهمية فقط (ليست سراً ولا تتصل بأي خدمة حقيقية) لتفادي فشل البناء
-      # بسبب فحص وجود المتغير في src/lib/db.ts. الصفحات كلها ديناميكية
-      # (force-dynamic) ولا تُنفَّذ أي استعلامات فعلية أثناء "next build".
-      DATABASE_URL: postgres://ci:ci@localhost:5432/ci_placeholder
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/tayssir_ci
+      PGPASSWORD: postgres
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,13 +52,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Apply database schema and demo seed
+        run: |
+          set -e
+          psql -h localhost -U postgres -d tayssir_ci -v ON_ERROR_STOP=1 -f db/local-dev/00_bootstrap_supabase_like_roles.sql
+          for f in supabase/migrations/*.sql; do
+            echo "applying $f"
+            psql -h localhost -U postgres -d tayssir_ci -v ON_ERROR_STOP=1 -f "$f"
+          done
+          psql -h localhost -U postgres -d tayssir_ci -v ON_ERROR_STOP=1 -f supabase/seed/seed_demo_products.sql
+
       - name: Lint
         run: npm run lint
 
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Unit tests
+      - name: Unit and integration tests
         run: npm run test
 
       - name: Build

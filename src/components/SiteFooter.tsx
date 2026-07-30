@@ -1,9 +1,23 @@
 import Image from "next/image";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
+import { getSettings } from "@/lib/queries/settings";
+import { safeQuery } from "@/lib/safeQuery";
+import { formatMad } from "@/lib/format";
 
-export function SiteFooter() {
+export async function SiteFooter() {
   const whatsappLink = buildWhatsAppLink(
     "مرحباً، عندي سؤال بخصوص منتجات Tayssir Froid."
+  );
+
+  const settings = await safeQuery(
+    () => getSettings(),
+    {
+      minOrderAmountMad: 1000,
+      deliveryFeePerCartonMad: 45,
+      whatsappNumber: "+212722083458",
+      storeCity: "مراكش - حي المحاميد",
+    },
+    "SiteFooter.getSettings"
   );
 
   return (
@@ -23,10 +37,12 @@ export function SiteFooter() {
           بيع قطع غيار الغسالات والثلاجات والمجمدات والمكيفات بالجملة —
           للتجار والصنايعية ومحلات قطع الغيار.
         </p>
-        <p className="mt-1">مراكش، حي المحاميد</p>
+        <p className="mt-1">{settings.storeCity}</p>
         <p className="mt-1">
-          الحد الأدنى للطلبية 1000 درهم. التوصيل 45 درهماً لكل كرطونة. الدفع
-          عند الاستلام.
+          الحد الأدنى للطلبية {formatMad(settings.minOrderAmountMad)} (دون
+          احتساب التوصيل). التوصيل {formatMad(settings.deliveryFeePerCartonMad)}{" "}
+          لكل كرطونة، يُحدَّد عدد الكرطونات بعد تجهيز الطلب. الدفع عند
+          الاستلام فقط.
         </p>
         <a
           href={whatsappLink}

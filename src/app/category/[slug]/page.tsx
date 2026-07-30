@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getCategoryBySlug, getProducts } from "@/lib/queries/catalog";
 import { ProductCard } from "@/components/ProductCard";
+import { safeQuery } from "@/lib/safeQuery";
+import { ServiceUnavailable } from "@/components/ServiceUnavailable";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +13,11 @@ type Props = {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
-  const category = await getCategoryBySlug(slug);
+  const category = await safeQuery(
+    () => getCategoryBySlug(slug),
+    null,
+    "category.generateMetadata"
+  );
   if (!category) return {};
   return {
     title: category.name_ar,
@@ -23,13 +29,24 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function CategoryPage({ params }: Props) {
   const { slug } = await params;
-  const category = await getCategoryBySlug(slug);
+
+  let category: Awaited<ReturnType<typeof getCategoryBySlug>>;
+  try {
+    category = await getCategoryBySlug(slug);
+  } catch (error) {
+    console.error("CategoryPage: تعذّر الاتصال بقاعدة البيانات", error);
+    return <ServiceUnavailable />;
+  }
 
   if (!category) {
     notFound();
   }
 
-  const products = await getProducts({ categorySlug: slug, limit: 100 });
+  const products = await safeQuery(
+    () => getProducts({ categorySlug: slug, limit: 100 }),
+    [],
+    "category.getProducts"
+  );
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
