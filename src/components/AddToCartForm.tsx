@@ -56,7 +56,7 @@ export function AddToCartForm({
     setAdded(false);
   }
 
-  const outOfStock = effective.stock <= 0;
+  const outOfStock = effective.stock <= 0 || product.status === "out_of_stock";
 
   function handleAddToCart() {
     if (outOfStock) return;
@@ -139,7 +139,9 @@ export function AddToCartForm({
 
       {outOfStock ? (
         <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
-          هذا المنتج غير متوفر حالياً في المخزون.
+          {product.status === "out_of_stock"
+            ? "هذا المنتج غير متوفر للطلب حالياً."
+            : "هذا المنتج غير متوفر حالياً في المخزون."}
         </p>
       ) : (
         <div className="mt-4 flex flex-col gap-2 sm:flex-row">

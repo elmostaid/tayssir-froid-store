@@ -3,18 +3,13 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
-  getProductBySlug,
-  getProductImages,
-  getProductVariants,
-} from "@/lib/queries/catalog";
+  getPreviewProductBySlug,
+  getPreviewProductImages,
+  getPreviewProductVariants,
+} from "@/lib/previewCatalog";
 import { resolveImageUrl } from "@/lib/images";
 import { formatMad } from "@/lib/format";
-import { buildProductWhatsAppLink } from "@/lib/whatsapp";
-import { safeQuery } from "@/lib/safeQuery";
-import { AddToCartForm } from "@/components/AddToCartForm";
-import { ServiceUnavailable } from "@/components/ServiceUnavailable";
-
-export const dynamic = "force-dynamic";
+import { PreviewAddToCartForm } from "@/components/preview/PreviewAddToCartForm";
 
 type Props = {
   params: Promise<{ slug: string }>;
@@ -22,11 +17,7 @@ type Props = {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
-  const product = await safeQuery(
-    () => getProductBySlug(slug),
-    null,
-    "product.generateMetadata"
-  );
+  const product = getPreviewProductBySlug(slug);
   if (!product) return {};
   return {
     title: product.meta_title ?? product.name_ar,
@@ -34,39 +25,35 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-export default async function ProductPage({ params }: Props) {
+export default async function PreviewProductPage({ params }: Props) {
   const { slug } = await params;
-
-  let product: Awaited<ReturnType<typeof getProductBySlug>>;
-  try {
-    product = await getProductBySlug(slug);
-  } catch (error) {
-    console.error("ProductPage: تعذّر الاتصال بقاعدة البيانات", error);
-    return <ServiceUnavailable />;
-  }
+  const product = getPreviewProductBySlug(slug);
 
   if (!product) {
     notFound();
   }
 
-  const [images, variants] = await Promise.all([
-    safeQuery(() => getProductImages(product.id), [], "product.getProductImages"),
-    safeQuery(() => getProductVariants(product.id), [], "product.getProductVariants"),
-  ]);
+  const images = getPreviewProductImages(product.id);
+  const variants = getPreviewProductVariants(product.id);
 
   const mainImage = images[0];
-  const whatsappLink = buildProductWhatsAppLink(product.name_ar, product.sku);
-  const inStock = product.stock_quantity > 0;
+  const isUnavailable = product.status === "out_of_stock" || product.stock_quantity <= 0;
+  const statusLabel =
+    product.status === "out_of_stock"
+      ? "غير متوفر للطلب"
+      : product.stock_quantity <= 0
+        ? "نفدت الكمية"
+        : "متوفر";
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
       <nav className="text-xs text-neutral-500">
-        <Link href="/" className="hover:underline">
+        <Link href="/preview" className="hover:underline">
           الرئيسية
         </Link>
         {" / "}
         <Link
-          href={`/category/${product.category_slug}`}
+          href={`/preview/category/${product.category_slug}`}
           className="hover:text-brand-turquoise-dark hover:underline"
         >
           {product.category_name_ar}
@@ -145,10 +132,10 @@ export default async function ProductPage({ params }: Props) {
               <dt className="text-neutral-500">الحالة</dt>
               <dd
                 className={`font-semibold ${
-                  inStock ? "text-brand-turquoise-dark" : "text-red-700"
+                  isUnavailable ? "text-red-700" : "text-brand-turquoise-dark"
                 }`}
               >
-                {inStock ? "متوفر" : "غير متوفر حالياً"}
+                {statusLabel}
               </dd>
             </div>
             <div className="rounded-lg bg-neutral-100 p-3">
@@ -159,7 +146,7 @@ export default async function ProductPage({ params }: Props) {
             </div>
           </dl>
 
-          <AddToCartForm
+          <PreviewAddToCartForm
             product={product}
             variants={variants}
             imageUrl={mainImage?.storage_path ?? null}
@@ -184,15 +171,6 @@ export default async function ProductPage({ params }: Props) {
               </p>
             </div>
           )}
-
-          <a
-            href={whatsappLink}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-4 flex w-full items-center justify-center gap-2 rounded-full border border-whatsapp px-5 py-3 text-sm font-semibold text-whatsapp-dark transition-colors hover:bg-whatsapp hover:text-white"
-          >
-            استفسار عبر واتساب
-          </a>
         </div>
       </div>
     </div>

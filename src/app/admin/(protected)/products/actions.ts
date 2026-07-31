@@ -1,0 +1,215 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { sql } from "@/lib/db";
+import { getAdminUser } from "@/lib/auth/requireAdmin";
+import { productSchema, variantSchema } from "@/lib/validation/product";
+import { flattenZodErrors } from "@/lib/validation/zodErrors";
+import { isProductSlugTaken, isSkuTakenByOtherProduct } from "@/lib/queries/adminProducts";
+
+export type ProductFormState = {
+  error: string | null;
+  success?: boolean;
+  fieldErrors?: Record<string, string>;
+};
+
+function parseProductForm(formData: FormData) {
+  const purchasePriceRaw = formData.get("purchasePrice");
+  return productSchema.safeParse({
+    sku: formData.get("sku"),
+    slug: formData.get("slug"),
+    categoryId: Number(formData.get("categoryId")),
+    nameAr: formData.get("nameAr"),
+    nameFr: formData.get("nameFr") || undefined,
+    descriptionAr: formData.get("descriptionAr") || undefined,
+    technicalSpecs: formData.get("technicalSpecs") || undefined,
+    unitLabel: formData.get("unitLabel") || "قطعة",
+    minOrderQty: Number(formData.get("minOrderQty") || 1),
+    qtyIncrement: Number(formData.get("qtyIncrement") || 1),
+    purchasePrice:
+      purchasePriceRaw && String(purchasePriceRaw).trim() !== ""
+        ? Number(purchasePriceRaw)
+        : null,
+    salePrice: Number(formData.get("salePrice") || 0),
+    stockQuantity: Number(formData.get("stockQuantity") || 0),
+    status: formData.get("status"),
+  });
+}
+
+export async function createProduct(
+  _prevState: ProductFormState,
+  formData: FormData
+): Promise<ProductFormState> {
+  const admin = await getAdminUser();
+  if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+
+  const parsed = parseProductForm(formData);
+  if (!parsed.success) {
+    return { error: "تحقق من البيانات المدخلة.", fieldErrors: flattenZodErrors(parsed.error) };
+  }
+
+  if (await isSkuTakenByOtherProduct(parsed.data.sku)) {
+    return { error: "SKU مستعمل من منتج آخر.", fieldErrors: { sku: "مستعمل من قبل" } };
+  }
+  if (await isProductSlugTaken(parsed.data.slug)) {
+    return { error: "الرابط مستعمل من منتج آخر.", fieldErrors: { slug: "مستعمل من قبل" } };
+  }
+
+  const inserted = await sql<{ id: number }[]>`
+    insert into public.products (
+      sku, slug, category_id, name_ar, name_fr, description_ar, technical_specs,
+      unit_label, min_order_qty, qty_increment, purchase_price, sale_price,
+      stock_quantity, status
+    ) values (
+      ${parsed.data.sku}, ${parsed.data.slug}, ${parsed.data.categoryId}, ${parsed.data.nameAr},
+      ${parsed.data.nameFr || null}, ${parsed.data.descriptionAr || null}, ${parsed.data.technicalSpecs || null},
+      ${parsed.data.unitLabel}, ${parsed.data.minOrderQty}, ${parsed.data.qtyIncrement},
+      ${parsed.data.purchasePrice}, ${parsed.data.salePrice}, ${parsed.data.stockQuantity}, ${parsed.data.status}
+    )
+    returning id
+  `;
+
+  revalidatePath("/admin/products");
+  redirect(`/admin/products/${inserted[0].id}`);
+}
+
+export async function updateProduct(
+  productId: number,
+  _prevState: ProductFormState,
+  formData: FormData
+): Promise<ProductFormState> {
+  const admin = await getAdminUser();
+  if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+
+  const parsed = parseProductForm(formData);
+  if (!parsed.success) {
+    return { error: "تحقق من البيانات المدخلة.", fieldErrors: flattenZodErrors(parsed.error) };
+  }
+
+  if (await isSkuTakenByOtherProduct(parsed.data.sku, productId)) {
+    return { error: "SKU مستعمل من منتج آخر.", fieldErrors: { sku: "مستعمل من قبل" } };
+  }
+  if (await isProductSlugTaken(parsed.data.slug, productId)) {
+    return { error: "الرابط مستعمل من منتج آخر.", fieldErrors: { slug: "مستعمل من قبل" } };
+  }
+
+  await sql`
+    update public.products set
+      sku = ${parsed.data.sku},
+      slug = ${parsed.data.slug},
+      category_id = ${parsed.data.categoryId},
+      name_ar = ${parsed.data.nameAr},
+      name_fr = ${parsed.data.nameFr || null},
+      description_ar = ${parsed.data.descriptionAr || null},
+      technical_specs = ${parsed.data.technicalSpecs || null},
+      unit_label = ${parsed.data.unitLabel},
+      min_order_qty = ${parsed.data.minOrderQty},
+      qty_increment = ${parsed.data.qtyIncrement},
+      purchase_price = ${parsed.data.purchasePrice},
+      sale_price = ${parsed.data.salePrice},
+      stock_quantity = ${parsed.data.stockQuantity},
+      status = ${parsed.data.status}
+    where id = ${productId}
+  `;
+
+  revalidatePath("/admin/products");
+  revalidatePath(`/admin/products/${productId}`);
+  return { error: null, success: true };
+}
+
+function parseVariantForm(formData: FormData) {
+  const salePriceRaw = formData.get("salePriceOverride");
+  const minQtyRaw = formData.get("minOrderQtyOverride");
+  const incrementRaw = formData.get("qtyIncrementOverride");
+
+  return variantSchema.safeParse({
+    variantName: formData.get("variantName"),
+    salePriceOverride:
+      salePriceRaw && String(salePriceRaw).trim() !== "" ? Number(salePriceRaw) : null,
+    stockQuantity: Number(formData.get("stockQuantity") || 0),
+    minOrderQtyOverride: minQtyRaw && String(minQtyRaw).trim() !== "" ? Number(minQtyRaw) : null,
+    qtyIncrementOverride:
+      incrementRaw && String(incrementRaw).trim() !== "" ? Number(incrementRaw) : null,
+    isActive: formData.get("isActive") === "on",
+    sortOrder: Number(formData.get("sortOrder") || 0),
+  });
+}
+
+export async function createVariant(
+  productId: number,
+  _prevState: ProductFormState,
+  formData: FormData
+): Promise<ProductFormState> {
+  const admin = await getAdminUser();
+  if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+
+  const parsed = parseVariantForm(formData);
+  if (!parsed.success) {
+    return { error: "تحقق من بيانات المتغير.", fieldErrors: flattenZodErrors(parsed.error) };
+  }
+
+  try {
+    await sql`
+      insert into public.product_variants (
+        product_id, variant_name, sale_price_override, stock_quantity,
+        min_order_qty_override, qty_increment_override, is_active, sort_order
+      ) values (
+        ${productId}, ${parsed.data.variantName}, ${parsed.data.salePriceOverride},
+        ${parsed.data.stockQuantity}, ${parsed.data.minOrderQtyOverride},
+        ${parsed.data.qtyIncrementOverride}, ${parsed.data.isActive}, ${parsed.data.sortOrder}
+      )
+    `;
+  } catch {
+    return { error: "تعذّر إضافة المتغير (قد يكون الاسم مكرراً لنفس المنتج)." };
+  }
+
+  revalidatePath(`/admin/products/${productId}`);
+  return { error: null, success: true };
+}
+
+export async function updateVariant(
+  variantId: number,
+  productId: number,
+  _prevState: ProductFormState,
+  formData: FormData
+): Promise<ProductFormState> {
+  const admin = await getAdminUser();
+  if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+
+  const parsed = parseVariantForm(formData);
+  if (!parsed.success) {
+    return { error: "تحقق من بيانات المتغير.", fieldErrors: flattenZodErrors(parsed.error) };
+  }
+
+  try {
+    await sql`
+      update public.product_variants set
+        variant_name = ${parsed.data.variantName},
+        sale_price_override = ${parsed.data.salePriceOverride},
+        stock_quantity = ${parsed.data.stockQuantity},
+        min_order_qty_override = ${parsed.data.minOrderQtyOverride},
+        qty_increment_override = ${parsed.data.qtyIncrementOverride},
+        is_active = ${parsed.data.isActive},
+        sort_order = ${parsed.data.sortOrder}
+      where id = ${variantId} and product_id = ${productId}
+    `;
+  } catch {
+    return { error: "تعذّر تعديل المتغير (قد يكون الاسم مكرراً لنفس المنتج)." };
+  }
+
+  revalidatePath(`/admin/products/${productId}`);
+  return { error: null, success: true };
+}
+
+export async function deleteVariant(
+  variantId: number,
+  productId: number
+): Promise<{ error: string | null }> {
+  const admin = await getAdminUser();
+  if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+
+  await sql`delete from public.product_variants where id = ${variantId} and product_id = ${productId}`;
+  revalidatePath(`/admin/products/${productId}`);
+  return { error: null };
+}

@@ -4,7 +4,7 @@ import { useActionState, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCart } from "@/components/CartProvider";
-import { submitOrder, type CheckoutState } from "@/app/checkout/actions";
+import { submitOrder, type CheckoutState } from "@/app/(storefront)/checkout/actions";
 import { formatMad } from "@/lib/format";
 import { cartItemKey } from "@/lib/cart/cartMath";
 
@@ -132,6 +132,7 @@ export function CheckoutClient({
           <input
             name="fullName"
             required
+            maxLength={100}
             className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-turquoise focus:outline-none"
           />
           {fieldMessage("fullName") && (
@@ -167,6 +168,7 @@ export function CheckoutClient({
           <input
             name="city"
             required
+            maxLength={100}
             className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-turquoise focus:outline-none"
           />
           {fieldMessage("city") && (
@@ -184,6 +186,7 @@ export function CheckoutClient({
             name="address"
             required
             rows={2}
+            maxLength={300}
             className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-turquoise focus:outline-none"
           />
           {fieldMessage("address") && (
@@ -200,8 +203,14 @@ export function CheckoutClient({
           <textarea
             name="notes"
             rows={2}
+            maxLength={500}
             className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-turquoise focus:outline-none"
           />
+          {fieldMessage("notes") && (
+            <span className="mt-1 block text-xs text-red-600">
+              {fieldMessage("notes")}
+            </span>
+          )}
         </label>
 
         <p className="rounded-lg bg-neutral-100 px-3 py-2 text-xs text-neutral-600">
