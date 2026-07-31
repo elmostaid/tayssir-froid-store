@@ -1,22 +1,31 @@
 import postgres from "postgres";
 
-const connectionString = process.env.DATABASE_URL;
-
-if (!connectionString) {
-  throw new Error(
-    "DATABASE_URL غير معرَّف. أضفه في ملف .env.local (انظر .env.example للتفاصيل)."
-  );
-}
+type SqlClient = ReturnType<typeof postgres>;
 
 // نتفادى فتح اتصال جديد بقاعدة البيانات مع كل إعادة تحميل ساخنة (hot reload)
 // أثناء التطوير عبر تخزين العميل في global.
 declare global {
-  var __tayssirSql: ReturnType<typeof postgres> | undefined;
+  var __tayssirSql: SqlClient | undefined;
 }
 
-export const sql =
-  globalThis.__tayssirSql ??
-  postgres(connectionString, {
+let cachedClient: SqlClient | undefined;
+
+// إنشاء العميل الحقيقي مؤجَّل حتى أول استعلام فعلي، بدل وقت استيراد هذا
+// الملف. هذا يسمح بنجاح `next build` (الذي يُحمِّل كل الصفحات لجمع بياناتها
+// حتى الصفحات التي لن تُستدعى فيها أي دالة sql فعلياً) حتى بدون DATABASE_URL،
+// بينما تبقى أي محاولة استعلام حقيقي بدونه تفشل بنفس الرسالة كما كانت.
+function getClient(): SqlClient {
+  if (globalThis.__tayssirSql) return globalThis.__tayssirSql;
+  if (cachedClient) return cachedClient;
+
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error(
+      "DATABASE_URL غير معرَّف. أضفه في ملف .env.local (انظر .env.example للتفاصيل)."
+    );
+  }
+
+  const client = postgres(connectionString, {
     max: 5,
     idle_timeout: 20,
     types: {
@@ -34,6 +43,21 @@ export const sql =
     },
   });
 
-if (process.env.NODE_ENV !== "production") {
-  globalThis.__tayssirSql = sql;
+  cachedClient = client;
+  if (process.env.NODE_ENV !== "production") {
+    globalThis.__tayssirSql = client;
+  }
+  return client;
 }
+
+export const sql: SqlClient = new Proxy(function () {} as unknown as SqlClient, {
+  apply(_target, _thisArg, args) {
+    const client = getClient();
+    return (client as unknown as (...a: unknown[]) => unknown)(...args);
+  },
+  get(_target, prop, receiver) {
+    const client = getClient();
+    const value = Reflect.get(client as object, prop, receiver);
+    return typeof value === "function" ? value.bind(client) : value;
+  },
+});
