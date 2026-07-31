@@ -1,0 +1,370 @@
+[
+    {
+        "id": 1,
+        "product_id": 1,
+        "storage_path": "product-images/TF-WM-001/white-round-knob.png",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0628\u0648\u0637\u0648\u0646 \u0645\u0646\u062a\u0631\u064a \u0633\u062a\u0627\u0646\u062f\u0627\u0631",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 3,
+        "product_id": 3,
+        "storage_path": "product-images/TF-WM-003/black-timer-multicolor-wires.png",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0645\u0646\u062a\u0631\u064a \u0635\u0627\u0628\u0648\u0646 6 \u062e\u064a\u0648\u0637",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 4,
+        "product_id": 4,
+        "storage_path": "product-images/TF-WM-004/black-rubber-bellows.png",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u062c\u0644\u062f\u0629 \u0646\u0634\u0627\u0641 \u0628\u0631\u064a\u0633\u064a\u0633\u062a\u0648\u0628",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 5,
+        "product_id": 4,
+        "storage_path": "product-images/TF-WM-004/TF-WM-004-dryer-pressostat-seal-2.jpg",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u062c\u0644\u062f\u0629 \u0646\u0634\u0627\u0641 \u0628\u0631\u064a\u0633\u064a\u0633\u062a\u0648\u0628",
+        "sort_order": 2,
+        "is_primary": false
+    },
+    {
+        "id": 6,
+        "product_id": 5,
+        "storage_path": "product-images/TF-WM-005/motor-type-a-label.png",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0645\u0648\u0637\u0648\u0631 \u0635\u0627\u0628\u0648\u0646 150 \u0648\u0627\u0637",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 7,
+        "product_id": 6,
+        "storage_path": "product-images/TF-WM-006/v-belts.png",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0643\u0631\u0648\u0629 \u0627\u0644\u063a\u0633\u0627\u0644\u0629",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 8,
+        "product_id": 7,
+        "storage_path": "product-images/TF-WM-007/black-timer-three-wires.png",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0645\u0646\u062a\u0631\u064a \u0635\u0627\u0628\u0648\u0646 3 \u062e\u064a\u0648\u0637",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 9,
+        "product_id": 8,
+        "storage_path": "product-images/TF-WM-008/white-corrugated-hoses.png",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u062a\u064a\u0648 \u0627\u0644\u0645\u0627\u0621",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 10,
+        "product_id": 9,
+        "storage_path": "product-images/TF-WM-009/motor-type-b-round-gold.png",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0645\u0648\u0637\u0648\u0631 \u0646\u0634\u0627\u0641 70 \u0648\u0627\u0637",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 11,
+        "product_id": 10,
+        "storage_path": "product-images/TF-WM-010/metal-bearing-hub.png",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0628\u0648\u0644\u064a \u0645\u0648\u0637\u0648\u0631 \u0646\u0634\u0627\u0641",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 12,
+        "product_id": 11,
+        "storage_path": "product-images/TF-WM-011/countersunk-screws.png",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0641\u064a\u0633 \u0641\u0631\u0627\u0643\u0629",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 13,
+        "product_id": 12,
+        "storage_path": "product-images/TF-WM-012/TF-WM-012-water-seal.jpg",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u062c\u0644\u062f\u0629 \u0627\u0644\u0645\u0627\u0621",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 14,
+        "product_id": 13,
+        "storage_path": "product-images/TF-WM-013/TF-WM-013-water-selector-timer.jpg",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0645\u0646\u062a\u0631\u064a \u0627\u0644\u0645\u0627\u0621 \u0633\u0644\u0643\u062a\u0648\u0631",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 15,
+        "product_id": 14,
+        "storage_path": "product-images/TF-WM-014/long-coil-spring.png",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0631\u0648\u0633\u0648\u0644 \u062c\u0644\u062f\u0629 \u0627\u0644\u0645\u0627\u0621",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 16,
+        "product_id": 15,
+        "storage_path": "product-images/TF-WM-015/small-white-timer-two-wires.png",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0645\u0646\u062a\u0631\u064a \u0646\u0634\u0627\u0641 \u0628\u062e\u064a\u0637\u064a\u0646",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 17,
+        "product_id": 16,
+        "storage_path": "product-images/TF-WM-016/large-grey-pulley.png",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0628\u0648\u0644\u064a \u0645\u0648\u0637\u0648\u0631 \u0627\u0644\u0635\u0627\u0628\u0648\u0646",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 18,
+        "product_id": 17,
+        "storage_path": "product-images/TF-WM-017/capacitor-12-5uf.png",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0643\u0648\u0646\u062f\u0646\u0633\u0627\u062a\u0648\u0631 12/5 \u00b5F",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 19,
+        "product_id": 18,
+        "storage_path": "product-images/TF-WM-018/TF-WM-018-lg-double-timer.jpg",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0645\u0646\u062a\u0631\u064a LG \u062f\u0648\u0628\u0644",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 20,
+        "product_id": 19,
+        "storage_path": "product-images/TF-RF-001/TF-RF-001-copper-brazing-flux.jpg",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0628\u0648\u062f\u0631 \u0646\u062d\u0627\u0633 \u0623\u0632\u0631\u0642 FLUX-4",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 21,
+        "product_id": 20,
+        "storage_path": "product-images/shared/three-metal-coupling-heads.png",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0631\u0627\u0643\u0648\u0631 \u0625\u0643\u0631\u0648 \u0646\u062d\u0627\u0633 \u0648\u0645\u0627\u0645\u0644\u0648 \u062e\u0627\u0648\u064a \u0646\u062d\u0627\u0633",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 22,
+        "product_id": 21,
+        "storage_path": "product-images/shared/three-metal-coupling-heads.png",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0631\u0627\u0643\u0648\u0631 \u0625\u0643\u0631\u0648 \u0646\u062d\u0627\u0633 \u0648\u0645\u0627\u0645\u0644\u0648 \u062e\u0627\u0648\u064a \u0646\u062d\u0627\u0633",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 23,
+        "product_id": 22,
+        "storage_path": "product-images/TF-RF-004/TF-RF-004-aluminium-flux-powder.jpg",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0628\u0648\u062f\u0631 \u0623\u0644\u0645\u0646\u064a\u0648\u0645 F407",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 24,
+        "product_id": 23,
+        "storage_path": "product-images/TF-RF-005/TF-RF-005-single-gas-manometer.jpg",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0645\u0627\u0646\u0648 \u063a\u0627\u0632 \u0628\u0631\u0648 CT-467",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 25,
+        "product_id": 24,
+        "storage_path": "product-images/TF-RF-006/TF-RF-006-vacuum-pump.jpg",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0628\u0648\u0645\u0628\u0627 \u0641\u064a\u062f",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 26,
+        "product_id": 25,
+        "storage_path": "product-images/TF-RF-007/TF-RF-007-fridge-fan-12v.jpg",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0641\u0631\u0641\u0627\u0631\u0629 \u062b\u0644\u0627\u062c\u0629 12V \u0628\u062b\u0644\u0627\u062b\u0629 \u062e\u064a\u0648\u0637",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 27,
+        "product_id": 26,
+        "storage_path": "product-images/TF-RF-008/TF-RF-008-large-flaring-kit.jpg",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u062f\u064a\u062f\u062c\u0646\u064a\u0631 \u0643\u0628\u064a\u0631 \u0627\u062d\u062a\u0631\u0627\u0641\u064a",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 28,
+        "product_id": 27,
+        "storage_path": "product-images/TF-RF-009/TF-RF-009-small-flaring-tool.jpg",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u062f\u064a\u062f\u062c\u0646\u064a\u0631 \u0635\u063a\u064a\u0631",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 29,
+        "product_id": 28,
+        "storage_path": "product-images/TF-RF-010/TF-RF-010-r32-gas-3kg.jpg",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u063a\u0627\u0632 \u0627\u0644\u062a\u0628\u0631\u064a\u062f R32 \u062d\u062c\u0645 3kg",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 30,
+        "product_id": 29,
+        "storage_path": "product-images/TF-RF-011/TF-RF-011-red-flaring-tool.jpg",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u062f\u064a\u062f\u062c\u0646\u064a\u0631 \u062d\u0645\u0631\u0629 \u0627\u062d\u062a\u0631\u0627\u0641\u064a",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 31,
+        "product_id": 30,
+        "storage_path": "product-images/TF-RF-012/TF-RF-012-lg-ac-fan.jpg",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0641\u0631\u0641\u0627\u0631\u0629 \u0645\u0643\u064a\u0641 LG",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 32,
+        "product_id": 31,
+        "storage_path": "product-images/TF-RF-013/TF-RF-013-universal-ac-remote.jpg",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u062a\u0644\u0643\u0645\u0648\u0646\u062f \u0645\u0643\u064a\u0641 \u064a\u0648\u0646\u064a\u0641\u0631\u0633\u0627\u0644",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 33,
+        "product_id": 32,
+        "storage_path": "product-images/TF-RF-014/TF-RF-014-fast-valve.jpg",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0641\u0627\u0644\u0641 \u0631\u0627\u0628\u064a\u062f",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 34,
+        "product_id": 33,
+        "storage_path": "product-images/TF-RF-015/TF-RF-015-filter-drier.jpg",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0641\u0644\u062a\u0631 \u0646\u062d\u0627\u0633 \u0625\u064a\u0637\u0627\u0644\u064a",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 35,
+        "product_id": 34,
+        "storage_path": "product-images/TF-RF-016/TF-RF-016-large-tube-cutter.jpg",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0643\u0648\u0628 \u062a\u064a\u0628 \u0643\u0628\u064a\u0631",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 36,
+        "product_id": 35,
+        "storage_path": "product-images/TF-RF-017/TF-RF-017-double-manifold.jpg",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0645\u0627\u0646\u0648 \u063a\u0627\u0632 \u062f\u0648\u0628\u0644 \u0623\u0635\u0641\u0631",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 37,
+        "product_id": 36,
+        "storage_path": "product-images/TF-RF-018/TF-RF-018-refrigerator-timer.jpg",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0645\u0646\u062a\u0631\u064a \u062b\u0644\u0627\u062c\u0629",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 38,
+        "product_id": 37,
+        "storage_path": "product-images/TF-RF-019/TF-RF-019-black-fridge-fan-220v.jpg",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0641\u0631\u0641\u0627\u0631\u0629 \u062b\u0644\u0627\u062c\u0629 \u0633\u0648\u062f\u0627\u0621 220V",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 39,
+        "product_id": 38,
+        "storage_path": "product-images/TF-RF-020/TF-RF-020-r22-gas-1kg.jpg",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u063a\u0627\u0632 \u0627\u0644\u062a\u0628\u0631\u064a\u062f R22 \u062d\u062c\u0645 1kg",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 40,
+        "product_id": 39,
+        "storage_path": "product-images/shared/TF-RF-021-022-charging-heads.jpg",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0631\u0627\u0633 \u0634\u0627\u0631\u062c R600",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 41,
+        "product_id": 40,
+        "storage_path": "product-images/shared/TF-RF-021-022-charging-heads.jpg",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0631\u0624\u0648\u0633 \u0634\u062d\u0646 \u0627\u0644\u0645\u0643\u064a\u0641\u0627\u062a",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 42,
+        "product_id": 41,
+        "storage_path": "product-images/TF-WM-019/poli_10.jpg",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0628\u0648\u0644\u064a 10",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 43,
+        "product_id": 42,
+        "storage_path": "product-images/TF-WM-020/poli_11.jpg",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0628\u0648\u0644\u064a 11",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 44,
+        "product_id": 43,
+        "storage_path": "product-images/TF-WM-021/poli_kari.jpg",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0628\u0648\u0644\u064a \u0643\u0627\u0631\u064a",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 45,
+        "product_id": 44,
+        "storage_path": "product-images/TF-WM-022/dryer-foot.png",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0631\u062c\u0644 \u0646\u0634\u0627\u0641",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 46,
+        "product_id": 45,
+        "storage_path": "product-images/TF-WM-023/door-spring.png",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0631\u0648\u0633\u0648\u0644 \u0628\u0627\u0628",
+        "sort_order": 1,
+        "is_primary": true
+    },
+    {
+        "id": 47,
+        "product_id": 46,
+        "storage_path": "product-images/TF-WM-024/lg-pulley.png",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0628\u0648\u0644\u064a LG",
+        "sort_order": 1,
+        "is_primary": true
+    }
+]

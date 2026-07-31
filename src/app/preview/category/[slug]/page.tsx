@@ -1,0 +1,54 @@
+import type { Metadata } from "next";
+import { notFound } from "next/navigation";
+import { getPreviewCategoryBySlug, getPreviewProducts } from "@/lib/previewCatalog";
+import { PreviewProductCard } from "@/components/preview/PreviewProductCard";
+
+type Props = {
+  params: Promise<{ slug: string }>;
+};
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { slug } = await params;
+  const category = getPreviewCategoryBySlug(slug);
+  if (!category) return {};
+  return {
+    title: category.name_ar,
+    description:
+      category.description_ar ??
+      `منتجات ${category.name_ar} بالجملة من Tayssir Froid`,
+  };
+}
+
+export default async function PreviewCategoryPage({ params }: Props) {
+  const { slug } = await params;
+  const category = getPreviewCategoryBySlug(slug);
+
+  if (!category) {
+    notFound();
+  }
+
+  const products = getPreviewProducts({ categorySlug: slug, limit: 100 });
+
+  return (
+    <div className="mx-auto max-w-6xl px-4 py-6">
+      <h1 className="border-r-4 border-brand-turquoise pr-3 text-xl font-bold text-neutral-800">
+        {category.name_ar}
+      </h1>
+      {category.description_ar && (
+        <p className="mt-1 text-sm text-neutral-600">{category.description_ar}</p>
+      )}
+
+      {products.length === 0 ? (
+        <p className="mt-6 text-sm text-neutral-500">
+          لا توجد منتجات منشورة في هذا التصنيف حالياً.
+        </p>
+      ) : (
+        <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+          {products.map((product) => (
+            <PreviewProductCard key={product.id} product={product} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
