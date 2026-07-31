@@ -366,5 +366,13 @@
         "alt_text_ar": "\u0635\u0648\u0631\u0629 \u062c\u0644\u062f\u0629 \u0646\u0634\u0627\u0641 \u0628\u0631\u064a\u0633\u064a\u0633\u062a\u0648\u0628",
         "sort_order": 3,
         "is_primary": false
+    },
+    {
+        "id": 48,
+        "product_id": 47,
+        "storage_path": "product-images/TF-WM-025/dryer-seal-small-sera.jpg",
+        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u062c\u0644\u062f\u0629 \u0646\u0634\u0627\u0641 \u0635\u063a\u064a\u0631\u0629 \u0627\u0644\u062d\u062c\u0645 \u0628\u0627\u0643 \u0639\u0627\u062f\u064a (\u0633\u064a\u0631\u0627)",
+        "sort_order": 1,
+        "is_primary": true
     }
 ]
