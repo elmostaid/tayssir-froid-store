@@ -1,4 +1,5 @@
-import { sql } from "@/lib/db";
+import { sql, isDatabaseConfigured } from "@/lib/db";
+import { staticCatalog } from "@/lib/data/staticCatalogFallback";
 
 export type StoreSettings = {
   minOrderAmountMad: number;
@@ -17,6 +18,8 @@ const FALLBACK_SETTINGS: StoreSettings = {
 };
 
 export async function getSettings(): Promise<StoreSettings> {
+  if (!isDatabaseConfigured) return staticCatalog.settings;
+
   const rows = await sql<{ key: string; value: unknown }[]>`
     select key, value from public.settings
   `;

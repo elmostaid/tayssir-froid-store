@@ -1,0 +1,1811 @@
+{
+  "categories": [
+    {
+      "id": 33,
+      "slug": "standard-washing-machine-parts",
+      "name_ar": "قطع غيار آلات غسيل الملابس العادية",
+      "name_fr": "Pièces détachées pour machines à laver classiques",
+      "description_ar": null,
+      "parent_id": null,
+      "sort_order": 6
+    },
+    {
+      "id": 37,
+      "slug": "semi-automatic-washing-machine-parts",
+      "name_ar": "قطع غيار آلات غسيل الملابس نصف الأوتوماتيكية",
+      "name_fr": "Pièces détachées pour machines à laver semi-automatiques",
+      "description_ar": null,
+      "parent_id": null,
+      "sort_order": 7
+    },
+    {
+      "id": 36,
+      "slug": "automatic-washing-machine-parts",
+      "name_ar": "قطع غيار آلات غسيل الملابس الأوتوماتيكية",
+      "name_fr": "Pièces détachées pour machines à laver automatiques",
+      "description_ar": null,
+      "parent_id": null,
+      "sort_order": 8
+    },
+    {
+      "id": 32,
+      "slug": "refrigerator-spare-parts",
+      "name_ar": "قطع غيار الثلاجات",
+      "name_fr": "Pièces détachées pour réfrigérateurs",
+      "description_ar": null,
+      "parent_id": null,
+      "sort_order": 9
+    },
+    {
+      "id": 29,
+      "slug": "freezer-spare-parts",
+      "name_ar": "قطع غيار المجمدات",
+      "name_fr": "Pièces détachées pour congélateurs",
+      "description_ar": null,
+      "parent_id": null,
+      "sort_order": 10
+    },
+    {
+      "id": 26,
+      "slug": "blender-parts",
+      "name_ar": "قطع غيار خلاط العصير",
+      "name_fr": "Pièces détachées pour mixeurs",
+      "description_ar": null,
+      "parent_id": null,
+      "sort_order": 11
+    },
+    {
+      "id": 31,
+      "slug": "pressure-cooker-parts",
+      "name_ar": "قطع غيار الكوكوط (طنجرة الضغط)",
+      "name_fr": "Pièces détachées pour cocottes-minute et autocuiseurs",
+      "description_ar": null,
+      "parent_id": null,
+      "sort_order": 12
+    },
+    {
+      "id": 34,
+      "slug": "electric-oven-parts",
+      "name_ar": "قطع غيار الفرن الكهربائي",
+      "name_fr": "Pièces détachées pour fours électriques",
+      "description_ar": null,
+      "parent_id": null,
+      "sort_order": 13
+    },
+    {
+      "id": 38,
+      "slug": "gas-oven-parts",
+      "name_ar": "قطع غيار الفرن الغازي",
+      "name_fr": "Pièces détachées pour fours à gaz",
+      "description_ar": null,
+      "parent_id": null,
+      "sort_order": 14
+    },
+    {
+      "id": 30,
+      "slug": "panini-maker-parts",
+      "name_ar": "قطع غيار البانيني",
+      "name_fr": "Pièces détachées pour appareils à panini",
+      "description_ar": null,
+      "parent_id": null,
+      "sort_order": 15
+    },
+    {
+      "id": 27,
+      "slug": "gas-water-heater-parts",
+      "name_ar": "قطع غيار سخان الماء الغازي",
+      "name_fr": "Pièces détachées pour chauffe-eau à gaz",
+      "description_ar": null,
+      "parent_id": null,
+      "sort_order": 16
+    },
+    {
+      "id": 28,
+      "slug": "electric-water-heater-parts",
+      "name_ar": "قطع غيار سخان الماء الكهربائي",
+      "name_fr": "Pièces détachées pour chauffe-eau électriques",
+      "description_ar": null,
+      "parent_id": null,
+      "sort_order": 17
+    },
+    {
+      "id": 35,
+      "slug": "split-ac-parts",
+      "name_ar": "قطع غيار المكيفات المنزلية سبليت",
+      "name_fr": "Pièces détachées pour climatiseurs Split résidentiels",
+      "description_ar": null,
+      "parent_id": null,
+      "sort_order": 18
+    }
+  ],
+  "products": [
+    {
+      "id": 119,
+      "sku": "TF-WM-024",
+      "slug": "lg-pulley",
+      "category_id": 33,
+      "category_slug": "standard-washing-machine-parts",
+      "category_name_ar": "قطع غيار آلات غسيل الملابس العادية",
+      "name_ar": "بولي LG",
+      "name_fr": null,
+      "description_ar": null,
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 10,
+      "qty_increment": 1,
+      "sale_price": "60.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T23:00:21.503Z",
+      "primary_image_path": "product-images/TF-WM-024/lg-pulley.png",
+      "status": "published"
+    },
+    {
+      "id": 118,
+      "sku": "TF-WM-023",
+      "slug": "door-spring",
+      "category_id": 33,
+      "category_slug": "standard-washing-machine-parts",
+      "category_name_ar": "قطع غيار آلات غسيل الملابس العادية",
+      "name_ar": "روسول باب",
+      "name_fr": null,
+      "description_ar": null,
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 10,
+      "qty_increment": 1,
+      "sale_price": "4.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T23:00:21.502Z",
+      "primary_image_path": "product-images/TF-WM-023/door-spring.png",
+      "status": "published"
+    },
+    {
+      "id": 117,
+      "sku": "TF-WM-022",
+      "slug": "dryer-foot-mount",
+      "category_id": 33,
+      "category_slug": "standard-washing-machine-parts",
+      "category_name_ar": "قطع غيار آلات غسيل الملابس العادية",
+      "name_ar": "رجل نشاف",
+      "name_fr": null,
+      "description_ar": null,
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 10,
+      "qty_increment": 1,
+      "sale_price": "8.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T23:00:21.491Z",
+      "primary_image_path": "product-images/TF-WM-022/dryer-foot.png",
+      "status": "published"
+    },
+    {
+      "id": 98,
+      "sku": "TF-WM-021",
+      "slug": "washing-machine-pulley-square",
+      "category_id": 33,
+      "category_slug": "standard-washing-machine-parts",
+      "category_name_ar": "قطع غيار آلات غسيل الملابس العادية",
+      "name_ar": "بولي كاري",
+      "name_fr": "Poulie carrée",
+      "description_ar": "بولي متوفر بثلاثة موديلات: 10 و11 وكاري، مخصص لآلات غسيل الملابس العادية.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 10,
+      "qty_increment": 1,
+      "sale_price": "32.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T19:02:30.357Z",
+      "primary_image_path": "product-images/TF-WM-021/poli_kari.jpg",
+      "status": "published"
+    },
+    {
+      "id": 97,
+      "sku": "TF-WM-020",
+      "slug": "washing-machine-pulley-11",
+      "category_id": 33,
+      "category_slug": "standard-washing-machine-parts",
+      "category_name_ar": "قطع غيار آلات غسيل الملابس العادية",
+      "name_ar": "بولي 11",
+      "name_fr": "Poulie 11",
+      "description_ar": "بولي متوفر بثلاثة موديلات: 10 و11 وكاري، مخصص لآلات غسيل الملابس العادية.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 10,
+      "qty_increment": 1,
+      "sale_price": "32.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T19:02:30.354Z",
+      "primary_image_path": "product-images/TF-WM-020/poli_11.jpg",
+      "status": "published"
+    },
+    {
+      "id": 96,
+      "sku": "TF-WM-019",
+      "slug": "washing-machine-pulley-10",
+      "category_id": 33,
+      "category_slug": "standard-washing-machine-parts",
+      "category_name_ar": "قطع غيار آلات غسيل الملابس العادية",
+      "name_ar": "بولي 10",
+      "name_fr": "Poulie 10",
+      "description_ar": "بولي متوفر بثلاثة موديلات: 10 و11 وكاري، مخصص لآلات غسيل الملابس العادية.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 10,
+      "qty_increment": 1,
+      "sale_price": "32.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T19:02:30.286Z",
+      "primary_image_path": "product-images/TF-WM-019/poli_10.jpg",
+      "status": "published"
+    },
+    {
+      "id": 68,
+      "sku": "TF-RF-022",
+      "slug": "air-conditioning-charging-heads",
+      "category_id": 35,
+      "category_slug": "split-ac-parts",
+      "category_name_ar": "قطع غيار المكيفات المنزلية سبليت",
+      "name_ar": "رؤوس شحن المكيفات",
+      "name_fr": "Raccords de charge pour climatisation",
+      "description_ar": "رؤوس شحن متوفرة لغازات وتطبيقات السيارة وR1234 وR410.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 1,
+      "qty_increment": 1,
+      "sale_price": "25.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T07:19:07.409Z",
+      "primary_image_path": "product-images/shared/TF-RF-021-022-charging-heads.jpg",
+      "status": "published"
+    },
+    {
+      "id": 67,
+      "sku": "TF-RF-021",
+      "slug": "r600-charging-head",
+      "category_id": 32,
+      "category_slug": "refrigerator-spare-parts",
+      "category_name_ar": "قطع غيار الثلاجات",
+      "name_ar": "راس شارج R600",
+      "name_fr": "Raccord de charge R600",
+      "description_ar": "راس شارج R600 مخصص لخدمة دوائر تبريد الثلاجات المتوافقة.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 1,
+      "qty_increment": 1,
+      "sale_price": "22.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T07:19:07.408Z",
+      "primary_image_path": "product-images/shared/TF-RF-021-022-charging-heads.jpg",
+      "status": "published"
+    },
+    {
+      "id": 66,
+      "sku": "TF-RF-020",
+      "slug": "refrigerant-gas-r22-1kg",
+      "category_id": 35,
+      "category_slug": "split-ac-parts",
+      "category_name_ar": "قطع غيار المكيفات المنزلية سبليت",
+      "name_ar": "غاز التبريد R22 حجم 1kg",
+      "name_fr": "Gaz réfrigérant R22 — 1 kg",
+      "description_ar": "غاز تبريد R22 صافي بحجم 1kg للأنظمة المتوافقة.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 1,
+      "qty_increment": 1,
+      "sale_price": "350.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T07:19:07.406Z",
+      "primary_image_path": "product-images/TF-RF-020/TF-RF-020-r22-gas-1kg.jpg",
+      "status": "published"
+    },
+    {
+      "id": 65,
+      "sku": "TF-RF-019",
+      "slug": "black-refrigerator-fan-220v",
+      "category_id": 32,
+      "category_slug": "refrigerator-spare-parts",
+      "category_name_ar": "قطع غيار الثلاجات",
+      "name_ar": "فرفارة ثلاجة سوداء 220V",
+      "name_fr": "Ventilateur noir de réfrigérateur 220 V",
+      "description_ar": "فرفارة ثلاجة سوداء 220V بجودة عالية.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 1,
+      "qty_increment": 1,
+      "sale_price": "50.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T07:19:07.404Z",
+      "primary_image_path": "product-images/TF-RF-019/TF-RF-019-black-fridge-fan-220v.jpg",
+      "status": "published"
+    },
+    {
+      "id": 64,
+      "sku": "TF-RF-018",
+      "slug": "refrigerator-timer-models",
+      "category_id": 32,
+      "category_slug": "refrigerator-spare-parts",
+      "category_name_ar": "قطع غيار الثلاجات",
+      "name_ar": "منتري ثلاجة",
+      "name_fr": "Minuterie de réfrigérateur",
+      "description_ar": "منتري ثلاجة متوفرة بستة موديلات أصلية حسب الجهاز.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 1,
+      "qty_increment": 1,
+      "sale_price": "37.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T07:19:07.403Z",
+      "primary_image_path": "product-images/TF-RF-018/TF-RF-018-refrigerator-timer.jpg",
+      "status": "published"
+    },
+    {
+      "id": 63,
+      "sku": "TF-RF-017",
+      "slug": "double-refrigeration-manifold-yellow",
+      "category_id": 35,
+      "category_slug": "split-ac-parts",
+      "category_name_ar": "قطع غيار المكيفات المنزلية سبليت",
+      "name_ar": "مانو غاز دوبل أصفر",
+      "name_fr": "Manifold frigoriste double jaune",
+      "description_ar": "مانو غاز دوبل احترافي بالعدادين للعمل على دوائر التبريد والتكييف.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 1,
+      "qty_increment": 1,
+      "sale_price": "290.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T07:19:07.400Z",
+      "primary_image_path": "product-images/TF-RF-017/TF-RF-017-double-manifold.jpg",
+      "status": "published"
+    },
+    {
+      "id": 62,
+      "sku": "TF-RF-016",
+      "slug": "large-tube-cutter",
+      "category_id": 35,
+      "category_slug": "split-ac-parts",
+      "category_name_ar": "قطع غيار المكيفات المنزلية سبليت",
+      "name_ar": "كوب تيب كبير",
+      "name_fr": "Coupe-tube grand modèle",
+      "description_ar": "كوب تيب احترافي كبير لقطع أنابيب النحاس.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 1,
+      "qty_increment": 1,
+      "sale_price": "45.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T07:19:07.399Z",
+      "primary_image_path": "product-images/TF-RF-016/TF-RF-016-large-tube-cutter.jpg",
+      "status": "published"
+    },
+    {
+      "id": 61,
+      "sku": "TF-RF-015",
+      "slug": "italian-copper-filter-drier",
+      "category_id": 32,
+      "category_slug": "refrigerator-spare-parts",
+      "category_name_ar": "قطع غيار الثلاجات",
+      "name_ar": "فلتر نحاس إيطالي",
+      "name_fr": "Filtre déshydrateur cuivre italien",
+      "description_ar": "فلتر نحاس إيطالي متوفر بأوزان 15g و20g و30g.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 1,
+      "qty_increment": 1,
+      "sale_price": "9.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T07:19:07.397Z",
+      "primary_image_path": "product-images/TF-RF-015/TF-RF-015-filter-drier.jpg",
+      "status": "published"
+    },
+    {
+      "id": 60,
+      "sku": "TF-RF-014",
+      "slug": "quick-valve",
+      "category_id": 32,
+      "category_slug": "refrigerator-spare-parts",
+      "category_name_ar": "قطع غيار الثلاجات",
+      "name_ar": "فالف رابيد",
+      "name_fr": "Valve rapide",
+      "description_ar": "فالف رابيد سريع وسهل الاستعمال في أعمال التبريد.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 1,
+      "qty_increment": 1,
+      "sale_price": "18.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T07:19:07.395Z",
+      "primary_image_path": "product-images/TF-RF-014/TF-RF-014-fast-valve.jpg",
+      "status": "published"
+    },
+    {
+      "id": 59,
+      "sku": "TF-RF-013",
+      "slug": "universal-air-conditioner-remote",
+      "category_id": 35,
+      "category_slug": "split-ac-parts",
+      "category_name_ar": "قطع غيار المكيفات المنزلية سبليت",
+      "name_ar": "تلكموند مكيف يونيفرسال",
+      "name_fr": "Télécommande universelle de climatiseur",
+      "description_ar": "تلكموند يونيفرسال متوافقة مع عدد كبير من ماركات المكيفات.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 1,
+      "qty_increment": 1,
+      "sale_price": "45.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T07:19:07.394Z",
+      "primary_image_path": "product-images/TF-RF-013/TF-RF-013-universal-ac-remote.jpg",
+      "status": "published"
+    },
+    {
+      "id": 58,
+      "sku": "TF-RF-012",
+      "slug": "lg-air-conditioner-fan",
+      "category_id": 35,
+      "category_slug": "split-ac-parts",
+      "category_name_ar": "قطع غيار المكيفات المنزلية سبليت",
+      "name_ar": "فرفارة مكيف LG",
+      "name_fr": "Ventilateur de climatiseur LG",
+      "description_ar": "فرفارة متوافقة مع موديلات مكيف LG المناسبة.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 1,
+      "qty_increment": 1,
+      "sale_price": "170.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T07:19:07.391Z",
+      "primary_image_path": "product-images/TF-RF-012/TF-RF-012-lg-ac-fan.jpg",
+      "status": "published"
+    },
+    {
+      "id": 57,
+      "sku": "TF-RF-011",
+      "slug": "professional-eccentric-flaring-tool",
+      "category_id": 35,
+      "category_slug": "split-ac-parts",
+      "category_name_ar": "قطع غيار المكيفات المنزلية سبليت",
+      "name_ar": "ديدجنير حمرة احترافي",
+      "name_fr": "Outil d’évasement excentrique professionnel",
+      "description_ar": "أداة احترافية لتطويع أنابيب النحاس بدقة في أنظمة التبريد والتكييف.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 1,
+      "qty_increment": 1,
+      "sale_price": "320.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T07:19:07.390Z",
+      "primary_image_path": "product-images/TF-RF-011/TF-RF-011-red-flaring-tool.jpg",
+      "status": "published"
+    },
+    {
+      "id": 56,
+      "sku": "TF-RF-010",
+      "slug": "refrigerant-gas-r32-3kg",
+      "category_id": 35,
+      "category_slug": "split-ac-parts",
+      "category_name_ar": "قطع غيار المكيفات المنزلية سبليت",
+      "name_ar": "غاز التبريد R32 حجم 3kg",
+      "name_fr": "Gaz réfrigérant R32 — 3 kg",
+      "description_ar": "غاز تبريد R32 حجم 3kg لأنظمة التكييف المتوافقة.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 1,
+      "qty_increment": 1,
+      "sale_price": "800.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T07:19:07.389Z",
+      "primary_image_path": "product-images/TF-RF-010/TF-RF-010-r32-gas-3kg.jpg",
+      "status": "published"
+    },
+    {
+      "id": 55,
+      "sku": "TF-RF-009",
+      "slug": "compact-flaring-tool",
+      "category_id": 35,
+      "category_slug": "split-ac-parts",
+      "category_name_ar": "قطع غيار المكيفات المنزلية سبليت",
+      "name_ar": "ديدجنير صغير",
+      "name_fr": "Outil d’évasement compact",
+      "description_ar": "ديدجنير صغير لمقاسات أنابيب النحاس بجودة عالية.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 1,
+      "qty_increment": 1,
+      "sale_price": "130.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T07:19:07.387Z",
+      "primary_image_path": "product-images/TF-RF-009/TF-RF-009-small-flaring-tool.jpg",
+      "status": "published"
+    },
+    {
+      "id": 54,
+      "sku": "TF-RF-008",
+      "slug": "professional-flaring-kit-large",
+      "category_id": 35,
+      "category_slug": "split-ac-parts",
+      "category_name_ar": "قطع غيار المكيفات المنزلية سبليت",
+      "name_ar": "ديدجنير كبير احترافي",
+      "name_fr": "Coffret d’évasement professionnel grand modèle",
+      "description_ar": "طقم احترافي كبير لتوسيع وتطويع أنابيب النحاس.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 1,
+      "qty_increment": 1,
+      "sale_price": "320.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T07:19:07.385Z",
+      "primary_image_path": "product-images/TF-RF-008/TF-RF-008-large-flaring-kit.jpg",
+      "status": "published"
+    },
+    {
+      "id": 53,
+      "sku": "TF-RF-007",
+      "slug": "refrigerator-fan-12v-three-wires",
+      "category_id": 32,
+      "category_slug": "refrigerator-spare-parts",
+      "category_name_ar": "قطع غيار الثلاجات",
+      "name_ar": "فرفارة ثلاجة 12V بثلاثة خيوط",
+      "name_fr": "Ventilateur de réfrigérateur 12 V à 3 fils",
+      "description_ar": "فرفارة ثلاجة 12V بثلاثة خيوط للتبريد الداخلي.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 1,
+      "qty_increment": 1,
+      "sale_price": "130.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T07:19:07.382Z",
+      "primary_image_path": "product-images/TF-RF-007/TF-RF-007-fridge-fan-12v.jpg",
+      "status": "published"
+    },
+    {
+      "id": 52,
+      "sku": "TF-RF-006",
+      "slug": "vacuum-pump",
+      "category_id": 35,
+      "category_slug": "split-ac-parts",
+      "category_name_ar": "قطع غيار المكيفات المنزلية سبليت",
+      "name_ar": "بومبا فيد",
+      "name_fr": "Pompe à vide",
+      "description_ar": "بومبا فيد لتفريغ الهواء من دوائر التبريد والتكييف.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 1,
+      "qty_increment": 1,
+      "sale_price": "900.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T07:19:07.381Z",
+      "primary_image_path": "product-images/TF-RF-006/TF-RF-006-vacuum-pump.jpg",
+      "status": "published"
+    },
+    {
+      "id": 51,
+      "sku": "TF-RF-005",
+      "slug": "single-gas-manometer-ct-467",
+      "category_id": 32,
+      "category_slug": "refrigerator-spare-parts",
+      "category_name_ar": "قطع غيار الثلاجات",
+      "name_ar": "مانو غاز برو CT-467",
+      "name_fr": "Manomètre gaz Pro CT-467",
+      "description_ar": "مانو غاز أحادي CT-467 مناسب لأعمال التبريد ومختلف غازات التبريد.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 1,
+      "qty_increment": 1,
+      "sale_price": "85.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T07:19:07.379Z",
+      "primary_image_path": "product-images/TF-RF-005/TF-RF-005-single-gas-manometer.jpg",
+      "status": "published"
+    },
+    {
+      "id": 50,
+      "sku": "TF-RF-004",
+      "slug": "aluminium-flux-powder-f407",
+      "category_id": 32,
+      "category_slug": "refrigerator-spare-parts",
+      "category_name_ar": "قطع غيار الثلاجات",
+      "name_ar": "بودر ألمنيوم F407",
+      "name_fr": "Décapant aluminium F407",
+      "description_ar": "بودر سماوي خاص بلحام الألمنيوم بجودة عالية.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 1,
+      "qty_increment": 1,
+      "sale_price": "45.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T07:19:07.377Z",
+      "primary_image_path": "product-images/TF-RF-004/TF-RF-004-aluminium-flux-powder.jpg",
+      "status": "published"
+    },
+    {
+      "id": 49,
+      "sku": "TF-RF-003",
+      "slug": "hollow-brass-mamelon",
+      "category_id": 35,
+      "category_slug": "split-ac-parts",
+      "category_name_ar": "قطع غيار المكيفات المنزلية سبليت",
+      "name_ar": "ماملو خاوي نحاس",
+      "name_fr": "Mamelon creux en laiton",
+      "description_ar": "ماملو خاوي نحاس متوفر بخمسة مقاسات لأنظمة التبريد والتكييف.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 1,
+      "qty_increment": 1,
+      "sale_price": "15.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T07:19:07.375Z",
+      "primary_image_path": "product-images/shared/three-metal-coupling-heads.png",
+      "status": "published"
+    },
+    {
+      "id": 48,
+      "sku": "TF-RF-002",
+      "slug": "brass-flare-nut-raccord",
+      "category_id": 35,
+      "category_slug": "split-ac-parts",
+      "category_name_ar": "قطع غيار المكيفات المنزلية سبليت",
+      "name_ar": "راكور إكرو نحاس",
+      "name_fr": "Raccord écrou en laiton",
+      "description_ar": "راكور إكرو نحاس متوفر بخمسة مقاسات لأنظمة التبريد والتكييف.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 1,
+      "qty_increment": 1,
+      "sale_price": "8.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T07:19:07.372Z",
+      "primary_image_path": "product-images/shared/three-metal-coupling-heads.png",
+      "status": "published"
+    },
+    {
+      "id": 47,
+      "sku": "TF-RF-001",
+      "slug": "copper-brazing-flux-blue-flux-4",
+      "category_id": 32,
+      "category_slug": "refrigerator-spare-parts",
+      "category_name_ar": "قطع غيار الثلاجات",
+      "name_ar": "بودر نحاس أزرق FLUX-4",
+      "name_fr": "Flux de brasage cuivre bleu FLUX-4",
+      "description_ar": "بودر ديكابون خاص بلحام النحاس بجودة عالية.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 1,
+      "qty_increment": 1,
+      "sale_price": "20.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T07:19:07.356Z",
+      "primary_image_path": "product-images/TF-RF-001/TF-RF-001-copper-brazing-flux.jpg",
+      "status": "published"
+    },
+    {
+      "id": 36,
+      "sku": "TF-WM-018",
+      "slug": "lg-double-timer",
+      "category_id": 33,
+      "category_slug": "standard-washing-machine-parts",
+      "category_name_ar": "قطع غيار آلات غسيل الملابس العادية",
+      "name_ar": "منتري LG دوبل",
+      "name_fr": "Minuterie double LG",
+      "description_ar": "منتري LG دوبل مخصص لآلات غسيل الملابس العادية المتوافقة.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 10,
+      "qty_increment": 1,
+      "sale_price": "22.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T06:26:52.022Z",
+      "primary_image_path": "product-images/TF-WM-018/TF-WM-018-lg-double-timer.jpg",
+      "status": "published"
+    },
+    {
+      "id": 35,
+      "sku": "TF-WM-017",
+      "slug": "capacitor-12-5uf",
+      "category_id": 33,
+      "category_slug": "standard-washing-machine-parts",
+      "category_name_ar": "قطع غيار آلات غسيل الملابس العادية",
+      "name_ar": "كوندنساتور 12/5 µF",
+      "name_fr": "Condensateur 12/5 µF",
+      "description_ar": "كوندنساتور بمقاس 12/5 µF، مخصص لآلات غسيل الملابس العادية.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 10,
+      "qty_increment": 1,
+      "sale_price": "13.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T06:26:52.021Z",
+      "primary_image_path": "product-images/TF-WM-017/capacitor-12-5uf.png",
+      "status": "published"
+    },
+    {
+      "id": 34,
+      "sku": "TF-WM-016",
+      "slug": "wash-motor-pulley",
+      "category_id": 33,
+      "category_slug": "standard-washing-machine-parts",
+      "category_name_ar": "قطع غيار آلات غسيل الملابس العادية",
+      "name_ar": "بولي موطور الصابون",
+      "name_fr": "Poulie de moteur de lavage",
+      "description_ar": "بولي خاص بموطور الصابون بمواصفات ستاندار، متوافق مع عدة آلات غسيل ملابس عادية.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 10,
+      "qty_increment": 1,
+      "sale_price": "16.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T06:26:52.020Z",
+      "primary_image_path": "product-images/TF-WM-016/large-grey-pulley.png",
+      "status": "published"
+    },
+    {
+      "id": 33,
+      "sku": "TF-WM-015",
+      "slug": "dryer-timer-2-wires",
+      "category_id": 33,
+      "category_slug": "standard-washing-machine-parts",
+      "category_name_ar": "قطع غيار آلات غسيل الملابس العادية",
+      "name_ar": "منتري نشاف بخيطين",
+      "name_fr": "Minuterie d’essorage à 2 fils",
+      "description_ar": "منتري خاص بموطور النشاف بخيطين، بمواصفات ستاندار لآلات غسيل الملابس العادية.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 10,
+      "qty_increment": 1,
+      "sale_price": "9.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T06:26:52.019Z",
+      "primary_image_path": "product-images/TF-WM-015/small-white-timer-two-wires.png",
+      "status": "published"
+    },
+    {
+      "id": 32,
+      "sku": "TF-WM-014",
+      "slug": "water-seal-spring",
+      "category_id": 33,
+      "category_slug": "standard-washing-machine-parts",
+      "category_name_ar": "قطع غيار آلات غسيل الملابس العادية",
+      "name_ar": "روسول جلدة الماء",
+      "name_fr": "Ressort de joint d’eau",
+      "description_ar": "روسول خاص بجلدة الماء، بمقاس ستاندار ومتوافق مع عدة آلات غسيل ملابس عادية.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 10,
+      "qty_increment": 1,
+      "sale_price": "2.50",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T06:26:52.017Z",
+      "primary_image_path": "product-images/TF-WM-014/long-coil-spring.png",
+      "status": "published"
+    },
+    {
+      "id": 31,
+      "sku": "TF-WM-013",
+      "slug": "water-selector-timer",
+      "category_id": 33,
+      "category_slug": "standard-washing-machine-parts",
+      "category_name_ar": "قطع غيار آلات غسيل الملابس العادية",
+      "name_ar": "منتري الماء سلكتور",
+      "name_fr": "Sélecteur d’eau",
+      "description_ar": "منتري ماء سلكتور بمواصفات ستاندار، متوافق مع عدة آلات غسيل ملابس عادية.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 10,
+      "qty_increment": 1,
+      "sale_price": "14.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T06:26:52.014Z",
+      "primary_image_path": "product-images/TF-WM-013/TF-WM-013-water-selector-timer.jpg",
+      "status": "published"
+    },
+    {
+      "id": 30,
+      "sku": "TF-WM-012",
+      "slug": "water-seal",
+      "category_id": 33,
+      "category_slug": "standard-washing-machine-parts",
+      "category_name_ar": "قطع غيار آلات غسيل الملابس العادية",
+      "name_ar": "جلدة الماء",
+      "name_fr": "Joint d’étanchéité d’eau",
+      "description_ar": "جلدة ماء مانعة للتسرب، متوفرة بمقاسات تناسب عدة آلات غسيل ملابس عادية.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 10,
+      "qty_increment": 1,
+      "sale_price": "5.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T06:26:52.013Z",
+      "primary_image_path": "product-images/TF-WM-012/TF-WM-012-water-seal.jpg",
+      "status": "published"
+    },
+    {
+      "id": 29,
+      "sku": "TF-WM-011",
+      "slug": "friction-screw",
+      "category_id": 33,
+      "category_slug": "standard-washing-machine-parts",
+      "category_name_ar": "قطع غيار آلات غسيل الملابس العادية",
+      "name_ar": "فيس فراكة",
+      "name_fr": "Vis de friction",
+      "description_ar": "فيس فراكة مخصص لتركيب أجزاء آلات غسيل الملابس العادية.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 10,
+      "qty_increment": 1,
+      "sale_price": "2.50",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T06:26:52.012Z",
+      "primary_image_path": "product-images/TF-WM-011/countersunk-screws.png",
+      "status": "published"
+    },
+    {
+      "id": 28,
+      "sku": "TF-WM-010",
+      "slug": "dryer-motor-pulley",
+      "category_id": 33,
+      "category_slug": "standard-washing-machine-parts",
+      "category_name_ar": "قطع غيار آلات غسيل الملابس العادية",
+      "name_ar": "بولي موطور نشاف",
+      "name_fr": "Poulie de moteur d’essorage",
+      "description_ar": "بولي موطور نشاف بمواصفات ستاندار، متوافق مع عدة آلات غسيل ملابس عادية.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 10,
+      "qty_increment": 1,
+      "sale_price": "13.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T06:26:52.010Z",
+      "primary_image_path": "product-images/TF-WM-010/metal-bearing-hub.png",
+      "status": "published"
+    },
+    {
+      "id": 27,
+      "sku": "TF-WM-009",
+      "slug": "dryer-motor-70w",
+      "category_id": 33,
+      "category_slug": "standard-washing-machine-parts",
+      "category_name_ar": "قطع غيار آلات غسيل الملابس العادية",
+      "name_ar": "موطور نشاف 70 واط",
+      "name_fr": "Moteur d’essorage 70 W",
+      "description_ar": "موطور نشاف بقوة 70 واط بمواصفات ستاندار، مخصص لآلات غسيل الملابس العادية.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 10,
+      "qty_increment": 1,
+      "sale_price": "68.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T06:26:52.009Z",
+      "primary_image_path": "product-images/TF-WM-009/motor-type-b-round-gold.png",
+      "status": "published"
+    },
+    {
+      "id": 26,
+      "sku": "TF-WM-008",
+      "slug": "washing-machine-water-hose",
+      "category_id": 33,
+      "category_slug": "standard-washing-machine-parts",
+      "category_name_ar": "قطع غيار آلات غسيل الملابس العادية",
+      "name_ar": "تيو الماء",
+      "name_fr": "Tuyau d’eau pour machine à laver",
+      "description_ar": "تيو ماء ستاندار ومرن، متوافق مع عدة أنواع من آلات غسيل الملابس العادية.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 10,
+      "qty_increment": 1,
+      "sale_price": "9.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T06:26:52.006Z",
+      "primary_image_path": "product-images/TF-WM-008/white-corrugated-hoses.png",
+      "status": "published"
+    },
+    {
+      "id": 25,
+      "sku": "TF-WM-007",
+      "slug": "wash-timer-3-wires",
+      "category_id": 33,
+      "category_slug": "standard-washing-machine-parts",
+      "category_name_ar": "قطع غيار آلات غسيل الملابس العادية",
+      "name_ar": "منتري صابون 3 خيوط",
+      "name_fr": "Minuterie de lavage à 3 fils",
+      "description_ar": "منتري صابون ستاندار بـ3 خيوط للتحكم في مدة الغسل، متوافق مع عدة آلات غسيل عادية.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 10,
+      "qty_increment": 1,
+      "sale_price": "13.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T06:26:52.004Z",
+      "primary_image_path": "product-images/TF-WM-007/black-timer-three-wires.png",
+      "status": "published"
+    },
+    {
+      "id": 24,
+      "sku": "TF-WM-006",
+      "slug": "washing-machine-belt",
+      "category_id": 33,
+      "category_slug": "standard-washing-machine-parts",
+      "category_name_ar": "قطع غيار آلات غسيل الملابس العادية",
+      "name_ar": "كروة الغسالة",
+      "name_fr": "Courroie de machine à laver",
+      "description_ar": "كروة متينة لآلات غسيل الملابس العادية، متوفرة بمقاسات متعددة.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 10,
+      "qty_increment": 1,
+      "sale_price": "7.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T06:26:52.003Z",
+      "primary_image_path": "product-images/TF-WM-006/v-belts.png",
+      "status": "published"
+    },
+    {
+      "id": 23,
+      "sku": "TF-WM-005",
+      "slug": "wash-motor-150w",
+      "category_id": 33,
+      "category_slug": "standard-washing-machine-parts",
+      "category_name_ar": "قطع غيار آلات غسيل الملابس العادية",
+      "name_ar": "موطور صابون 150 واط",
+      "name_fr": "Moteur de lavage 150 W",
+      "description_ar": "موطور صابون بقوة 150 واط بمواصفات ستاندار، مخصص لآلات غسيل الملابس العادية.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 10,
+      "qty_increment": 1,
+      "sale_price": "88.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T06:26:52.001Z",
+      "primary_image_path": "product-images/TF-WM-005/motor-type-a-label.png",
+      "status": "published"
+    },
+    {
+      "id": 22,
+      "sku": "TF-WM-004",
+      "slug": "dryer-pressostat-seal",
+      "category_id": 33,
+      "category_slug": "standard-washing-machine-parts",
+      "category_name_ar": "قطع غيار آلات غسيل الملابس العادية",
+      "name_ar": "جلدة نشاف بريسيستوب",
+      "name_fr": "Joint d’essorage Pressostat",
+      "description_ar": "جلدة موطور نشاف بريسيستوب بمواصفات ستاندار، متوافقة مع أغلب آلات غسيل الملابس العادية.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 10,
+      "qty_increment": 1,
+      "sale_price": "10.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T06:26:51.998Z",
+      "primary_image_path": "product-images/TF-WM-004/black-rubber-bellows.png",
+      "status": "published"
+    },
+    {
+      "id": 21,
+      "sku": "TF-WM-003",
+      "slug": "wash-timer-6-wires",
+      "category_id": 33,
+      "category_slug": "standard-washing-machine-parts",
+      "category_name_ar": "قطع غيار آلات غسيل الملابس العادية",
+      "name_ar": "منتري صابون 6 خيوط",
+      "name_fr": "Minuterie de lavage à 6 fils",
+      "description_ar": "منتري صابون ستاندار بـ6 خيوط للتحكم في مدة الغسل، متوافق مع عدة آلات غسيل عادية.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 10,
+      "qty_increment": 1,
+      "sale_price": "13.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T06:26:51.997Z",
+      "primary_image_path": "product-images/TF-WM-003/black-timer-multicolor-wires.png",
+      "status": "published"
+    },
+    {
+      "id": 19,
+      "sku": "TF-WM-001",
+      "slug": "standard-timer-knob",
+      "category_id": 33,
+      "category_slug": "standard-washing-machine-parts",
+      "category_name_ar": "قطع غيار آلات غسيل الملابس العادية",
+      "name_ar": "بوطون منتري ستاندار",
+      "name_fr": "Bouton de minuterie standard",
+      "description_ar": "بوطون ستاندار للتحكم في المنتري، متوافق مع عدة موديلات من آلات غسيل الملابس العادية.",
+      "technical_specs": null,
+      "unit_label": "قطعة",
+      "min_order_qty": 10,
+      "qty_increment": 1,
+      "sale_price": "5.00",
+      "stock_quantity": 500,
+      "meta_title": null,
+      "meta_description": null,
+      "created_at": "2026-07-30T06:26:51.969Z",
+      "primary_image_path": "product-images/TF-WM-001/white-round-knob.png",
+      "status": "published"
+    }
+  ],
+  "variantsByProductId": {
+    "48": [
+      {
+        "id": 6,
+        "product_id": 48,
+        "variant_name": "1/4",
+        "sale_price": "8.00",
+        "stock_quantity": 500,
+        "min_order_qty": 1,
+        "qty_increment": 1,
+        "sort_order": 1
+      },
+      {
+        "id": 7,
+        "product_id": 48,
+        "variant_name": "3/8",
+        "sale_price": "13.00",
+        "stock_quantity": 500,
+        "min_order_qty": 1,
+        "qty_increment": 1,
+        "sort_order": 2
+      },
+      {
+        "id": 8,
+        "product_id": 48,
+        "variant_name": "1/2",
+        "sale_price": "15.00",
+        "stock_quantity": 500,
+        "min_order_qty": 1,
+        "qty_increment": 1,
+        "sort_order": 3
+      },
+      {
+        "id": 9,
+        "product_id": 48,
+        "variant_name": "5/8",
+        "sale_price": "20.00",
+        "stock_quantity": 500,
+        "min_order_qty": 1,
+        "qty_increment": 1,
+        "sort_order": 4
+      },
+      {
+        "id": 10,
+        "product_id": 48,
+        "variant_name": "3/4",
+        "sale_price": "30.00",
+        "stock_quantity": 500,
+        "min_order_qty": 1,
+        "qty_increment": 1,
+        "sort_order": 5
+      }
+    ],
+    "49": [
+      {
+        "id": 11,
+        "product_id": 49,
+        "variant_name": "1/4",
+        "sale_price": "15.00",
+        "stock_quantity": 500,
+        "min_order_qty": 1,
+        "qty_increment": 1,
+        "sort_order": 1
+      },
+      {
+        "id": 12,
+        "product_id": 49,
+        "variant_name": "3/8",
+        "sale_price": "20.00",
+        "stock_quantity": 500,
+        "min_order_qty": 1,
+        "qty_increment": 1,
+        "sort_order": 2
+      },
+      {
+        "id": 13,
+        "product_id": 49,
+        "variant_name": "1/2",
+        "sale_price": "25.00",
+        "stock_quantity": 500,
+        "min_order_qty": 1,
+        "qty_increment": 1,
+        "sort_order": 3
+      },
+      {
+        "id": 14,
+        "product_id": 49,
+        "variant_name": "5/8",
+        "sale_price": "30.00",
+        "stock_quantity": 500,
+        "min_order_qty": 1,
+        "qty_increment": 1,
+        "sort_order": 4
+      },
+      {
+        "id": 15,
+        "product_id": 49,
+        "variant_name": "3/4",
+        "sale_price": "35.00",
+        "stock_quantity": 500,
+        "min_order_qty": 1,
+        "qty_increment": 1,
+        "sort_order": 5
+      }
+    ],
+    "61": [
+      {
+        "id": 16,
+        "product_id": 61,
+        "variant_name": "15 غرام",
+        "sale_price": "9.00",
+        "stock_quantity": 500,
+        "min_order_qty": 1,
+        "qty_increment": 1,
+        "sort_order": 1
+      },
+      {
+        "id": 17,
+        "product_id": 61,
+        "variant_name": "20 غرام",
+        "sale_price": "10.00",
+        "stock_quantity": 500,
+        "min_order_qty": 1,
+        "qty_increment": 1,
+        "sort_order": 2
+      },
+      {
+        "id": 18,
+        "product_id": 61,
+        "variant_name": "30 غرام",
+        "sale_price": "13.00",
+        "stock_quantity": 500,
+        "min_order_qty": 1,
+        "qty_increment": 1,
+        "sort_order": 3
+      }
+    ],
+    "64": [
+      {
+        "id": 19,
+        "product_id": 64,
+        "variant_name": "TMDF702ZD1",
+        "sale_price": "37.00",
+        "stock_quantity": 500,
+        "min_order_qty": 1,
+        "qty_increment": 1,
+        "sort_order": 1
+      },
+      {
+        "id": 20,
+        "product_id": 64,
+        "variant_name": "TMDF704ZT1",
+        "sale_price": "37.00",
+        "stock_quantity": 500,
+        "min_order_qty": 1,
+        "qty_increment": 1,
+        "sort_order": 2
+      },
+      {
+        "id": 21,
+        "product_id": 64,
+        "variant_name": "TMDE706SC1",
+        "sale_price": "37.00",
+        "stock_quantity": 500,
+        "min_order_qty": 1,
+        "qty_increment": 1,
+        "sort_order": 3
+      },
+      {
+        "id": 22,
+        "product_id": 64,
+        "variant_name": "TMDF702CB1",
+        "sale_price": "37.00",
+        "stock_quantity": 500,
+        "min_order_qty": 1,
+        "qty_increment": 1,
+        "sort_order": 4
+      },
+      {
+        "id": 23,
+        "product_id": 64,
+        "variant_name": "TMDF704SC1",
+        "sale_price": "37.00",
+        "stock_quantity": 500,
+        "min_order_qty": 1,
+        "qty_increment": 1,
+        "sort_order": 5
+      },
+      {
+        "id": 24,
+        "product_id": 64,
+        "variant_name": "TMDJ704ZC1",
+        "sale_price": "37.00",
+        "stock_quantity": 500,
+        "min_order_qty": 1,
+        "qty_increment": 1,
+        "sort_order": 6
+      }
+    ],
+    "68": [
+      {
+        "id": 25,
+        "product_id": 68,
+        "variant_name": "فالف شارج سيارة",
+        "sale_price": "55.00",
+        "stock_quantity": 500,
+        "min_order_qty": 1,
+        "qty_increment": 1,
+        "sort_order": 1
+      },
+      {
+        "id": 26,
+        "product_id": 68,
+        "variant_name": "فالف شارج R1234",
+        "sale_price": "140.00",
+        "stock_quantity": 500,
+        "min_order_qty": 1,
+        "qty_increment": 1,
+        "sort_order": 2
+      },
+      {
+        "id": 27,
+        "product_id": 68,
+        "variant_name": "فالف شارج R410",
+        "sale_price": "25.00",
+        "stock_quantity": 500,
+        "min_order_qty": 1,
+        "qty_increment": 1,
+        "sort_order": 3
+      }
+    ]
+  },
+  "imagesByProductId": {
+    "19": [
+      {
+        "id": 4,
+        "product_id": 19,
+        "storage_path": "product-images/TF-WM-001/white-round-knob.png",
+        "alt_text_ar": "صورة بوطون منتري ستاندار",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "21": [
+      {
+        "id": 6,
+        "product_id": 21,
+        "storage_path": "product-images/TF-WM-003/black-timer-multicolor-wires.png",
+        "alt_text_ar": "صورة منتري صابون 6 خيوط",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "22": [
+      {
+        "id": 7,
+        "product_id": 22,
+        "storage_path": "product-images/TF-WM-004/black-rubber-bellows.png",
+        "alt_text_ar": "صورة جلدة نشاف بريسيستوب",
+        "sort_order": 1,
+        "is_primary": true
+      },
+      {
+        "id": 8,
+        "product_id": 22,
+        "storage_path": "product-images/TF-WM-004/TF-WM-004-dryer-pressostat-seal-2.jpg",
+        "alt_text_ar": "صورة جلدة نشاف بريسيستوب",
+        "sort_order": 2,
+        "is_primary": false
+      }
+    ],
+    "23": [
+      {
+        "id": 9,
+        "product_id": 23,
+        "storage_path": "product-images/TF-WM-005/motor-type-a-label.png",
+        "alt_text_ar": "صورة موطور صابون 150 واط",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "24": [
+      {
+        "id": 10,
+        "product_id": 24,
+        "storage_path": "product-images/TF-WM-006/v-belts.png",
+        "alt_text_ar": "صورة كروة الغسالة",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "25": [
+      {
+        "id": 11,
+        "product_id": 25,
+        "storage_path": "product-images/TF-WM-007/black-timer-three-wires.png",
+        "alt_text_ar": "صورة منتري صابون 3 خيوط",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "26": [
+      {
+        "id": 12,
+        "product_id": 26,
+        "storage_path": "product-images/TF-WM-008/white-corrugated-hoses.png",
+        "alt_text_ar": "صورة تيو الماء",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "27": [
+      {
+        "id": 13,
+        "product_id": 27,
+        "storage_path": "product-images/TF-WM-009/motor-type-b-round-gold.png",
+        "alt_text_ar": "صورة موطور نشاف 70 واط",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "28": [
+      {
+        "id": 14,
+        "product_id": 28,
+        "storage_path": "product-images/TF-WM-010/metal-bearing-hub.png",
+        "alt_text_ar": "صورة بولي موطور نشاف",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "29": [
+      {
+        "id": 15,
+        "product_id": 29,
+        "storage_path": "product-images/TF-WM-011/countersunk-screws.png",
+        "alt_text_ar": "صورة فيس فراكة",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "30": [
+      {
+        "id": 16,
+        "product_id": 30,
+        "storage_path": "product-images/TF-WM-012/TF-WM-012-water-seal.jpg",
+        "alt_text_ar": "صورة جلدة الماء",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "31": [
+      {
+        "id": 17,
+        "product_id": 31,
+        "storage_path": "product-images/TF-WM-013/TF-WM-013-water-selector-timer.jpg",
+        "alt_text_ar": "صورة منتري الماء سلكتور",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "32": [
+      {
+        "id": 18,
+        "product_id": 32,
+        "storage_path": "product-images/TF-WM-014/long-coil-spring.png",
+        "alt_text_ar": "صورة روسول جلدة الماء",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "33": [
+      {
+        "id": 19,
+        "product_id": 33,
+        "storage_path": "product-images/TF-WM-015/small-white-timer-two-wires.png",
+        "alt_text_ar": "صورة منتري نشاف بخيطين",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "34": [
+      {
+        "id": 20,
+        "product_id": 34,
+        "storage_path": "product-images/TF-WM-016/large-grey-pulley.png",
+        "alt_text_ar": "صورة بولي موطور الصابون",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "35": [
+      {
+        "id": 21,
+        "product_id": 35,
+        "storage_path": "product-images/TF-WM-017/capacitor-12-5uf.png",
+        "alt_text_ar": "صورة كوندنساتور 12/5 µF",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "36": [
+      {
+        "id": 22,
+        "product_id": 36,
+        "storage_path": "product-images/TF-WM-018/TF-WM-018-lg-double-timer.jpg",
+        "alt_text_ar": "صورة منتري LG دوبل",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "47": [
+      {
+        "id": 23,
+        "product_id": 47,
+        "storage_path": "product-images/TF-RF-001/TF-RF-001-copper-brazing-flux.jpg",
+        "alt_text_ar": "صورة بودر نحاس أزرق FLUX-4",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "48": [
+      {
+        "id": 24,
+        "product_id": 48,
+        "storage_path": "product-images/shared/three-metal-coupling-heads.png",
+        "alt_text_ar": "صورة راكور إكرو نحاس وماملو خاوي نحاس",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "49": [
+      {
+        "id": 25,
+        "product_id": 49,
+        "storage_path": "product-images/shared/three-metal-coupling-heads.png",
+        "alt_text_ar": "صورة راكور إكرو نحاس وماملو خاوي نحاس",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "50": [
+      {
+        "id": 26,
+        "product_id": 50,
+        "storage_path": "product-images/TF-RF-004/TF-RF-004-aluminium-flux-powder.jpg",
+        "alt_text_ar": "صورة بودر ألمنيوم F407",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "51": [
+      {
+        "id": 27,
+        "product_id": 51,
+        "storage_path": "product-images/TF-RF-005/TF-RF-005-single-gas-manometer.jpg",
+        "alt_text_ar": "صورة مانو غاز برو CT-467",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "52": [
+      {
+        "id": 28,
+        "product_id": 52,
+        "storage_path": "product-images/TF-RF-006/TF-RF-006-vacuum-pump.jpg",
+        "alt_text_ar": "صورة بومبا فيد",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "53": [
+      {
+        "id": 29,
+        "product_id": 53,
+        "storage_path": "product-images/TF-RF-007/TF-RF-007-fridge-fan-12v.jpg",
+        "alt_text_ar": "صورة فرفارة ثلاجة 12V بثلاثة خيوط",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "54": [
+      {
+        "id": 30,
+        "product_id": 54,
+        "storage_path": "product-images/TF-RF-008/TF-RF-008-large-flaring-kit.jpg",
+        "alt_text_ar": "صورة ديدجنير كبير احترافي",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "55": [
+      {
+        "id": 31,
+        "product_id": 55,
+        "storage_path": "product-images/TF-RF-009/TF-RF-009-small-flaring-tool.jpg",
+        "alt_text_ar": "صورة ديدجنير صغير",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "56": [
+      {
+        "id": 32,
+        "product_id": 56,
+        "storage_path": "product-images/TF-RF-010/TF-RF-010-r32-gas-3kg.jpg",
+        "alt_text_ar": "صورة غاز التبريد R32 حجم 3kg",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "57": [
+      {
+        "id": 33,
+        "product_id": 57,
+        "storage_path": "product-images/TF-RF-011/TF-RF-011-red-flaring-tool.jpg",
+        "alt_text_ar": "صورة ديدجنير حمرة احترافي",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "58": [
+      {
+        "id": 34,
+        "product_id": 58,
+        "storage_path": "product-images/TF-RF-012/TF-RF-012-lg-ac-fan.jpg",
+        "alt_text_ar": "صورة فرفارة مكيف LG",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "59": [
+      {
+        "id": 35,
+        "product_id": 59,
+        "storage_path": "product-images/TF-RF-013/TF-RF-013-universal-ac-remote.jpg",
+        "alt_text_ar": "صورة تلكموند مكيف يونيفرسال",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "60": [
+      {
+        "id": 36,
+        "product_id": 60,
+        "storage_path": "product-images/TF-RF-014/TF-RF-014-fast-valve.jpg",
+        "alt_text_ar": "صورة فالف رابيد",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "61": [
+      {
+        "id": 37,
+        "product_id": 61,
+        "storage_path": "product-images/TF-RF-015/TF-RF-015-filter-drier.jpg",
+        "alt_text_ar": "صورة فلتر نحاس إيطالي",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "62": [
+      {
+        "id": 38,
+        "product_id": 62,
+        "storage_path": "product-images/TF-RF-016/TF-RF-016-large-tube-cutter.jpg",
+        "alt_text_ar": "صورة كوب تيب كبير",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "63": [
+      {
+        "id": 39,
+        "product_id": 63,
+        "storage_path": "product-images/TF-RF-017/TF-RF-017-double-manifold.jpg",
+        "alt_text_ar": "صورة مانو غاز دوبل أصفر",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "64": [
+      {
+        "id": 40,
+        "product_id": 64,
+        "storage_path": "product-images/TF-RF-018/TF-RF-018-refrigerator-timer.jpg",
+        "alt_text_ar": "صورة منتري ثلاجة",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "65": [
+      {
+        "id": 41,
+        "product_id": 65,
+        "storage_path": "product-images/TF-RF-019/TF-RF-019-black-fridge-fan-220v.jpg",
+        "alt_text_ar": "صورة فرفارة ثلاجة سوداء 220V",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "66": [
+      {
+        "id": 42,
+        "product_id": 66,
+        "storage_path": "product-images/TF-RF-020/TF-RF-020-r22-gas-1kg.jpg",
+        "alt_text_ar": "صورة غاز التبريد R22 حجم 1kg",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "67": [
+      {
+        "id": 43,
+        "product_id": 67,
+        "storage_path": "product-images/shared/TF-RF-021-022-charging-heads.jpg",
+        "alt_text_ar": "صورة راس شارج R600",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "68": [
+      {
+        "id": 44,
+        "product_id": 68,
+        "storage_path": "product-images/shared/TF-RF-021-022-charging-heads.jpg",
+        "alt_text_ar": "صورة رؤوس شحن المكيفات",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "96": [
+      {
+        "id": 45,
+        "product_id": 96,
+        "storage_path": "product-images/TF-WM-019/poli_10.jpg",
+        "alt_text_ar": "صورة بولي 10",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "97": [
+      {
+        "id": 46,
+        "product_id": 97,
+        "storage_path": "product-images/TF-WM-020/poli_11.jpg",
+        "alt_text_ar": "صورة بولي 11",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "98": [
+      {
+        "id": 47,
+        "product_id": 98,
+        "storage_path": "product-images/TF-WM-021/poli_kari.jpg",
+        "alt_text_ar": "صورة بولي كاري",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "117": [
+      {
+        "id": 48,
+        "product_id": 117,
+        "storage_path": "product-images/TF-WM-022/dryer-foot.png",
+        "alt_text_ar": "صورة رجل نشاف",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "118": [
+      {
+        "id": 49,
+        "product_id": 118,
+        "storage_path": "product-images/TF-WM-023/door-spring.png",
+        "alt_text_ar": "صورة روسول باب",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ],
+    "119": [
+      {
+        "id": 50,
+        "product_id": 119,
+        "storage_path": "product-images/TF-WM-024/lg-pulley.png",
+        "alt_text_ar": "صورة بولي LG",
+        "sort_order": 1,
+        "is_primary": true
+      }
+    ]
+  },
+  "settings": {
+    "minOrderAmountMad": 1000,
+    "deliveryFeePerCartonMad": 45,
+    "whatsappNumber": "+212722083458",
+    "storeCity": "مراكش - حي المحاميد"
+  }
+}
