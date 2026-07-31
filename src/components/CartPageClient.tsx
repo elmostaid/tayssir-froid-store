@@ -55,7 +55,7 @@ export function CartPageClient({ minOrderAmountMad }: { minOrderAmountMad: numbe
                     alt={item.name}
                     fill
                     sizes="80px"
-                    className="object-cover"
+                    className="object-contain"
                     unoptimized
                   />
                 ) : null}

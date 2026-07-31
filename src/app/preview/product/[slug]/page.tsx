@@ -69,7 +69,7 @@ export default async function PreviewProductPage({ params }: Props) {
                 alt={mainImage.alt_text_ar ?? product.name_ar}
                 fill
                 sizes="(max-width: 768px) 100vw, 500px"
-                className="object-cover"
+                className="object-contain"
                 unoptimized
                 priority
               />
@@ -91,7 +91,7 @@ export default async function PreviewProductPage({ params }: Props) {
                     alt={image.alt_text_ar ?? product.name_ar}
                     fill
                     sizes="120px"
-                    className="object-cover"
+                    className="object-contain"
                     unoptimized
                   />
                 </div>

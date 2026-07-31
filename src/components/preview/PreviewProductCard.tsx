@@ -20,7 +20,7 @@ export function PreviewProductCard({ product }: { product: CatalogProduct }) {
             alt={product.name_ar}
             fill
             sizes="(max-width: 640px) 50vw, 220px"
-            className="object-cover"
+            className="object-contain"
             unoptimized
           />
         ) : (
