@@ -95,7 +95,6 @@ export default async function ProductPage({ params }: Props) {
                 fill
                 sizes="(max-width: 768px) 100vw, 500px"
                 className="object-contain"
-                unoptimized
                 priority
               />
             ) : (
@@ -117,7 +116,7 @@ export default async function ProductPage({ params }: Props) {
                     fill
                     sizes="120px"
                     className="object-contain"
-                    unoptimized
+                    loading="lazy"
                   />
                 </div>
               ))}

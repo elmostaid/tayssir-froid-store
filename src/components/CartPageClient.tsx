@@ -56,7 +56,7 @@ export function CartPageClient({ minOrderAmountMad }: { minOrderAmountMad: numbe
                     fill
                     sizes="80px"
                     className="object-contain"
-                    unoptimized
+                    loading="lazy"
                   />
                 ) : null}
               </div>
