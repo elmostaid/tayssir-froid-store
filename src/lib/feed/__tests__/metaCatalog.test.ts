@@ -2,7 +2,6 @@ import { describe, expect, test } from "vitest";
 import { buildCatalogExport, rowsToCsv } from "@/lib/feed/metaCatalog";
 
 const UNSUITABLE_IMAGE_SKUS = [
-  "TF-RF-001",
   "TF-RF-004",
   "TF-RF-005",
   "TF-RF-006",
