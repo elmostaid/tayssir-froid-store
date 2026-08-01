@@ -188,5 +188,55 @@
         "min_order_qty": 10,
         "qty_increment": 1,
         "sort_order": 2
+    },
+    {
+        "id": 32,
+        "product_id": 116,
+        "variant_name": "47\u00b5F",
+        "sale_price": "60.00",
+        "stock_quantity": 500,
+        "min_order_qty": 10,
+        "qty_increment": 1,
+        "sort_order": 1
+    },
+    {
+        "id": 33,
+        "product_id": 116,
+        "variant_name": "80\u00b5F",
+        "sale_price": "60.00",
+        "stock_quantity": 500,
+        "min_order_qty": 10,
+        "qty_increment": 1,
+        "sort_order": 2
+    },
+    {
+        "id": 34,
+        "product_id": 113,
+        "variant_name": "0.32",
+        "sale_price": "17.00",
+        "stock_quantity": 500,
+        "min_order_qty": 10,
+        "qty_increment": 1,
+        "sort_order": 1
+    },
+    {
+        "id": 35,
+        "product_id": 113,
+        "variant_name": "0.36",
+        "sale_price": "17.00",
+        "stock_quantity": 500,
+        "min_order_qty": 10,
+        "qty_increment": 1,
+        "sort_order": 2
+    },
+    {
+        "id": 36,
+        "product_id": 113,
+        "variant_name": "0.44",
+        "sale_price": "17.00",
+        "stock_quantity": 500,
+        "min_order_qty": 10,
+        "qty_increment": 1,
+        "sort_order": 3
     }
 ]

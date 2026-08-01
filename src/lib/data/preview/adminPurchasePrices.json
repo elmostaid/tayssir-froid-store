@@ -234,5 +234,149 @@
     {
         "sku": "TF-RF-057",
         "purchase_price": "180.00"
+    },
+    {
+        "sku": "TF-RF-058",
+        "purchase_price": "10.00"
+    },
+    {
+        "sku": "TF-RF-059",
+        "purchase_price": "10.00"
+    },
+    {
+        "sku": "TF-RF-060",
+        "purchase_price": "4.50"
+    },
+    {
+        "sku": "TF-RF-061",
+        "purchase_price": "4.00"
+    },
+    {
+        "sku": "TF-RF-062",
+        "purchase_price": "2.00"
+    },
+    {
+        "sku": "TF-RF-063",
+        "purchase_price": "6.00"
+    },
+    {
+        "sku": "TF-RF-064",
+        "purchase_price": "2.60"
+    },
+    {
+        "sku": "TF-RF-065",
+        "purchase_price": "14.00"
+    },
+    {
+        "sku": "TF-RF-066",
+        "purchase_price": "17.00"
+    },
+    {
+        "sku": "TF-RF-067",
+        "purchase_price": "17.00"
+    },
+    {
+        "sku": "TF-RF-068",
+        "purchase_price": "3.00"
+    },
+    {
+        "sku": "TF-RF-069",
+        "purchase_price": "40.00"
+    },
+    {
+        "sku": "TF-RF-070",
+        "purchase_price": "160.00"
+    },
+    {
+        "sku": "TF-RF-071",
+        "purchase_price": "10.00"
+    },
+    {
+        "sku": "TF-RF-072",
+        "purchase_price": "40.00"
+    },
+    {
+        "sku": "TF-RF-073",
+        "purchase_price": "33.00"
+    },
+    {
+        "sku": "TF-RF-074",
+        "purchase_price": "10.00"
+    },
+    {
+        "sku": "TF-RF-075",
+        "purchase_price": "9.00"
+    },
+    {
+        "sku": "TF-RF-076",
+        "purchase_price": "50.00"
+    },
+    {
+        "sku": "TF-RF-077",
+        "purchase_price": "46.00"
+    },
+    {
+        "sku": "TF-RF-078",
+        "purchase_price": "100.00"
+    },
+    {
+        "sku": "TF-RF-079",
+        "purchase_price": "6.00"
+    },
+    {
+        "sku": "TF-RF-080",
+        "purchase_price": "40.00"
+    },
+    {
+        "sku": "TF-RF-081",
+        "purchase_price": "17.00"
+    },
+    {
+        "sku": "TF-RF-082",
+        "purchase_price": "15.00"
+    },
+    {
+        "sku": "TF-RF-083",
+        "purchase_price": "11.00"
+    },
+    {
+        "sku": "TF-RF-084",
+        "purchase_price": "8.00"
+    },
+    {
+        "sku": "TF-RF-085",
+        "purchase_price": "9.00"
+    },
+    {
+        "sku": "TF-RF-086",
+        "purchase_price": "9.50"
+    },
+    {
+        "sku": "TF-RF-087",
+        "purchase_price": "150.00"
+    },
+    {
+        "sku": "TF-RF-088",
+        "purchase_price": "115.00"
+    },
+    {
+        "sku": "TF-RF-080-47UF",
+        "purchase_price": "40.00"
+    },
+    {
+        "sku": "TF-RF-080-80UF",
+        "purchase_price": "40.00"
+    },
+    {
+        "sku": "TF-RF-083-032",
+        "purchase_price": "11.00"
+    },
+    {
+        "sku": "TF-RF-083-036",
+        "purchase_price": "11.00"
+    },
+    {
+        "sku": "TF-RF-083-044",
+        "purchase_price": "11.00"
     }
 ]
