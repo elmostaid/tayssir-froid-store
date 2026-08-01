@@ -1,35 +1,5 @@
 [
     {
-        "id": 23,
-        "product_id": 40,
-        "variant_name": "\u0641\u0627\u0644\u0641 \u0634\u0627\u0631\u062c \u0633\u064a\u0627\u0631\u0629",
-        "sale_price": "55.00",
-        "stock_quantity": 500,
-        "min_order_qty": 1,
-        "qty_increment": 1,
-        "sort_order": 1
-    },
-    {
-        "id": 24,
-        "product_id": 40,
-        "variant_name": "\u0641\u0627\u0644\u0641 \u0634\u0627\u0631\u062c R1234",
-        "sale_price": "140.00",
-        "stock_quantity": 500,
-        "min_order_qty": 1,
-        "qty_increment": 1,
-        "sort_order": 2
-    },
-    {
-        "id": 25,
-        "product_id": 40,
-        "variant_name": "\u0641\u0627\u0644\u0641 \u0634\u0627\u0631\u062c R410",
-        "sale_price": "25.00",
-        "stock_quantity": 500,
-        "min_order_qty": 1,
-        "qty_increment": 1,
-        "sort_order": 3
-    },
-    {
         "id": 26,
         "product_id": 85,
         "variant_name": "12 \u0628\u0648\u0635\u0629 - 130W",
