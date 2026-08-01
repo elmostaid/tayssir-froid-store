@@ -144,22 +144,6 @@
         "is_primary": true
     },
     {
-        "id": 21,
-        "product_id": 20,
-        "storage_path": "product-images/shared/three-metal-coupling-heads.png",
-        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0631\u0627\u0643\u0648\u0631 \u0625\u0643\u0631\u0648 \u0646\u062d\u0627\u0633 \u0648\u0645\u0627\u0645\u0644\u0648 \u062e\u0627\u0648\u064a \u0646\u062d\u0627\u0633",
-        "sort_order": 1,
-        "is_primary": true
-    },
-    {
-        "id": 22,
-        "product_id": 21,
-        "storage_path": "product-images/shared/three-metal-coupling-heads.png",
-        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0631\u0627\u0643\u0648\u0631 \u0625\u0643\u0631\u0648 \u0646\u062d\u0627\u0633 \u0648\u0645\u0627\u0645\u0644\u0648 \u062e\u0627\u0648\u064a \u0646\u062d\u0627\u0633",
-        "sort_order": 1,
-        "is_primary": true
-    },
-    {
         "id": 23,
         "product_id": 22,
         "storage_path": "product-images/TF-RF-004/TF-RF-004-aluminium-flux-powder.jpg",
@@ -216,14 +200,6 @@
         "is_primary": true
     },
     {
-        "id": 30,
-        "product_id": 29,
-        "storage_path": "product-images/TF-RF-011/TF-RF-011-red-flaring-tool.jpg",
-        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u062f\u064a\u062f\u062c\u0646\u064a\u0631 \u062d\u0645\u0631\u0629 \u0627\u062d\u062a\u0631\u0627\u0641\u064a",
-        "sort_order": 1,
-        "is_primary": true
-    },
-    {
         "id": 31,
         "product_id": 30,
         "storage_path": "product-images/TF-RF-012/TF-RF-012-lg-ac-fan.jpg",
@@ -244,14 +220,6 @@
         "product_id": 34,
         "storage_path": "product-images/TF-RF-016/TF-RF-016-large-tube-cutter.jpg",
         "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0643\u0648\u0628 \u062a\u064a\u0628 \u0643\u0628\u064a\u0631",
-        "sort_order": 1,
-        "is_primary": true
-    },
-    {
-        "id": 36,
-        "product_id": 35,
-        "storage_path": "product-images/TF-RF-017/TF-RF-017-double-manifold.jpg",
-        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0645\u0627\u0646\u0648 \u063a\u0627\u0632 \u062f\u0648\u0628\u0644 \u0623\u0635\u0641\u0631",
         "sort_order": 1,
         "is_primary": true
     },
