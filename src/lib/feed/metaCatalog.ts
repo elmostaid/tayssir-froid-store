@@ -11,7 +11,6 @@ const CURRENCY = "MAD";
 // image_manual_review.csv في جذر المشروع بالضبط. حدِّث هذه القائمة إذا
 // تغيّر ذلك الملف (صور جديدة أو صور أُصلحت).
 const UNSUITABLE_PRIMARY_IMAGE_SKUS = new Set([
-  "TF-RF-004",
   "TF-RF-005",
   "TF-RF-006",
   "TF-RF-007",
