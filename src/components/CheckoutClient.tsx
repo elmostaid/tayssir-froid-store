@@ -152,8 +152,13 @@ export function CheckoutClient({
             inputMode="tel"
             placeholder="0612345678"
             required
+            pattern="^(?:\+212|0)[5-7]\d{2}[\s-]?\d{2}[\s-]?\d{2}[\s-]?\d{2}$"
+            title="رقم هاتف مغربي صالح، مثال: 0612345678"
             className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-turquoise focus:outline-none"
           />
+          <span className="mt-1 block text-xs text-neutral-500">
+            رقم مغربي يبدأ بـ 06 أو 07 أو 05 (أو +212)، مثال: 0612345678
+          </span>
           {fieldMessage("phone") && (
             <span className="mt-1 block text-xs text-red-600">
               {fieldMessage("phone")}
@@ -214,8 +219,8 @@ export function CheckoutClient({
         </label>
 
         <p className="rounded-lg bg-neutral-100 px-3 py-2 text-xs text-neutral-600">
-          طريقة الدفع: الدفع عند الاستلام فقط، بعد معاينة السلعة. هذا طلب
-          أولي في انتظار تأكيد فريقنا.
+          طريقة الدفع: الدفع عند الاستلام فقط. يمكنك معاينة السلعة عند
+          الاستلام قبل الأداء. هذا طلب أولي في انتظار تأكيد فريقنا.
         </p>
 
         <button
