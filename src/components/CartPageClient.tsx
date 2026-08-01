@@ -72,8 +72,11 @@ export function CartPageClient({ minOrderAmountMad }: { minOrderAmountMad: numbe
                   )}
                 </Link>
                 <span className="mt-0.5 text-xs text-neutral-500">{item.sku}</span>
-                <span className="mt-1 text-sm font-bold text-brand-orange">
-                  {formatMad(item.unitPrice)}
+                <span className="mt-1 text-sm text-neutral-600">
+                  {formatMad(item.unitPrice)} × {item.quantity} ={" "}
+                  <span className="font-bold text-brand-orange">
+                    {formatMad(item.unitPrice * item.quantity)}
+                  </span>
                 </span>
 
                 <div className="mt-2 flex items-center justify-between">
@@ -144,28 +147,46 @@ export function CartPageClient({ minOrderAmountMad }: { minOrderAmountMad: numbe
         </p>
 
         {!meetsMinimum && (
-          <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
-            الحد الأدنى للطلب هو {formatMad(minOrderAmountMad)}. أضف منتجات
-            بقيمة {formatMad(remaining)} إضافية على الأقل لمتابعة الطلب.
-          </p>
+          <div className="mt-3">
+            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+              باقي لك {formatMad(remaining)} باش توصل لأقل قيمة للطلب (
+              {formatMad(minOrderAmountMad)}).
+            </p>
+            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-neutral-200">
+              <div
+                className="h-full rounded-full bg-brand-orange transition-[width]"
+                style={{
+                  width: `${Math.min(100, (subtotal / minOrderAmountMad) * 100)}%`,
+                }}
+              />
+            </div>
+          </div>
         )}
 
-        {meetsMinimum ? (
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row-reverse">
+          {meetsMinimum ? (
+            <Link
+              href="/checkout"
+              className="flex min-h-11 flex-1 items-center justify-center rounded-full bg-brand-orange px-5 text-sm font-semibold text-white transition-colors hover:bg-brand-orange-dark"
+            >
+              إتمام الطلب
+            </Link>
+          ) : (
+            <button
+              type="button"
+              disabled
+              className="flex min-h-11 flex-1 cursor-not-allowed items-center justify-center rounded-full bg-neutral-300 px-5 text-sm font-semibold text-white"
+            >
+              إتمام الطلب
+            </button>
+          )}
           <Link
-            href="/checkout"
-            className="mt-4 block rounded-full bg-brand-orange px-5 py-3 text-center text-sm font-semibold text-white transition-colors hover:bg-brand-orange-dark"
+            href="/"
+            className="flex min-h-11 flex-1 items-center justify-center rounded-full border border-neutral-300 px-5 text-sm font-semibold text-neutral-700 hover:border-brand-turquoise hover:text-brand-turquoise-dark"
           >
-            متابعة الطلب
+            متابعة التسوق
           </Link>
-        ) : (
-          <button
-            type="button"
-            disabled
-            className="mt-4 block w-full cursor-not-allowed rounded-full bg-neutral-300 px-5 py-3 text-center text-sm font-semibold text-white"
-          >
-            متابعة الطلب
-          </button>
-        )}
+        </div>
       </div>
     </div>
   );
