@@ -2,6 +2,9 @@ import { sql } from "@/lib/db";
 import { getSettings } from "@/lib/queries/settings";
 import { isValidMoroccanPhone, normalizePhone } from "@/lib/phone";
 import { isValidQuantity } from "@/lib/cart/cartMath";
+import { isRateLimited } from "@/lib/orders/rateLimit";
+import { notifyNewOrder } from "@/lib/notifications/notifyNewOrder";
+import { getSiteUrl } from "@/lib/siteUrl";
 import type { CatalogProduct, CatalogProductVariant } from "@/lib/types";
 import type {
   CreateOrderFieldError,
@@ -77,6 +80,19 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
   const structuralErrors = validateStructure(input);
   if (structuralErrors.length > 0) {
     return { ok: false, errors: structuralErrors };
+  }
+
+  if (isValidMoroccanPhone(input.customer.phone) && isRateLimited(normalizePhone(input.customer.phone))) {
+    return {
+      ok: false,
+      errors: [
+        {
+          field: "general",
+          message:
+            "تم إرسال عدة طلبات في وقت قصير من هذا الرقم. الرجاء الانتظار قليلاً قبل إعادة المحاولة، أو التواصل معنا عبر واتساب.",
+        },
+      ],
+    };
   }
 
   try {
@@ -198,8 +214,10 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
 
     const normalizedPhone = normalizePhone(input.customer.phone);
 
-    const publicReference = await sql.begin(async (trx) => {
-      const inserted = await trx<{ id: number; public_reference: string }[]>`
+    let stockConflict: CreateOrderFieldError | null = null;
+
+    const result = await sql.begin(async (trx) => {
+      const inserted = await trx<{ id: number; public_reference: string; order_number: string }[]>`
         insert into public.orders (
           customer_name, customer_phone, customer_city, customer_address,
           customer_notes, items_subtotal, status, source, idempotency_key
@@ -209,13 +227,39 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
           ${subtotal}, 'new', 'website', ${input.idempotencyKey}
         )
         on conflict (idempotency_key) do nothing
-        returning id, public_reference
+        returning id, public_reference, order_number
       `;
 
       if (inserted.length > 0) {
         const orderId = inserted[0].id;
 
         for (const line of lineItems) {
+          // حجز المخزون: إنقاص فوري وذَرّي (atomic) عند إنشاء الطلب — الشرط
+          // "stock_quantity >= quantity" داخل UPDATE نفسه يمنع أي سباق (race
+          // condition) بين طلبين متزامنين على نفس القطعة، ويمنع مخزوناً
+          // سالباً دون الحاجة لقفل يدوي منفصل.
+          const decremented = line.variantId
+            ? await trx<{ id: number }[]>`
+                update public.product_variants
+                set stock_quantity = stock_quantity - ${line.quantity}
+                where id = ${line.variantId} and stock_quantity >= ${line.quantity}
+                returning id
+              `
+            : await trx<{ id: number }[]>`
+                update public.products
+                set stock_quantity = stock_quantity - ${line.quantity}
+                where id = ${line.productId} and stock_quantity >= ${line.quantity}
+                returning id
+              `;
+
+          if (decremented.length === 0) {
+            stockConflict = {
+              field: `item:${line.productId}:${line.variantId ?? "base"}`,
+              message: `الكمية المطلوبة من "${line.nameSnapshot}" لم تعد متوفرة بالكامل في المخزون الآن. الرجاء تعديل الكمية أو إزالة المنتج.`,
+            };
+            throw new Error("STOCK_CONFLICT");
+          }
+
           await trx`
             insert into public.order_items (
               order_id, product_id, variant_id, product_name_snapshot,
@@ -225,6 +269,14 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
               ${line.skuSnapshot}, ${line.unitPrice}, ${line.quantity}, ${line.lineTotal}
             )
           `;
+
+          await trx`
+            insert into public.stock_movements (
+              product_id, variant_id, order_id, quantity_delta, reason
+            ) values (
+              ${line.productId}, ${line.variantId}, ${orderId}, ${-line.quantity}, 'order_created'
+            )
+          `;
         }
 
         await trx`
@@ -232,25 +284,62 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
           values (${orderId}, 'new', 'طلب جديد من الموقع')
         `;
 
-        return inserted[0].public_reference;
+        return {
+          id: orderId,
+          publicReference: inserted[0].public_reference,
+          orderNumber: inserted[0].order_number,
+          isNew: true as const,
+        };
       }
 
       // تعارض على idempotency_key => نفس الطلب أُرسل مسبقاً (ضغط مزدوج على
-      // الزر مثلاً). نُعيد مرجع الطلب الموجود أصلاً بدل إنشاء طلب مكرر.
-      const existing = await trx<{ public_reference: string }[]>`
-        select public_reference from public.orders
+      // الزر مثلاً). نُعيد مرجع الطلب الموجود أصلاً بدل إنشاء طلب مكرر ودون
+      // إعادة حجز المخزون مرة ثانية.
+      const existing = await trx<{ id: number; public_reference: string; order_number: string }[]>`
+        select id, public_reference, order_number from public.orders
         where idempotency_key = ${input.idempotencyKey}
         limit 1
       `;
-      return existing[0]?.public_reference ?? null;
+      if (!existing[0]) return null;
+      return {
+        id: existing[0].id,
+        publicReference: existing[0].public_reference,
+        orderNumber: existing[0].order_number,
+        isNew: false as const,
+      };
+    }).catch((error) => {
+      if (error instanceof Error && error.message === "STOCK_CONFLICT") return null;
+      throw error;
     });
 
-    if (!publicReference) {
+    if (stockConflict) {
+      return { ok: false, errors: [stockConflict] };
+    }
+
+    if (!result) {
       console.error("createOrder: فشل الحصول على مرجع الطلب بعد الإدخال");
       return GENERIC_ERROR;
     }
 
-    return { ok: true, publicReference };
+    if (result.isNew) {
+      const siteUrl = getSiteUrl();
+      const base = siteUrl ?? "";
+      // إشعار "أفضل مجهود": لا ننتظره (fire-and-forget) ولا يمكن أبداً أن
+      // يمحو الطلب المحفوظ فعلاً إذا فشل — انظر notifyNewOrder.
+      void notifyNewOrder({
+        orderNumber: result.orderNumber,
+        publicReference: result.publicReference,
+        customerName: input.customer.fullName.trim(),
+        customerPhone: normalizedPhone,
+        city: input.customer.city.trim(),
+        itemsSubtotal: subtotal.toFixed(2),
+        itemsCount: lineItems.length,
+        adminOrderUrl: `${base}/admin/orders/${result.id}`,
+        pickingSlipUrl: `${base}/admin/orders/${result.id}/picking-slip.pdf`,
+      });
+    }
+
+    return { ok: true, publicReference: result.publicReference };
   } catch (error) {
     console.error("createOrder: خطأ غير متوقع أثناء إنشاء الطلب", error);
     return GENERIC_ERROR;

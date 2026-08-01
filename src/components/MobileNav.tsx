@@ -13,11 +13,6 @@ export function MobileNav({
   whatsappLink: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -52,7 +47,6 @@ export function MobileNav({
       </button>
 
       {open &&
-        mounted &&
         createPortal(
           <div className="fixed inset-0 z-50 flex">
           <button

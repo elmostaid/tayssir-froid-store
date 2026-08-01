@@ -110,7 +110,6 @@ export default async function ProductPage({ params }: Props) {
     <div className="mx-auto max-w-6xl px-4 py-6">
       <script
         type="application/ld+json"
-        // eslint-disable-next-line react/no-danger
         dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }}
       />
       <nav className="text-xs text-neutral-500">

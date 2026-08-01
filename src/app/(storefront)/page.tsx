@@ -16,12 +16,14 @@ import { formatMad } from "@/lib/format";
 // المنتجات والأسعار تأتي من قاعدة البيانات ويجب أن تكون محدَّثة دائماً.
 export const dynamic = "force-dynamic";
 
-const TRUST_POINTS = [
-  `أقل طلب ${formatMad(1000)}`,
-  "الدفع عند الاستلام بعد معاينة السلعة",
-  "التوصيل لجميع مدن المغرب",
-  "كلما زادت الكمية نقص الثمن",
-];
+function buildTrustPoints(minOrderAmountMad: number): string[] {
+  return [
+    `أقل طلب ${formatMad(minOrderAmountMad)}`,
+    "الدفع عند الاستلام بعد معاينة السلعة",
+    "التوصيل لجميع مدن المغرب",
+    "كلما زادت الكمية نقص الثمن",
+  ];
+}
 
 export default async function HomePage() {
   const [categories, productCounts, products, variantProductIds, settings] = await Promise.all([
@@ -39,6 +41,7 @@ export default async function HomePage() {
   const whatsappLink = buildWhatsAppLink(
     "مرحباً، أريد الاطلاع على منتجاتكم بالجملة."
   );
+  const trustPoints = buildTrustPoints(settings.minOrderAmountMad);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
@@ -51,7 +54,7 @@ export default async function HomePage() {
         </h1>
 
         <ul className="mt-4 flex flex-col gap-1.5 text-sm text-neutral-700 sm:text-base">
-          {TRUST_POINTS.map((point) => (
+          {trustPoints.map((point) => (
             <li key={point} className="flex items-center gap-2">
               <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-brand-turquoise" />
               {point}

@@ -80,7 +80,16 @@ export default async function OrderSuccessPage({ params }: Props) {
         شاملاً مصاريف التوصيل. الدفع عند الاستلام بعد معاينة السلعة.
       </p>
 
-      <div className="mt-6 flex flex-col gap-2 sm:flex-row">
+      <a
+        href={`/order/${order.publicReference}/receipt.pdf`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mt-4 block rounded-full border border-neutral-300 px-5 py-3 text-sm font-semibold text-neutral-700"
+      >
+        تحميل وصل الطلب (PDF)
+      </a>
+
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
         <a
           href={whatsappLink}
           target="_blank"

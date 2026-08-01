@@ -1,13 +1,17 @@
 import Link from "next/link";
 import { signOutAdmin } from "@/app/admin/actions";
+import { countNewOrders } from "@/lib/queries/adminOrders";
+import { safeQuery } from "@/lib/safeQuery";
 
-export function AdminShell({
+export async function AdminShell({
   email,
   children,
 }: {
   email: string;
   children: React.ReactNode;
 }) {
+  const newOrdersCount = await safeQuery(() => countNewOrders(), 0, "AdminShell.countNewOrders");
+
   return (
     <div dir="rtl" className="min-h-screen bg-neutral-50">
       <header className="sticky top-0 z-40 border-b border-neutral-200 bg-white">
@@ -36,6 +40,17 @@ export function AdminShell({
             className="shrink-0 rounded-full border border-neutral-200 px-3 py-1.5 text-neutral-700 hover:border-brand-turquoise hover:text-brand-turquoise-dark"
           >
             المنتجات
+          </Link>
+          <Link
+            href="/admin/orders"
+            className="shrink-0 rounded-full border border-neutral-200 px-3 py-1.5 text-neutral-700 hover:border-brand-turquoise hover:text-brand-turquoise-dark"
+          >
+            الطلبات
+            {newOrdersCount > 0 && (
+              <span className="ms-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-brand-orange px-1 text-xs font-semibold text-white">
+                {newOrdersCount}
+              </span>
+            )}
           </Link>
         </nav>
       </header>

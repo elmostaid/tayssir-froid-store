@@ -1,6 +1,19 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // مسارات توليد PDF (بون التحضير ووصل الزبون) تقرأ ملفات الخط العربي محلياً
+  // عبر path.join(process.cwd(), ...) وقت التشغيل بدل import ثابت، وقد لا
+  // يكتشفها تتبّع الملفات التلقائي لـVercel دائماً — نضمن تضمينها صراحةً.
+  outputFileTracingIncludes: {
+    "/admin/orders/[id]/picking-slip.pdf": [
+      "./src/lib/pdf/fonts/**/*",
+      "./public/brand/**/*",
+    ],
+    "/order/[reference]/receipt.pdf": [
+      "./src/lib/pdf/fonts/**/*",
+      "./public/brand/**/*",
+    ],
+  },
   images: {
     // صور المنتجات محلية حالياً داخل public/product-images وتمر عبر مُحسِّن
     // next/image (تحسين تلقائي للحجم/الصيغة + srcset)، وهذا يعمل بدون أي
