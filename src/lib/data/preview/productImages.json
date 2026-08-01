@@ -240,22 +240,6 @@
         "is_primary": true
     },
     {
-        "id": 33,
-        "product_id": 32,
-        "storage_path": "product-images/TF-RF-014/TF-RF-014-fast-valve.jpg",
-        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0641\u0627\u0644\u0641 \u0631\u0627\u0628\u064a\u062f",
-        "sort_order": 1,
-        "is_primary": true
-    },
-    {
-        "id": 34,
-        "product_id": 33,
-        "storage_path": "product-images/TF-RF-015/TF-RF-015-filter-drier.jpg",
-        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0641\u0644\u062a\u0631 \u0646\u062d\u0627\u0633 \u0625\u064a\u0637\u0627\u0644\u064a",
-        "sort_order": 1,
-        "is_primary": true
-    },
-    {
         "id": 35,
         "product_id": 34,
         "storage_path": "product-images/TF-RF-016/TF-RF-016-large-tube-cutter.jpg",
@@ -268,22 +252,6 @@
         "product_id": 35,
         "storage_path": "product-images/TF-RF-017/TF-RF-017-double-manifold.jpg",
         "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0645\u0627\u0646\u0648 \u063a\u0627\u0632 \u062f\u0648\u0628\u0644 \u0623\u0635\u0641\u0631",
-        "sort_order": 1,
-        "is_primary": true
-    },
-    {
-        "id": 37,
-        "product_id": 36,
-        "storage_path": "product-images/TF-RF-018/TF-RF-018-refrigerator-timer.jpg",
-        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0645\u0646\u062a\u0631\u064a \u062b\u0644\u0627\u062c\u0629",
-        "sort_order": 1,
-        "is_primary": true
-    },
-    {
-        "id": 38,
-        "product_id": 37,
-        "storage_path": "product-images/TF-RF-019/TF-RF-019-black-fridge-fan-220v.jpg",
-        "alt_text_ar": "\u0635\u0648\u0631\u0629 \u0641\u0631\u0641\u0627\u0631\u0629 \u062b\u0644\u0627\u062c\u0629 \u0633\u0648\u062f\u0627\u0621 220V",
         "sort_order": 1,
         "is_primary": true
     },
