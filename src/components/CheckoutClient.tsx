@@ -133,7 +133,7 @@ export function CheckoutClient({
             name="fullName"
             required
             maxLength={100}
-            className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-turquoise focus:outline-none"
+            className="w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-base focus:border-brand-turquoise focus:outline-none"
           />
           {fieldMessage("fullName") && (
             <span className="mt-1 block text-xs text-red-600">
@@ -154,7 +154,7 @@ export function CheckoutClient({
             required
             pattern="^(?:\+212|0)[5-7]\d{2}[\s-]?\d{2}[\s-]?\d{2}[\s-]?\d{2}$"
             title="رقم هاتف مغربي صالح، مثال: 0612345678"
-            className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-turquoise focus:outline-none"
+            className="w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-base focus:border-brand-turquoise focus:outline-none"
           />
           <span className="mt-1 block text-xs text-neutral-500">
             رقم مغربي يبدأ بـ 06 أو 07 أو 05 (أو +212)، مثال: 0612345678
@@ -174,7 +174,7 @@ export function CheckoutClient({
             name="city"
             required
             maxLength={100}
-            className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-turquoise focus:outline-none"
+            className="w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-base focus:border-brand-turquoise focus:outline-none"
           />
           {fieldMessage("city") && (
             <span className="mt-1 block text-xs text-red-600">
@@ -192,7 +192,7 @@ export function CheckoutClient({
             required
             rows={2}
             maxLength={300}
-            className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-turquoise focus:outline-none"
+            className="w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-base focus:border-brand-turquoise focus:outline-none"
           />
           {fieldMessage("address") && (
             <span className="mt-1 block text-xs text-red-600">
@@ -209,7 +209,7 @@ export function CheckoutClient({
             name="notes"
             rows={2}
             maxLength={500}
-            className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-turquoise focus:outline-none"
+            className="w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-base focus:border-brand-turquoise focus:outline-none"
           />
           {fieldMessage("notes") && (
             <span className="mt-1 block text-xs text-red-600">

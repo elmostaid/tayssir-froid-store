@@ -93,14 +93,14 @@ export default async function CategoryPage({ params, searchParams }: Props) {
           defaultValue={query}
           placeholder="ابحث داخل هذا التصنيف"
           aria-label="ابحث داخل هذا التصنيف"
-          className="w-full rounded-full border border-neutral-300 px-4 py-2 text-sm focus:border-brand-turquoise focus:outline-none sm:max-w-xs"
+          className="w-full rounded-full border border-neutral-300 px-4 py-2.5 text-base focus:border-brand-turquoise focus:outline-none sm:max-w-xs"
         />
         <label className="flex items-center gap-2 text-sm text-neutral-600">
           <span className="shrink-0">ترتيب حسب</span>
           <select
             name="sort"
             defaultValue={sort}
-            className="min-h-11 w-full rounded-full border border-neutral-300 bg-white px-3 py-2 text-sm focus:border-brand-turquoise focus:outline-none sm:w-auto"
+            className="min-h-11 w-full rounded-full border border-neutral-300 bg-white px-3 py-2 text-base focus:border-brand-turquoise focus:outline-none sm:w-auto"
           >
             {SORT_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>

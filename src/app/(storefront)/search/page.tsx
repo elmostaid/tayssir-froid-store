@@ -42,7 +42,7 @@ export default async function SearchPage({ searchParams }: Props) {
           defaultValue={query}
           placeholder="قلب على اسم القطعة أو الكود"
           aria-label="ابحث عن اسم القطعة أو الكود"
-          className="w-full rounded-full border border-neutral-300 px-4 py-2.5 text-sm focus:border-brand-turquoise focus:outline-none focus:ring-2 focus:ring-brand-turquoise/30"
+          className="w-full rounded-full border border-neutral-300 px-4 py-2.5 text-base focus:border-brand-turquoise focus:outline-none focus:ring-2 focus:ring-brand-turquoise/30"
         />
         <button
           type="submit"

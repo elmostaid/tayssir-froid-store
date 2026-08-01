@@ -92,7 +92,7 @@ export function MobileNav({
                 name="q"
                 placeholder="قلب على اسم القطعة أو الكود"
                 aria-label="ابحث عن اسم القطعة أو الكود"
-                className="w-full rounded-full border border-neutral-300 px-4 py-2.5 text-sm focus:border-brand-turquoise focus:outline-none"
+                className="w-full rounded-full border border-neutral-300 px-4 py-2.5 text-base focus:border-brand-turquoise focus:outline-none"
               />
               <button
                 type="submit"

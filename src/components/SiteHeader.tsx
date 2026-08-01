@@ -48,7 +48,7 @@ export async function SiteHeader() {
             name="q"
             placeholder="قلب على اسم القطعة أو الكود"
             aria-label="ابحث عن اسم القطعة أو الكود"
-            className="w-full max-w-md rounded-full border border-neutral-300 px-4 py-2 text-sm focus:border-brand-turquoise focus:outline-none focus:ring-2 focus:ring-brand-turquoise/30"
+            className="w-full max-w-md rounded-full border border-neutral-300 px-4 py-2 text-base focus:border-brand-turquoise focus:outline-none focus:ring-2 focus:ring-brand-turquoise/30"
           />
         </form>
 
