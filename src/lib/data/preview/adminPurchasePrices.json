@@ -378,5 +378,121 @@
     {
         "sku": "TF-RF-083-044",
         "purchase_price": "11.00"
+    },
+    {
+        "sku": "TF-AC-015",
+        "purchase_price": "40.00"
+    },
+    {
+        "sku": "TF-AC-016",
+        "purchase_price": "30.00"
+    },
+    {
+        "sku": "TF-AC-017",
+        "purchase_price": "230.00"
+    },
+    {
+        "sku": "TF-AC-018",
+        "purchase_price": "28.00"
+    },
+    {
+        "sku": "TF-AC-019",
+        "purchase_price": "240.00"
+    },
+    {
+        "sku": "TF-AC-020",
+        "purchase_price": "45.00"
+    },
+    {
+        "sku": "TF-AC-021",
+        "purchase_price": "40.00"
+    },
+    {
+        "sku": "TF-AC-022",
+        "purchase_price": "40.00"
+    },
+    {
+        "sku": "TF-AC-023",
+        "purchase_price": "45.00"
+    },
+    {
+        "sku": "TF-AC-024",
+        "purchase_price": "3.00"
+    },
+    {
+        "sku": "TF-AC-025",
+        "purchase_price": "4.00"
+    },
+    {
+        "sku": "TF-AC-026",
+        "purchase_price": "4.50"
+    },
+    {
+        "sku": "TF-AC-027",
+        "purchase_price": "5.00"
+    },
+    {
+        "sku": "TF-AC-028",
+        "purchase_price": "25.00"
+    },
+    {
+        "sku": "TF-AC-029",
+        "purchase_price": "40.00"
+    },
+    {
+        "sku": "TF-AC-030",
+        "purchase_price": "57.00"
+    },
+    {
+        "sku": "TF-AC-031",
+        "purchase_price": "72.00"
+    },
+    {
+        "sku": "TF-AC-032",
+        "purchase_price": "7.00"
+    },
+    {
+        "sku": "TF-AC-033",
+        "purchase_price": "9.00"
+    },
+    {
+        "sku": "TF-AC-034",
+        "purchase_price": "11.00"
+    },
+    {
+        "sku": "TF-AC-035",
+        "purchase_price": "11.00"
+    },
+    {
+        "sku": "TF-AC-036",
+        "purchase_price": "20.00"
+    },
+    {
+        "sku": "TF-AC-037",
+        "purchase_price": "10.00"
+    },
+    {
+        "sku": "TF-AC-038",
+        "purchase_price": "15.00"
+    },
+    {
+        "sku": "TF-AC-039",
+        "purchase_price": "20.00"
+    },
+    {
+        "sku": "TF-AC-040",
+        "purchase_price": "25.00"
+    },
+    {
+        "sku": "TF-AC-041",
+        "purchase_price": "25.00"
+    },
+    {
+        "sku": "TF-AC-042",
+        "purchase_price": "18.00"
+    },
+    {
+        "sku": "TF-AC-043",
+        "purchase_price": "150.00"
     }
 ]
