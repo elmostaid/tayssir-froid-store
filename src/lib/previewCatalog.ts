@@ -50,6 +50,33 @@ export function getPreviewProducts(
   return filtered.slice(0, limit);
 }
 
+// بحث بسيط بمطابقة جزء من النص (بدون حساسية لحالة الأحرف) عبر الحقول التي
+// قد تحتوي الاسم بالعربية أو الفرنسية أو SKU أو الماركة/الموديل (المدمَجة
+// عادة داخل الاسم أو الوصف لعدم وجود حقول brand/model منفصلة في البيانات).
+export function searchPreviewProducts(
+  query: string,
+  limit = 60
+): CatalogProduct[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [];
+
+  return previewProducts
+    .filter((product) => {
+      const haystacks = [
+        product.name_ar,
+        product.name_fr,
+        product.sku,
+        product.slug,
+        product.description_ar,
+        product.technical_specs,
+      ];
+      return haystacks.some(
+        (value) => typeof value === "string" && value.toLowerCase().includes(needle)
+      );
+    })
+    .slice(0, limit);
+}
+
 export function getPreviewProductBySlug(slug: string): CatalogProduct | null {
   return previewProducts.find((product) => product.slug === slug) ?? null;
 }

@@ -12,6 +12,7 @@ import {
   getPreviewProductBySlug,
   getPreviewProductVariants,
   getPreviewProductImages,
+  searchPreviewProducts,
 } from "@/lib/previewCatalog";
 
 // كل الاستعلامات هنا تقرأ من views عامة (catalog_*) لا تحتوي أبداً على
@@ -82,6 +83,28 @@ export async function getProductBySlug(slug: string): Promise<CatalogProduct | n
     select * from public.catalog_products where slug = ${slug} limit 1
   `;
   return rows[0] ?? null;
+}
+
+export async function searchProducts(
+  query: string,
+  limit = 60
+): Promise<CatalogProduct[]> {
+  const needle = query.trim();
+  if (!needle) return [];
+
+  if (!hasDatabase) return searchPreviewProducts(needle, limit);
+
+  const pattern = `%${needle}%`;
+  return sql<CatalogProduct[]>`
+    select * from public.catalog_products
+    where name_ar ilike ${pattern}
+      or name_fr ilike ${pattern}
+      or sku ilike ${pattern}
+      or description_ar ilike ${pattern}
+      or technical_specs ilike ${pattern}
+    order by created_at desc
+    limit ${limit}
+  `;
 }
 
 export async function getProductVariants(
