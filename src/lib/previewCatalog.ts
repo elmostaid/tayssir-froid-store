@@ -135,6 +135,16 @@ export function getPreviewProductVariants(productId: number): CatalogProductVari
     .sort((a, b) => a.sort_order - b.sort_order);
 }
 
+// كل المنتجات بكل الحالات (منشور/غير منشور)، لأغراض التدقيق والتصدير
+// الإداري فقط (مثل Meta Commerce Catalog) — وليس لأي صفحة يراها الزبون.
+export function getAllPreviewProductsForExport(): CatalogProduct[] {
+  return previewProducts.slice();
+}
+
+export function getAllPreviewVariantsForExport(): CatalogProductVariant[] {
+  return previewProductVariants.slice();
+}
+
 export function getPreviewProductImages(productId: number): CatalogProductImage[] {
   return previewProductImages
     .filter((image) => image.product_id === productId)
