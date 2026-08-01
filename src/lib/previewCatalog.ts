@@ -40,6 +40,15 @@ export function getPreviewCategoryBySlug(slug: string): Category | null {
   return previewCategories.find((category) => category.slug === slug) ?? null;
 }
 
+export function getPreviewProductCountsByCategory(): Record<number, number> {
+  const counts: Record<number, number> = {};
+  for (const product of previewProducts) {
+    if (product.status !== "published") continue;
+    counts[product.category_id] = (counts[product.category_id] ?? 0) + 1;
+  }
+  return counts;
+}
+
 export function getPreviewProducts(
   options: { categorySlug?: string; limit?: number } = {}
 ): CatalogProduct[] {

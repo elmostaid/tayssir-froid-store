@@ -13,6 +13,7 @@ import {
   getPreviewProductVariants,
   getPreviewProductImages,
   searchPreviewProducts,
+  getPreviewProductCountsByCategory,
 } from "@/lib/previewCatalog";
 
 // كل الاستعلامات هنا تقرأ من views عامة (catalog_*) لا تحتوي أبداً على
@@ -83,6 +84,17 @@ export async function getProductBySlug(slug: string): Promise<CatalogProduct | n
     select * from public.catalog_products where slug = ${slug} limit 1
   `;
   return rows[0] ?? null;
+}
+
+export async function getProductCountsByCategory(): Promise<Record<number, number>> {
+  if (!hasDatabase) return getPreviewProductCountsByCategory();
+
+  const rows = await sql<{ category_id: number; count: number }[]>`
+    select category_id, count(*)::int as count
+    from public.catalog_products
+    group by category_id
+  `;
+  return Object.fromEntries(rows.map((r) => [r.category_id, r.count]));
 }
 
 export async function searchProducts(

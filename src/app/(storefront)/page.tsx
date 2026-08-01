@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { getCategories, getProducts } from "@/lib/queries/catalog";
+import { getCategories, getProductCountsByCategory, getProducts } from "@/lib/queries/catalog";
 import { getSettings } from "@/lib/queries/settings";
 import { ProductCard } from "@/components/ProductCard";
+import { CategoryIcon } from "@/components/CategoryIcon";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
 import { safeQuery } from "@/lib/safeQuery";
 import { formatMad } from "@/lib/format";
@@ -10,9 +11,17 @@ import { formatMad } from "@/lib/format";
 // المنتجات والأسعار تأتي من قاعدة البيانات ويجب أن تكون محدَّثة دائماً.
 export const dynamic = "force-dynamic";
 
+const TRUST_POINTS = [
+  `أقل طلب ${formatMad(1000)}`,
+  "الدفع عند الاستلام بعد معاينة السلعة",
+  "التوصيل لجميع مدن المغرب",
+  "كلما زادت الكمية نقص الثمن",
+];
+
 export default async function HomePage() {
-  const [categories, products, settings] = await Promise.all([
+  const [categories, productCounts, products, settings] = await Promise.all([
     safeQuery(() => getCategories(), [], "home.getCategories"),
+    safeQuery(() => getProductCountsByCategory(), {}, "home.getProductCountsByCategory"),
     safeQuery(() => getProducts({ limit: 12 }), [], "home.getProducts"),
     safeQuery(
       () => getSettings(),
@@ -32,38 +41,64 @@ export default async function HomePage() {
           البيع بالجملة فقط
         </span>
         <h1 className="mt-3 text-2xl font-bold text-neutral-900 sm:text-3xl">
-          Tayssir Froid — قطع غيار التبريد بالجملة
+          قطع الغيار بالجملة
         </h1>
-        <p className="mt-2 max-w-2xl text-sm text-neutral-700 sm:text-base">
-          قطع غيار الغسالات والثلاجات والمجمدات والمكيفات، للتجار والصنايعية
-          ومحلات قطع الغيار في المغرب. الحد الأدنى للطلبية{" "}
-          {formatMad(settings.minOrderAmountMad)}، والدفع عند الاستلام.
-        </p>
-        <a
-          href={whatsappLink}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-4 inline-flex items-center gap-2 rounded-full bg-whatsapp px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-whatsapp-dark"
-        >
-          تواصل معنا عبر واتساب
-        </a>
+
+        <ul className="mt-4 flex flex-col gap-1.5 text-sm text-neutral-700 sm:text-base">
+          {TRUST_POINTS.map((point) => (
+            <li key={point} className="flex items-center gap-2">
+              <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-brand-turquoise" />
+              {point}
+            </li>
+          ))}
+        </ul>
+
+        <div className="mt-5 flex flex-col gap-2.5 sm:flex-row">
+          <Link
+            href="#categories"
+            className="flex min-h-11 items-center justify-center rounded-full bg-brand-orange px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-orange-dark"
+          >
+            تصفح المنتجات
+          </Link>
+          <a
+            href={whatsappLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex min-h-11 items-center justify-center gap-2 rounded-full bg-whatsapp px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-whatsapp-dark"
+          >
+            تواصل عبر واتساب
+          </a>
+        </div>
       </section>
 
       {categories.length > 0 && (
-        <section className="mt-8">
+        <section id="categories" className="mt-8 scroll-mt-20">
           <h2 className="border-r-4 border-brand-turquoise pr-3 text-lg font-bold text-neutral-800">
             التصنيفات
           </h2>
-          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
-            {categories.map((category) => (
-              <Link
-                key={category.id}
-                href={`/category/${category.slug}`}
-                className="rounded-xl border border-neutral-200 bg-white p-4 text-center text-sm font-medium text-neutral-700 transition-colors hover:border-brand-turquoise hover:text-brand-turquoise-dark"
-              >
-                {category.name_ar}
-              </Link>
-            ))}
+          <div className="mt-3 grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
+            {categories.map((category) => {
+              const count = productCounts[category.id] ?? 0;
+              return (
+                <Link
+                  key={category.id}
+                  href={`/category/${category.slug}`}
+                  className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white p-4 transition-colors hover:border-brand-turquoise"
+                >
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-brand-turquoise-tint text-brand-turquoise-dark">
+                    <CategoryIcon slug={category.slug} name={category.name_ar} className="h-6 w-6" />
+                  </span>
+                  <span className="flex min-w-0 flex-col">
+                    <span className="line-clamp-2 text-sm font-semibold text-neutral-800">
+                      {category.name_ar}
+                    </span>
+                    <span className="mt-0.5 text-xs text-neutral-500">
+                      {count} {count === 1 ? "منتج" : "منتجات"}
+                    </span>
+                  </span>
+                </Link>
+              );
+            })}
           </div>
         </section>
       )}
