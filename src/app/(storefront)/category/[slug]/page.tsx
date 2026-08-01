@@ -9,6 +9,7 @@ import {
 import { ProductCard } from "@/components/ProductCard";
 import { safeQuery } from "@/lib/safeQuery";
 import { ServiceUnavailable } from "@/components/ServiceUnavailable";
+import { getSiteUrl } from "@/lib/siteUrl";
 
 export const dynamic = "force-dynamic";
 
@@ -38,11 +39,16 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     "category.generateMetadata"
   );
   if (!category) return {};
+  const description =
+    category.description_ar ?? `منتجات ${category.name_ar} بالجملة من Tayssir Froid`;
+  const siteUrl = getSiteUrl();
+  const path = `/category/${category.slug}`;
+
   return {
     title: category.name_ar,
-    description:
-      category.description_ar ??
-      `منتجات ${category.name_ar} بالجملة من Tayssir Froid`,
+    description,
+    alternates: siteUrl ? { canonical: path } : undefined,
+    openGraph: { title: category.name_ar, description, url: siteUrl ? path : undefined },
   };
 }
 

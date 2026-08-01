@@ -14,6 +14,7 @@ import { buildProductWhatsAppLink } from "@/lib/whatsapp";
 import { safeQuery } from "@/lib/safeQuery";
 import { AddToCartForm } from "@/components/AddToCartForm";
 import { ServiceUnavailable } from "@/components/ServiceUnavailable";
+import { getSiteUrl } from "@/lib/siteUrl";
 
 export const dynamic = "force-dynamic";
 
@@ -29,9 +30,23 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     "product.generateMetadata"
   );
   if (!product) return {};
+
+  const title = product.meta_title ?? product.name_ar;
+  const description = product.meta_description ?? product.description_ar ?? undefined;
+  const siteUrl = getSiteUrl();
+  const path = `/product/${product.slug}`;
+  const imageUrl = product.primary_image_path ? resolveImageUrl(product.primary_image_path) : undefined;
+
   return {
-    title: product.meta_title ?? product.name_ar,
-    description: product.meta_description ?? product.description_ar ?? undefined,
+    title,
+    description,
+    alternates: siteUrl ? { canonical: path } : undefined,
+    openGraph: {
+      title,
+      description,
+      url: siteUrl ? path : undefined,
+      images: imageUrl ? [{ url: imageUrl }] : undefined,
+    },
   };
 }
 
@@ -70,8 +85,34 @@ export default async function ProductPage({ params }: Props) {
         ? "نفدت الكمية"
         : "متوفر";
 
+  const siteUrl = getSiteUrl();
+  // بيانات Product/Offer الحقيقية فقط (السعر والتوفر الفعليان من قاعدة
+  // البيانات نفسها) — بدون أي Reviews أو Ratings وهمية.
+  const productJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: product.name_ar,
+    sku: product.sku,
+    ...(mainImage ? { image: [resolveImageUrl(mainImage.storage_path)] } : {}),
+    ...(product.description_ar ? { description: product.description_ar } : {}),
+    offers: {
+      "@type": "Offer",
+      priceCurrency: "MAD",
+      price: product.sale_price,
+      availability: isUnavailable
+        ? "https://schema.org/OutOfStock"
+        : "https://schema.org/InStock",
+      ...(siteUrl ? { url: `${siteUrl}/product/${product.slug}` } : {}),
+    },
+  };
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
+      <script
+        type="application/ld+json"
+        // eslint-disable-next-line react/no-danger
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }}
+      />
       <nav className="text-xs text-neutral-500">
         <Link href="/" className="hover:underline">
           الرئيسية
