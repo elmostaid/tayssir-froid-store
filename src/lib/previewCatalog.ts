@@ -49,14 +49,49 @@ export function getPreviewProductCountsByCategory(): Record<number, number> {
   return counts;
 }
 
+export type ProductSort = "newest" | "price_asc" | "price_desc" | "name";
+
 export function getPreviewProducts(
-  options: { categorySlug?: string; limit?: number } = {}
+  options: {
+    categorySlug?: string;
+    limit?: number;
+    query?: string;
+    sort?: ProductSort;
+  } = {}
 ): CatalogProduct[] {
-  const { categorySlug, limit = 60 } = options;
-  const filtered = categorySlug
+  const { categorySlug, limit = 60, query, sort = "newest" } = options;
+  let filtered = categorySlug
     ? previewProducts.filter((product) => product.category_slug === categorySlug)
-    : previewProducts;
-  return filtered.slice(0, limit);
+    : previewProducts.slice();
+
+  const needle = query?.trim().toLowerCase();
+  if (needle) {
+    filtered = filtered.filter((product) => {
+      const haystacks = [product.name_ar, product.name_fr, product.sku, product.description_ar];
+      return haystacks.some(
+        (value) => typeof value === "string" && value.toLowerCase().includes(needle)
+      );
+    });
+  }
+
+  const sorted = sortPreviewProducts(filtered, sort);
+  return sorted.slice(0, limit);
+}
+
+function sortPreviewProducts(products: CatalogProduct[], sort: ProductSort): CatalogProduct[] {
+  const list = products.slice();
+  switch (sort) {
+    case "price_asc":
+      return list.sort((a, b) => Number(a.sale_price) - Number(b.sale_price));
+    case "price_desc":
+      return list.sort((a, b) => Number(b.sale_price) - Number(a.sale_price));
+    case "name":
+      return list.sort((a, b) => a.name_ar.localeCompare(b.name_ar, "ar"));
+    case "newest":
+    default:
+      // بيانات fallback مرتَّبة أصلاً من الأحدث؛ id أكبر = أُضيف لاحقاً
+      return list.sort((a, b) => b.id - a.id);
+  }
 }
 
 // بحث بسيط بمطابقة جزء من النص (بدون حساسية لحالة الأحرف) عبر الحقول التي
@@ -88,6 +123,10 @@ export function searchPreviewProducts(
 
 export function getPreviewProductBySlug(slug: string): CatalogProduct | null {
   return previewProducts.find((product) => product.slug === slug) ?? null;
+}
+
+export function getPreviewProductIdsWithVariants(): Set<number> {
+  return new Set(previewProductVariants.map((variant) => variant.product_id));
 }
 
 export function getPreviewProductVariants(productId: number): CatalogProductVariant[] {

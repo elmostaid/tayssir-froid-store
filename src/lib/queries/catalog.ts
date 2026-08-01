@@ -14,7 +14,11 @@ import {
   getPreviewProductImages,
   searchPreviewProducts,
   getPreviewProductCountsByCategory,
+  getPreviewProductIdsWithVariants,
+  type ProductSort,
 } from "@/lib/previewCatalog";
+
+export type { ProductSort };
 
 // كل الاستعلامات هنا تقرأ من views عامة (catalog_*) لا تحتوي أبداً على
 // عمود ثمن الشراء السري، ولا تعرض إلا المنتجات المنشورة والتصنيفات الفعالة.
@@ -55,24 +59,38 @@ export async function getCategoryBySlug(slug: string): Promise<Category | null> 
 }
 
 export async function getProducts(
-  options: { categorySlug?: string; limit?: number } = {}
+  options: {
+    categorySlug?: string;
+    limit?: number;
+    query?: string;
+    sort?: ProductSort;
+  } = {}
 ): Promise<CatalogProduct[]> {
-  const { categorySlug, limit = 60 } = options;
+  const { categorySlug, limit = 60, query, sort = "newest" } = options;
 
-  if (!hasDatabase) return getPreviewProducts({ categorySlug, limit });
+  if (!hasDatabase) return getPreviewProducts({ categorySlug, limit, query, sort });
 
-  if (categorySlug) {
-    return sql<CatalogProduct[]>`
-      select * from public.catalog_products
-      where category_slug = ${categorySlug}
-      order by created_at desc
-      limit ${limit}
-    `;
-  }
+  const pattern = query?.trim() ? `%${query.trim()}%` : null;
+  const orderBy =
+    sort === "price_asc"
+      ? sql`order by sale_price asc`
+      : sort === "price_desc"
+        ? sql`order by sale_price desc`
+        : sort === "name"
+          ? sql`order by name_ar asc`
+          : sql`order by created_at desc`;
 
   return sql<CatalogProduct[]>`
     select * from public.catalog_products
-    order by created_at desc
+    where (${categorySlug ?? null}::text is null or category_slug = ${categorySlug ?? null})
+      and (
+        ${pattern}::text is null
+        or name_ar ilike ${pattern}
+        or name_fr ilike ${pattern}
+        or sku ilike ${pattern}
+        or description_ar ilike ${pattern}
+      )
+    ${orderBy}
     limit ${limit}
   `;
 }
@@ -117,6 +135,15 @@ export async function searchProducts(
     order by created_at desc
     limit ${limit}
   `;
+}
+
+export async function getProductIdsWithVariants(): Promise<Set<number>> {
+  if (!hasDatabase) return getPreviewProductIdsWithVariants();
+
+  const rows = await sql<{ product_id: number }[]>`
+    select distinct product_id from public.catalog_product_variants
+  `;
+  return new Set(rows.map((r) => r.product_id));
 }
 
 export async function getProductVariants(

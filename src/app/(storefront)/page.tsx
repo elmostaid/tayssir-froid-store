@@ -1,5 +1,10 @@
 import Link from "next/link";
-import { getCategories, getProductCountsByCategory, getProducts } from "@/lib/queries/catalog";
+import {
+  getCategories,
+  getProductCountsByCategory,
+  getProductIdsWithVariants,
+  getProducts,
+} from "@/lib/queries/catalog";
 import { getSettings } from "@/lib/queries/settings";
 import { ProductCard } from "@/components/ProductCard";
 import { CategoryIcon } from "@/components/CategoryIcon";
@@ -19,10 +24,11 @@ const TRUST_POINTS = [
 ];
 
 export default async function HomePage() {
-  const [categories, productCounts, products, settings] = await Promise.all([
+  const [categories, productCounts, products, variantProductIds, settings] = await Promise.all([
     safeQuery(() => getCategories(), [], "home.getCategories"),
     safeQuery(() => getProductCountsByCategory(), {}, "home.getProductCountsByCategory"),
     safeQuery(() => getProducts({ limit: 12 }), [], "home.getProducts"),
+    safeQuery(() => getProductIdsWithVariants(), new Set<number>(), "home.getProductIdsWithVariants"),
     safeQuery(
       () => getSettings(),
       { minOrderAmountMad: 1000, deliveryFeePerCartonMad: 45, whatsappNumber: "+212722083458", storeCity: "" },
@@ -118,6 +124,7 @@ export default async function HomePage() {
                 key={product.id}
                 product={product}
                 imageUrl={product.primary_image_path}
+                hasVariants={variantProductIds.has(product.id)}
               />
             ))}
           </div>

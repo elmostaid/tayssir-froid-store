@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { searchProducts } from "@/lib/queries/catalog";
+import { searchProducts, getProductIdsWithVariants } from "@/lib/queries/catalog";
 import { ProductCard } from "@/components/ProductCard";
 import { safeQuery } from "@/lib/safeQuery";
 
@@ -22,9 +22,12 @@ export default async function SearchPage({ searchParams }: Props) {
   const { q } = await searchParams;
   const query = (q ?? "").trim();
 
-  const products = query
-    ? await safeQuery(() => searchProducts(query), [], "search.searchProducts")
-    : [];
+  const [products, variantProductIds] = await Promise.all([
+    query
+      ? safeQuery(() => searchProducts(query), [], "search.searchProducts")
+      : Promise.resolve([]),
+    safeQuery(() => getProductIdsWithVariants(), new Set<number>(), "search.getProductIdsWithVariants"),
+  ]);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
@@ -69,6 +72,7 @@ export default async function SearchPage({ searchParams }: Props) {
                 key={product.id}
                 product={product}
                 imageUrl={product.primary_image_path}
+                hasVariants={variantProductIds.has(product.id)}
               />
             ))}
           </div>
