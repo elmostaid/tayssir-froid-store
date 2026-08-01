@@ -71,9 +71,11 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       },
     });
   } catch (error) {
-    // مكتبة توليد PDF قد تنهار مع بعض تركيبات النصوص العربية القصيرة (خطأ
-    // معروف داخل محرك ترتيب النصوص نفسه) — نعرض بديلاً HTML بدل رمي خطأ
-    // 500 خام، حتى يبقى بون التحضير قابلاً للعرض والطباعة دائماً.
+    // مكتبة توليد PDF قد تنهار مع نصوص عربية عادية (قصيرة أو طويلة، حسب
+    // العرض الدقيق وقت التخطيط وليس حسب طول النص نفسه — خطأ حقيقي داخل
+    // محرك ترتيب النصوص فيها، تكرَّر مع أغلب أسماء منتجات عربية واقعية
+    // أثناء الاختبار) — نعرض بديلاً HTML بدل رمي خطأ 500 خام، حتى يبقى
+    // بون التحضير قابلاً للعرض والطباعة دائماً.
     console.error("picking-slip.pdf: فشل توليد PDF، التراجع إلى HTML", orderId, error);
     return new NextResponse(pickingSlipHtmlFallback(order, items), {
       headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "private, no-store" },
