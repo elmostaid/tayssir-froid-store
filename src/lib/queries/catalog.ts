@@ -26,10 +26,17 @@ const hasDatabase = Boolean(process.env.DATABASE_URL);
 export async function getCategories(): Promise<Category[]> {
   if (!hasDatabase) return getPreviewCategories();
 
+  // نُخفي عن الزبون أي تصنيف بلا أي منتج ظاهر حالياً (المنتجات المحذوفة أو
+  // غير المنشورة أصلاً لا تصل حتى إلى catalog_products)، بدون حذف التصنيف
+  // نفسه من قاعدة البيانات — يبقى التصنيف موجوداً في لوحة الإدارة ويظهر
+  // للزبون تلقائياً بمجرد نشر أول منتج فيه.
   return sql<Category[]>`
-    select id, slug, name_ar, name_fr, description_ar, parent_id, sort_order
-    from public.catalog_categories
-    order by sort_order asc, name_ar asc
+    select c.id, c.slug, c.name_ar, c.name_fr, c.description_ar, c.parent_id, c.sort_order
+    from public.catalog_categories c
+    where exists (
+      select 1 from public.catalog_products p where p.category_id = c.id
+    )
+    order by c.sort_order asc, c.name_ar asc
   `;
 }
 
