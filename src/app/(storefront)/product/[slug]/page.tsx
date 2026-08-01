@@ -7,6 +7,7 @@ import {
   getProductImages,
   getProductVariants,
 } from "@/lib/queries/catalog";
+import { getSettings } from "@/lib/queries/settings";
 import { resolveImageUrl } from "@/lib/images";
 import { formatMad } from "@/lib/format";
 import { buildProductWhatsAppLink } from "@/lib/whatsapp";
@@ -49,9 +50,14 @@ export default async function ProductPage({ params }: Props) {
     notFound();
   }
 
-  const [images, variants] = await Promise.all([
+  const [images, variants, settings] = await Promise.all([
     safeQuery(() => getProductImages(product.id), [], "product.getProductImages"),
     safeQuery(() => getProductVariants(product.id), [], "product.getProductVariants"),
+    safeQuery(
+      () => getSettings(),
+      { minOrderAmountMad: 1000, deliveryFeePerCartonMad: 45, whatsappNumber: "+212722083458", storeCity: "" },
+      "product.getSettings"
+    ),
   ]);
 
   const mainImage = images[0];
@@ -199,6 +205,17 @@ export default async function ProductPage({ params }: Props) {
           >
             استفسار عبر واتساب
           </a>
+
+          <ul className="mt-4 flex flex-col gap-1.5 rounded-xl bg-neutral-100 p-4 text-xs text-neutral-600">
+            <li>البيع بالجملة فقط</li>
+            <li>أقل طلب إجمالي {formatMad(settings.minOrderAmountMad)}</li>
+            <li>الدفع عند الاستلام بعد معاينة السلعة</li>
+            <li>التوصيل لجميع مدن المغرب</li>
+            <li>
+              التوصيل {formatMad(settings.deliveryFeePerCartonMad)} للكرطونة
+              (يُحدَّد عدد الكرطونات بعد تجهيز الطلب)
+            </li>
+          </ul>
         </div>
       </div>
     </div>
