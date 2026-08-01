@@ -17,8 +17,23 @@ const previewProducts = productsData as CatalogProduct[];
 const previewProductVariants = productVariantsData as CatalogProductVariant[];
 const previewProductImages = productImagesData as CatalogProductImage[];
 
+// تصنيفات "فارغة" (بدون أي منتج بحالة "published") تبقى موجودة في البيانات
+// لكن تُخفى عن الزبون هنا فقط — لا نحذفها، ونحسب الفراغ ديناميكياً من
+// المنتجات الحالية في كل مرة (فمجرد إضافة أول منتج منشور لتصنيف يُظهره
+// تلقائياً بلا أي تعديل يدوي إضافي).
+function getCategoryIdsWithPublishedProducts(): Set<number> {
+  const ids = new Set<number>();
+  for (const product of previewProducts) {
+    if (product.status === "published") {
+      ids.add(product.category_id);
+    }
+  }
+  return ids;
+}
+
 export function getPreviewCategories(): Category[] {
-  return previewCategories;
+  const visibleIds = getCategoryIdsWithPublishedProducts();
+  return previewCategories.filter((category) => visibleIds.has(category.id));
 }
 
 export function getPreviewCategoryBySlug(slug: string): Category | null {
