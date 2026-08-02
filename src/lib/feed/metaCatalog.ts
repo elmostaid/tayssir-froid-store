@@ -231,15 +231,18 @@ function csvEscape(value: string | number): string {
   return str;
 }
 
-// Excel (خصوصاً على أندرويد/ويندوز) لا يعتمد على ترويسة HTTP charset عند فتح
-// CSV محلياً — يخمّن الترميز من محتوى الملف نفسه، وبدون BOM يفترض غالباً
-// Windows-1252/Latin-1 فتظهر العربية مشوَّهة رغم أن البايتات UTF-8 صحيحة
-// فعلاً. إضافة BOM (U+FEFF) في أول الملف تجبر Excel على قراءته كـUTF-8 —
-// ولا تؤثر على أي قارئ CSV قياسي آخر (بما فيه Meta)، فكلها تتجاهل BOM.
-const UTF8_BOM = "﻿";
-
+// ملاحظة مهمة: جُرِّب سابقاً إضافة UTF-8 BOM (U+FEFF) في بداية الملف لإصلاح
+// ظهور العربية مشوَّهة عند فتح الملف يدوياً في Excel. لكن هذا الملف مصدره
+// الأساسي والحرج هو استيراد آلي عبر Meta Commerce Manager (وليس فتح يدوي في
+// Excel) — وبعد نشر BOM فشل استيراد Meta بالكامل برسالة "تعذّر التعرّف على
+// صيغة الملف"، لأن محلِّل Meta على الأرجح لا يتجاهل BOM كما تفعل معظم أدوات
+// CSV القياسية (يُلحَق BOM حرفياً بأول عمود، فيصبح اسمه "﻿id" بدل "id"
+// فيفشل التعرّف على العمود بالكامل). صحة الاستيراد الآلي في Meta أهم من
+// المعاينة اليدوية في Excel لهذا الملف تحديداً — فلا BOM هنا. الترميز يبقى
+// UTF-8 حقيقياً وسليماً 100% (البايتات صحيحة، والترويسة Content-Type تصرّح
+// بـcharset=utf-8 صراحة)، فقط بدون علامة BOM القابلة لكسر المحلِّلات الصارمة.
 export function rowsToCsv(rows: MetaCatalogRow[]): string {
   const header = CSV_COLUMNS.join(",");
   const lines = rows.map((row) => CSV_COLUMNS.map((col) => csvEscape(row[col])).join(","));
-  return UTF8_BOM + [header, ...lines].join("\r\n") + "\r\n";
+  return [header, ...lines].join("\r\n") + "\r\n";
 }

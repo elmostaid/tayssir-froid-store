@@ -49,24 +49,34 @@ describe("buildCatalogExport (Meta Commerce Catalog)", () => {
   test("rowsToCsv ينتج عنواناً صحيحاً وعدد أسطر مطابقاً لعدد الصفوف", async () => {
     const result = await buildCatalogExport();
     const csv = rowsToCsv(result.rows);
-    const withoutBom = csv.replace(/^﻿/, "");
-    const lines = withoutBom.trim().split("\r\n");
+    const lines = csv.trim().split("\r\n");
     expect(lines[0]).toBe(
       "id,title,description,availability,condition,price,link,image_link,brand,product_type,inventory,item_group_id"
     );
     expect(lines.length).toBe(result.rows.length + 1);
   });
 
-  test("rowsToCsv يبدأ بـ UTF-8 BOM حتى يقرأ Excel العربية بشكل صحيح", async () => {
+  // انتبه: لا تُعِد إضافة UTF-8 BOM هنا. جُرِّب سابقاً لإصلاح ظهور العربية
+  // مشوَّهة عند فتح الملف يدوياً في Excel، لكنه كسر استيراد Meta Commerce
+  // Manager الآلي بالكامل (رسالة "تعذّر التعرّف على صيغة الملف") — على
+  // الأرجح لأن محلِّل Meta لا يتجاهل BOM فيُلحقه حرفياً بأول عمود ("﻿id"
+  // بدل "id"). صحة الاستيراد الآلي أهم من المعاينة اليدوية لهذا الملف.
+  test("rowsToCsv لا يبدأ بـ BOM إطلاقاً (يكسر استيراد Meta الآلي رغم أنه يُصلح عرض Excel اليدوي)", async () => {
     const result = await buildCatalogExport();
     const csv = rowsToCsv(result.rows);
 
-    expect(csv.charCodeAt(0)).toBe(0xfeff);
+    expect(csv.charCodeAt(0)).not.toBe(0xfeff);
+    expect(csv.startsWith("id,title,description")).toBe(true);
 
-    // محاكاة ما يفعله Excel فعلياً: تفكيك الملف كبايتات UTF-8 ثم إعادة قراءته،
-    // والتأكد أن أول اسم منتج عربي (بعد إزالة BOM) يبقى سليماً بدون تشويه.
+    // محاكاة قراءة صارمة كما يفعل محلِّل CSV آلي: أول عمود يجب أن يكون
+    // "id" حرفياً بدون أي حرف خفي مُلحَق به.
+    const [headerLine] = csv.split("\r\n");
+    const [firstColumn] = headerLine.split(",");
+    expect(firstColumn).toBe("id");
+
+    // التأكد أن الترميز يبقى UTF-8 سليماً وأن العربية لا تُشوَّه بدون BOM.
     const bytes = new TextEncoder().encode(csv);
-    const decoded = new TextDecoder("utf-8").decode(bytes).replace(/^﻿/, "");
+    const decoded = new TextDecoder("utf-8").decode(bytes);
     const firstArabicName = result.rows[0].title;
     expect(decoded).toContain(firstArabicName);
   });
