@@ -231,8 +231,15 @@ function csvEscape(value: string | number): string {
   return str;
 }
 
+// Excel (خصوصاً على أندرويد/ويندوز) لا يعتمد على ترويسة HTTP charset عند فتح
+// CSV محلياً — يخمّن الترميز من محتوى الملف نفسه، وبدون BOM يفترض غالباً
+// Windows-1252/Latin-1 فتظهر العربية مشوَّهة رغم أن البايتات UTF-8 صحيحة
+// فعلاً. إضافة BOM (U+FEFF) في أول الملف تجبر Excel على قراءته كـUTF-8 —
+// ولا تؤثر على أي قارئ CSV قياسي آخر (بما فيه Meta)، فكلها تتجاهل BOM.
+const UTF8_BOM = "﻿";
+
 export function rowsToCsv(rows: MetaCatalogRow[]): string {
   const header = CSV_COLUMNS.join(",");
   const lines = rows.map((row) => CSV_COLUMNS.map((col) => csvEscape(row[col])).join(","));
-  return [header, ...lines].join("\r\n") + "\r\n";
+  return UTF8_BOM + [header, ...lines].join("\r\n") + "\r\n";
 }

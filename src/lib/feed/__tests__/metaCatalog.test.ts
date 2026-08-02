@@ -49,10 +49,25 @@ describe("buildCatalogExport (Meta Commerce Catalog)", () => {
   test("rowsToCsv ينتج عنواناً صحيحاً وعدد أسطر مطابقاً لعدد الصفوف", async () => {
     const result = await buildCatalogExport();
     const csv = rowsToCsv(result.rows);
-    const lines = csv.trim().split("\r\n");
+    const withoutBom = csv.replace(/^﻿/, "");
+    const lines = withoutBom.trim().split("\r\n");
     expect(lines[0]).toBe(
       "id,title,description,availability,condition,price,link,image_link,brand,product_type,inventory,item_group_id"
     );
     expect(lines.length).toBe(result.rows.length + 1);
+  });
+
+  test("rowsToCsv يبدأ بـ UTF-8 BOM حتى يقرأ Excel العربية بشكل صحيح", async () => {
+    const result = await buildCatalogExport();
+    const csv = rowsToCsv(result.rows);
+
+    expect(csv.charCodeAt(0)).toBe(0xfeff);
+
+    // محاكاة ما يفعله Excel فعلياً: تفكيك الملف كبايتات UTF-8 ثم إعادة قراءته،
+    // والتأكد أن أول اسم منتج عربي (بعد إزالة BOM) يبقى سليماً بدون تشويه.
+    const bytes = new TextEncoder().encode(csv);
+    const decoded = new TextDecoder("utf-8").decode(bytes).replace(/^﻿/, "");
+    const firstArabicName = result.rows[0].title;
+    expect(decoded).toContain(firstArabicName);
   });
 });
