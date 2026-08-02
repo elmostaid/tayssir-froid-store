@@ -1,31 +1,12 @@
 import { describe, expect, test } from "vitest";
 import { buildCatalogExport, rowsToCsv } from "@/lib/feed/metaCatalog";
 
-const UNSUITABLE_IMAGE_SKUS = [
-  "TF-RF-005",
-  "TF-RF-006",
-  "TF-RF-007",
-  "TF-RF-008",
-  "TF-RF-009",
-  "TF-RF-010",
-  "TF-RF-012",
-  "TF-RF-013",
-  "TF-RF-016",
-  "TF-RF-021",
-  "TF-WM-046",
-];
-
 describe("buildCatalogExport (Meta Commerce Catalog)", () => {
-  test("لا يستبعد سوى المنتجات ذات الصورة الرئيسية غير المناسبة، ويحسب الصفوف بشكل صحيح مع Variants", async () => {
+  test("لا يستبعد أي منتج بسبب الصورة الرئيسية بعد إصلاح جميع الصور المشكوك فيها", async () => {
     const result = await buildCatalogExport();
 
     expect(result.totalProducts).toBeGreaterThan(0);
-    expect(result.excludedFromFeed).toBe(UNSUITABLE_IMAGE_SKUS.length);
-
-    const ids = new Set(result.rows.map((r) => r.id));
-    for (const sku of UNSUITABLE_IMAGE_SKUS) {
-      expect(ids.has(sku)).toBe(false);
-    }
+    expect(result.excludedFromFeed).toBe(0);
   });
 
   test("المنتج ذو الصورة الثانوية المشكوك فيها فقط (وليست الرئيسية) يبقى في الخلاصة", async () => {

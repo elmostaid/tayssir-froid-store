@@ -154,7 +154,7 @@
  {
   "id": 24,
   "product_id": 23,
-  "storage_path": "product-images/TF-RF-005/TF-RF-005-single-gas-manometer.jpg",
+  "storage_path": "product-images/TF-RF-005/TF-RF-005-single-gas-manometer.webp",
   "alt_text_ar": "صورة مانو غاز برو CT-467",
   "sort_order": 1,
   "is_primary": true
@@ -162,7 +162,7 @@
  {
   "id": 25,
   "product_id": 24,
-  "storage_path": "product-images/TF-RF-006/TF-RF-006-vacuum-pump.jpg",
+  "storage_path": "product-images/TF-RF-006/TF-RF-006-vacuum-pump.webp",
   "alt_text_ar": "صورة بومبا فيد",
   "sort_order": 1,
   "is_primary": true
@@ -170,7 +170,7 @@
  {
   "id": 26,
   "product_id": 25,
-  "storage_path": "product-images/TF-RF-007/TF-RF-007-fridge-fan-12v.jpg",
+  "storage_path": "product-images/TF-RF-007/TF-RF-007-fridge-fan-12v.webp",
   "alt_text_ar": "صورة فرفارة ثلاجة 12V بثلاثة خيوط",
   "sort_order": 1,
   "is_primary": true
@@ -178,7 +178,7 @@
  {
   "id": 27,
   "product_id": 26,
-  "storage_path": "product-images/TF-RF-008/TF-RF-008-large-flaring-kit.jpg",
+  "storage_path": "product-images/TF-RF-008/TF-RF-008-large-flaring-kit.webp",
   "alt_text_ar": "صورة ديدجنير كبير احترافي",
   "sort_order": 1,
   "is_primary": true
@@ -186,7 +186,7 @@
  {
   "id": 28,
   "product_id": 27,
-  "storage_path": "product-images/TF-RF-009/TF-RF-009-small-flaring-tool.jpg",
+  "storage_path": "product-images/TF-RF-009/TF-RF-009-small-flaring-tool.webp",
   "alt_text_ar": "صورة ديدجنير صغير",
   "sort_order": 1,
   "is_primary": true
@@ -194,7 +194,7 @@
  {
   "id": 29,
   "product_id": 28,
-  "storage_path": "product-images/TF-RF-010/TF-RF-010-r32-gas-3kg.jpg",
+  "storage_path": "product-images/TF-RF-010/TF-RF-010-r32-gas-3kg.webp",
   "alt_text_ar": "صورة غاز التبريد R32 حجم 3kg",
   "sort_order": 1,
   "is_primary": true
@@ -202,7 +202,7 @@
  {
   "id": 31,
   "product_id": 30,
-  "storage_path": "product-images/TF-RF-012/TF-RF-012-lg-ac-fan.jpg",
+  "storage_path": "product-images/TF-RF-012/TF-RF-012-lg-ac-fan.webp",
   "alt_text_ar": "صورة فرفارة مكيف LG",
   "sort_order": 1,
   "is_primary": true
@@ -210,7 +210,7 @@
  {
   "id": 32,
   "product_id": 31,
-  "storage_path": "product-images/TF-RF-013/TF-RF-013-universal-ac-remote.jpg",
+  "storage_path": "product-images/TF-RF-013/TF-RF-013-universal-ac-remote.webp",
   "alt_text_ar": "صورة تلكموند مكيف يونيفرسال",
   "sort_order": 1,
   "is_primary": true
@@ -218,7 +218,7 @@
  {
   "id": 35,
   "product_id": 34,
-  "storage_path": "product-images/TF-RF-016/TF-RF-016-large-tube-cutter.jpg",
+  "storage_path": "product-images/TF-RF-016/TF-RF-016-large-tube-cutter.webp",
   "alt_text_ar": "صورة كوب تيب كبير",
   "sort_order": 1,
   "is_primary": true
@@ -226,7 +226,7 @@
  {
   "id": 40,
   "product_id": 39,
-  "storage_path": "product-images/shared/TF-RF-021-022-charging-heads.jpg",
+  "storage_path": "product-images/TF-RF-021/TF-RF-021-can-tap-valve-r600.webp",
   "alt_text_ar": "صورة راس شارج R600",
   "sort_order": 1,
   "is_primary": true
