@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { buildCatalogExport, rowsToCsv } from "@/lib/feed/metaCatalog";
 
 describe("buildCatalogExport (Meta Commerce Catalog)", () => {
@@ -79,5 +79,32 @@ describe("buildCatalogExport (Meta Commerce Catalog)", () => {
     const decoded = new TextDecoder("utf-8").decode(bytes);
     const firstArabicName = result.rows[0].title;
     expect(decoded).toContain(firstArabicName);
+  });
+
+  describe("مع SITE_URL مضبوط (كما هو الحال فعلياً على Vercel)", () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    // حارس دائم ضد أي رجوع لهذه المشكلة: كل صف بلا استثناء يجب أن يملك
+    // image_link و link مطلقين وHTTPS، وليس فارغاً أو نسبياً — هذا بالضبط ما
+    // يحتاجه Meta Commerce Manager ليجلب الصور، ولم يكن أي اختبار سابق
+    // يتحقق منه فعلياً لأن SITE_URL لم يكن مضبوطاً في بيئة الاختبار.
+    test("كل صف من الـ162 يملك image_link و link مطلقين بصيغة https صحيحة، بدون استثناء", async () => {
+      vi.stubEnv("SITE_URL", "https://tayssir-froid-store-git-product-upda-4deb4c-elmostaids-projects.vercel.app");
+
+      const result = await buildCatalogExport();
+      expect(result.rows.length).toBeGreaterThan(0);
+
+      const emptyImageLink = result.rows.filter((r) => !r.image_link.trim());
+      const invalidImageLink = result.rows.filter(
+        (r) => r.image_link.trim() && !/^https:\/\/\S+$/.test(r.image_link)
+      );
+      const invalidLink = result.rows.filter((r) => !/^https:\/\/\S+$/.test(r.link));
+
+      expect(emptyImageLink.map((r) => r.id)).toEqual([]);
+      expect(invalidImageLink.map((r) => r.id)).toEqual([]);
+      expect(invalidLink.map((r) => r.id)).toEqual([]);
+    });
   });
 });
