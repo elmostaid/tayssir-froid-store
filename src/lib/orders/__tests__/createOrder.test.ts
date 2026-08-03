@@ -9,12 +9,22 @@ import type { CreateOrderInput } from "@/lib/orders/types";
 // القديمة حُذفت الآن. TEST-FIXTURE-001/002/003 منتجات اختبار مؤقتة
 // (تُنشأ وتُحذف في هذا الملف فقط) بنفس مواصفات DEMO-001/002/003 السابقة.
 
-const TEST_PHONE = "0600000099";
+// كل اختبار يستعمل رقم هاتف مختلف (بادئة ثابتة 060000 + عدّاد) بدل رقم واحد
+// مشترك — لأن isRateLimited() (حماية حقيقية ضد تكرار الطلبات من نفس الرقم،
+// 5 محاولات كحد أقصى كل 5 دقائق) حماية إنتاجية صحيحة يجب ألا تُضعَف من أجل
+// الاختبارات، لكنها كانت تُحجب اختبارات لاحقة في هذا الملف عن طريق الخطأ
+// لأنها كلها كانت تشارك نفس رقم الهاتف الواحد فتتراكم المحاولات وتتجاوز 5.
+const TEST_PHONE_PREFIX = "060000";
+let testPhoneCounter = 0;
+function nextTestPhone(): string {
+  testPhoneCounter += 1;
+  return `${TEST_PHONE_PREFIX}${String(testPhoneCounter).padStart(4, "0")}`;
+}
 
 function baseCustomer() {
   return {
     fullName: "زبون اختبار",
-    phone: TEST_PHONE,
+    phone: nextTestPhone(),
     city: "مراكش",
     address: "حي المحاميد، شارع تجريبي",
     notes: null,
@@ -57,7 +67,7 @@ beforeAll(async () => {
 afterAll(async () => {
   // تنظيف كل الطلبات التي أنشأتها هذه الاختبارات (order_items وسجل الحالة
   // يُحذَفان تلقائياً عبر on delete cascade)، ثم منتجات الاختبار المؤقتة.
-  await sql`delete from public.orders where customer_phone = ${TEST_PHONE}`;
+  await sql`delete from public.orders where customer_phone like ${TEST_PHONE_PREFIX + "%"}`;
   await sql`delete from public.products where sku in ('TEST-FIXTURE-001', 'TEST-FIXTURE-002', 'TEST-FIXTURE-003')`;
 });
 

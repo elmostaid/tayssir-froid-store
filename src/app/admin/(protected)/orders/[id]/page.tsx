@@ -6,9 +6,14 @@ import {
   getAdminOrderItems,
   getAdminOrderStatusHistory,
 } from "@/lib/queries/adminOrders";
+import { ORDER_STATUS_LABELS, type OrderStatus } from "@/lib/orders/orderStatus";
 import { formatMad } from "@/lib/format";
+import { splitProductNameSnapshot } from "@/lib/orders/productNameSnapshot";
 import { OrderStatusForm } from "@/components/admin/OrderStatusForm";
 import { OrderNoteForm } from "@/components/admin/OrderNoteForm";
+import { DeliveryFeeForm } from "@/components/admin/DeliveryFeeForm";
+import { CopyBonButton } from "@/components/admin/CopyBonButton";
+import { CopyDeliveryInfoButton } from "@/components/admin/CopyDeliveryInfoButton";
 
 export const dynamic = "force-dynamic";
 
@@ -40,15 +45,25 @@ export default async function AdminOrderDetailPage({ params }: Props) {
         <h1 dir="ltr" className="font-mono text-xl font-bold text-neutral-800">
           {order.orderNumber}
         </h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <CopyBonButton order={order} items={items} />
+          <a
+            href={`/admin/orders/${order.id}/print`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-semibold text-neutral-700"
+          >
+            طباعة البون
+          </a>
           <a
             href={`/admin/orders/${order.id}/picking-slip.pdf`}
             target="_blank"
             rel="noopener noreferrer"
             className="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-semibold text-neutral-700"
           >
-            بون التحضير (PDF)
+            تحميل PDF
           </a>
+          <CopyDeliveryInfoButton order={order} />
           <a
             href={`/order/${order.publicReference}`}
             target="_blank"
@@ -76,7 +91,7 @@ export default async function AdminOrderDetailPage({ params }: Props) {
             <dd className="font-medium text-neutral-800">{order.customerCity}</dd>
           </div>
           <div>
-            <dt className="text-neutral-500">التاريخ</dt>
+            <dt className="text-neutral-500">التاريخ والساعة</dt>
             <dd className="font-medium text-neutral-800">
               {new Date(order.createdAt).toLocaleString("ar-MA")}
             </dd>
@@ -97,28 +112,48 @@ export default async function AdminOrderDetailPage({ params }: Props) {
       <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-4">
         <h2 className="text-sm font-semibold text-neutral-800">المنتجات</h2>
         <div className="mt-2 flex flex-col gap-2">
-          {items.map((item) => (
-            <div key={item.id} className="flex items-center justify-between border-b border-neutral-100 pb-2 text-sm last:border-0">
-              <div>
-                <p className="font-medium text-neutral-800">{item.productNameSnapshot}</p>
-                <p className="text-xs text-neutral-500" dir="ltr">{item.skuSnapshot}</p>
+          {items.map((item) => {
+            const { productName, variantName } = splitProductNameSnapshot(item.productNameSnapshot);
+            return (
+              <div
+                key={item.id}
+                className="flex items-center justify-between border-b border-neutral-100 pb-2 text-sm last:border-0"
+              >
+                <div>
+                  <p className="font-medium text-neutral-800">
+                    {productName}
+                    {variantName && <span className="text-neutral-500"> — {variantName}</span>}
+                  </p>
+                  <p className="text-xs text-neutral-500" dir="ltr">{item.skuSnapshot}</p>
+                </div>
+                <div className="text-left">
+                  <p>{formatMad(item.unitPriceSnapshot)} × {item.quantity}</p>
+                  <p className="font-semibold text-brand-orange">{formatMad(item.lineTotal)}</p>
+                </div>
               </div>
-              <div className="text-left">
-                <p>{formatMad(item.unitPriceSnapshot)} × {item.quantity}</p>
-                <p className="font-semibold text-brand-orange">{formatMad(item.lineTotal)}</p>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
         <div className="mt-3 flex items-center justify-between border-t border-neutral-200 pt-3 text-sm font-bold">
           <span>مجموع المنتجات</span>
           <span className="text-brand-orange">{formatMad(order.itemsSubtotal)}</span>
         </div>
-        {order.cartonCount !== null && (
-          <p className="mt-1 text-xs text-neutral-500">
-            عدد الكرطونات: {order.cartonCount} — مصاريف التوصيل: {order.deliveryFee ? formatMad(order.deliveryFee) : "—"}
-          </p>
+        <div className="mt-1 flex items-center justify-between text-sm">
+          <span className="text-neutral-500">مصاريف التوصيل</span>
+          <span className="font-medium text-neutral-800">
+            {order.deliveryFee ? formatMad(order.deliveryFee) : "غير محدَّدة بعد"}
+          </span>
+        </div>
+        {order.finalTotal && (
+          <div className="mt-2 flex items-center justify-between border-t border-neutral-200 pt-2 text-base font-bold">
+            <span>المبلغ الإجمالي عند الاستلام</span>
+            <span className="text-brand-orange">{formatMad(order.finalTotal)}</span>
+          </div>
         )}
+
+        <div className="mt-4 border-t border-neutral-200 pt-4">
+          <DeliveryFeeForm orderId={order.id} currentDeliveryFee={order.deliveryFee} />
+        </div>
       </div>
 
       <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-4">
@@ -131,7 +166,8 @@ export default async function AdminOrderDetailPage({ params }: Props) {
         <ul className="mt-1 flex flex-col gap-1 text-xs text-neutral-600">
           {history.map((entry, i) => (
             <li key={i}>
-              {new Date(entry.changedAt).toLocaleString("ar-MA")} — {entry.status}
+              {new Date(entry.changedAt).toLocaleString("ar-MA")} —{" "}
+              {ORDER_STATUS_LABELS[entry.status as OrderStatus] ?? entry.status}
               {entry.note ? ` — ${entry.note}` : ""}
               {entry.changedBy ? ` (${entry.changedBy})` : ""}
             </li>

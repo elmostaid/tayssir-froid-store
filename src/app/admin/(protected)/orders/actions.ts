@@ -39,6 +39,35 @@ export async function updateOrderStatus(
   return { error: null };
 }
 
+// مصاريف التوصيل قابلة للتعديل يدوياً من الإدارة (تُحدَّد بعد تجهيز الطلب
+// الفعلي)، والمجموع النهائي (المبلغ المطلوب عند الاستلام) يُعاد حسابه فوراً
+// = مجموع المنتجات + مصاريف التوصيل.
+export async function updateDeliveryFee(
+  _prevState: OrderActionState,
+  formData: FormData
+): Promise<OrderActionState> {
+  const admin = await getAdminUser();
+  if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+
+  const orderId = Number(formData.get("orderId"));
+  const feeRaw = String(formData.get("deliveryFee") ?? "").trim();
+  const fee = Number(feeRaw);
+
+  if (!orderId || feeRaw === "" || !Number.isFinite(fee) || fee < 0) {
+    return { error: "قيمة مصاريف التوصيل غير صالحة." };
+  }
+
+  await sql`
+    update public.orders
+    set delivery_fee = ${fee}, final_total = items_subtotal + ${fee}
+    where id = ${orderId}
+  `;
+
+  revalidatePath(`/admin/orders/${orderId}`);
+  revalidatePath("/admin/orders");
+  return { error: null };
+}
+
 export async function addOrderNote(
   _prevState: OrderActionState,
   formData: FormData

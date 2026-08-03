@@ -2,23 +2,12 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAdminUser } from "@/lib/auth/requireAdmin";
 import { listAdminOrders, ORDER_STATUSES, type OrderStatus } from "@/lib/queries/adminOrders";
+import { ORDER_STATUS_LABELS, ORDER_STATUS_BADGE_CLASSES } from "@/lib/orders/orderStatus";
 import { formatMad } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
 export const metadata = { title: "الطلبات" };
-
-const STATUS_LABELS: Record<OrderStatus, { label: string; className: string }> = {
-  new: { label: "جديد", className: "bg-brand-orange/10 text-brand-orange-dark" },
-  contacted: { label: "تم التواصل", className: "bg-blue-100 text-blue-700" },
-  confirmed: { label: "مؤكَّد", className: "bg-brand-turquoise-tint text-brand-turquoise-dark" },
-  preparing: { label: "قيد التحضير", className: "bg-amber-100 text-amber-700" },
-  ready: { label: "جاهز للشحن", className: "bg-purple-100 text-purple-700" },
-  shipped: { label: "تم الشحن", className: "bg-indigo-100 text-indigo-700" },
-  delivered: { label: "تم التسليم", className: "bg-green-100 text-green-700" },
-  returned: { label: "مرتجَع", className: "bg-neutral-200 text-neutral-700" },
-  cancelled: { label: "ملغى", className: "bg-red-100 text-red-700" },
-};
 
 type Props = {
   searchParams: Promise<{ q?: string; status?: string; city?: string; from?: string; to?: string }>;
@@ -59,7 +48,7 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
           <option value="">كل الحالات</option>
           {ORDER_STATUSES.map((s) => (
             <option key={s} value={s}>
-              {STATUS_LABELS[s].label}
+              {ORDER_STATUS_LABELS[s]}
             </option>
           ))}
         </select>
@@ -83,37 +72,36 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
         <p className="mt-6 text-sm text-neutral-500">لا توجد طلبات مطابقة.</p>
       ) : (
         <div className="mt-4 flex flex-col gap-2">
-          {orders.map((order) => {
-            const s = STATUS_LABELS[order.status] ?? STATUS_LABELS.new;
-            return (
-              <Link
-                key={order.id}
-                href={`/admin/orders/${order.id}`}
-                className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 bg-white p-4"
-              >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span dir="ltr" className="font-mono text-sm font-semibold text-neutral-800">
-                      {order.orderNumber}
-                    </span>
-                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${s.className}`}>
-                      {s.label}
-                    </span>
-                  </div>
-                  <p className="truncate text-xs text-neutral-500">
-                    {order.customerName} · {order.customerCity} ·{" "}
-                    <span dir="ltr">{order.customerPhone}</span>
-                  </p>
+          {orders.map((order) => (
+            <Link
+              key={order.id}
+              href={`/admin/orders/${order.id}`}
+              className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 bg-white p-4"
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span dir="ltr" className="font-mono text-sm font-semibold text-neutral-800">
+                    {order.orderNumber}
+                  </span>
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${ORDER_STATUS_BADGE_CLASSES[order.status]}`}
+                  >
+                    {ORDER_STATUS_LABELS[order.status]}
+                  </span>
                 </div>
-                <div className="shrink-0 text-left text-sm font-semibold text-neutral-800">
-                  {formatMad(order.itemsSubtotal)}
-                  <p className="text-xs font-normal text-neutral-500">
-                    {new Date(order.createdAt).toLocaleDateString("ar-MA")}
-                  </p>
-                </div>
-              </Link>
-            );
-          })}
+                <p className="truncate text-xs text-neutral-500">
+                  {order.customerName} · {order.customerCity} ·{" "}
+                  <span dir="ltr">{order.customerPhone}</span>
+                </p>
+              </div>
+              <div className="shrink-0 text-left text-sm font-semibold text-neutral-800">
+                {formatMad(order.itemsSubtotal)}
+                <p className="text-xs font-normal text-neutral-500">
+                  {new Date(order.createdAt).toLocaleString("ar-MA")}
+                </p>
+              </div>
+            </Link>
+          ))}
         </div>
       )}
     </div>

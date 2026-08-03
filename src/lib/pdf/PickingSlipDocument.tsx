@@ -2,6 +2,7 @@ import { Document, Page, Text, View, Image } from "@react-pdf/renderer";
 import { pdfStyles, LOGO_PATH } from "@/lib/pdf/theme";
 import type { AdminOrderDetail, AdminOrderItem } from "@/lib/queries/adminOrders";
 import { formatMad } from "@/lib/format";
+import { splitProductNameSnapshot } from "@/lib/orders/productNameSnapshot";
 
 function Field({ label, value }: { label: string; value: string }) {
   return (
@@ -47,25 +48,46 @@ export function PickingSlipDocument({
           <View style={pdfStyles.tableHeaderRow}>
             <Text style={pdfStyles.colName}>المنتج</Text>
             <Text style={pdfStyles.colSku}>SKU</Text>
+            <Text style={pdfStyles.colVariant}>المتغير</Text>
             <Text style={pdfStyles.colQty}>الكمية</Text>
-            <Text style={pdfStyles.colUnit}>الوحدة</Text>
+            <Text style={pdfStyles.colPrice}>ثمن الوحدة</Text>
+            <Text style={pdfStyles.colLineTotal}>المجموع</Text>
             <Text style={pdfStyles.colCheck}>✓</Text>
           </View>
-          {items.map((item) => (
-            <View key={item.id} style={pdfStyles.tableRow} wrap={false}>
-              <Text style={pdfStyles.colName}>{item.productNameSnapshot}</Text>
-              <Text style={pdfStyles.colSku}>{item.skuSnapshot}</Text>
-              <Text style={pdfStyles.colQty}>{item.quantity}</Text>
-              <Text style={pdfStyles.colUnit}>{item.unitLabel ?? ""}</Text>
-              <Text style={pdfStyles.colCheck}>[ ]</Text>
-            </View>
-          ))}
+          {items.map((item) => {
+            const { productName, variantName } = splitProductNameSnapshot(item.productNameSnapshot);
+            return (
+              <View key={item.id} style={pdfStyles.tableRow} wrap={false}>
+                <Text style={pdfStyles.colName}>{productName}</Text>
+                <Text style={pdfStyles.colSku}>{item.skuSnapshot}</Text>
+                <Text style={pdfStyles.colVariant}>{variantName ?? ""}</Text>
+                <Text style={pdfStyles.colQty}>{item.quantity}</Text>
+                <Text style={pdfStyles.colPrice}>{formatMad(item.unitPriceSnapshot)}</Text>
+                <Text style={pdfStyles.colLineTotal}>{formatMad(item.lineTotal)}</Text>
+                <Text style={pdfStyles.colCheck}>[ ]</Text>
+              </View>
+            );
+          })}
         </View>
 
         <View style={pdfStyles.totalRow}>
           <Text style={pdfStyles.totalLabel}>مجموع المنتجات</Text>
           <Text style={pdfStyles.totalValue}>{formatMad(order.itemsSubtotal)}</Text>
         </View>
+
+        <View style={pdfStyles.fieldRow}>
+          <Text style={pdfStyles.fieldLabel}>مصاريف التوصيل</Text>
+          <Text style={pdfStyles.fieldValue}>
+            {order.deliveryFee ? formatMad(order.deliveryFee) : "غير محدَّدة بعد"}
+          </Text>
+        </View>
+
+        {order.finalTotal && (
+          <View style={pdfStyles.totalRow}>
+            <Text style={pdfStyles.totalLabel}>المبلغ الإجمالي عند الاستلام</Text>
+            <Text style={pdfStyles.totalValue}>{formatMad(order.finalTotal)}</Text>
+          </View>
+        )}
 
         <View style={pdfStyles.section}>
           <Field label="طريقة الدفع" value="الدفع عند الاستلام" />

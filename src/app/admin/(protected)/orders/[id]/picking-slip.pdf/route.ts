@@ -4,39 +4,14 @@ import { getAdminUser } from "@/lib/auth/requireAdmin";
 import { getAdminOrderById, getAdminOrderItems } from "@/lib/queries/adminOrders";
 import { registerPdfFonts } from "@/lib/pdf/theme";
 import { PickingSlipDocument } from "@/lib/pdf/PickingSlipDocument";
-import { escapeHtml, wrapHtmlDocument } from "@/lib/pdf/htmlFallback";
-import { formatMad } from "@/lib/format";
+import { wrapHtmlDocument } from "@/lib/pdf/htmlFallback";
+import { buildPickingSlipBodyHtml } from "@/lib/pdf/pickingSlipHtml";
 import type { AdminOrderDetail, AdminOrderItem } from "@/lib/queries/adminOrders";
 
 function pickingSlipHtmlFallback(order: AdminOrderDetail, items: AdminOrderItem[]): string {
-  const rows = items
-    .map(
-      (item) => `<tr>
-        <td>${escapeHtml(item.productNameSnapshot)}</td>
-        <td>${escapeHtml(item.skuSnapshot)}</td>
-        <td>${item.quantity}</td>
-        <td>${escapeHtml(item.unitLabel ?? "")}</td>
-        <td>[ ]</td>
-      </tr>`
-    )
-    .join("");
-
-  const body = `
-    <h1>بون تحضير الطلب — ${escapeHtml(order.orderNumber)}</h1>
-    <div class="field"><span>التاريخ</span><span>${escapeHtml(new Date(order.createdAt).toLocaleString("ar-MA"))}</span></div>
-    <div class="field"><span>اسم الزبون</span><span>${escapeHtml(order.customerName)}</span></div>
-    <div class="field"><span>رقم الهاتف</span><span>${escapeHtml(order.customerPhone)}</span></div>
-    <div class="field"><span>المدينة</span><span>${escapeHtml(order.customerCity)}</span></div>
-    <div class="field"><span>العنوان</span><span>${escapeHtml(order.customerAddress)}</span></div>
-    ${order.customerNotes ? `<div class="field"><span>ملاحظة الزبون</span><span>${escapeHtml(order.customerNotes)}</span></div>` : ""}
-    <table>
-      <thead><tr><th>المنتج</th><th>SKU</th><th>الكمية</th><th>الوحدة</th><th>✓</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-    <div class="field" style="margin-top:12px;font-weight:bold;"><span>مجموع المنتجات</span><span>${formatMad(order.itemsSubtotal)}</span></div>
-    <p class="note">طريقة الدفع: الدفع عند الاستلام — مستند داخلي فقط، لا يُعرض للزبون.</p>
-  `;
-  return wrapHtmlDocument(`بون تحضير ${order.orderNumber}`, body);
+  return wrapHtmlDocument(`بون تحضير ${order.orderNumber}`, buildPickingSlipBodyHtml(order, items), {
+    mode: "fallback",
+  });
 }
 
 export const runtime = "nodejs";
