@@ -53,15 +53,7 @@ export default async function AdminOrderDetailPage({ params }: Props) {
             rel="noopener noreferrer"
             className="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-semibold text-neutral-700"
           >
-            طباعة البون
-          </a>
-          <a
-            href={`/admin/orders/${order.id}/picking-slip.pdf`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-semibold text-neutral-700"
-          >
-            تحميل PDF
+            طباعة أو حفظ PDF
           </a>
           <CopyDeliveryInfoButton order={order} />
           <a

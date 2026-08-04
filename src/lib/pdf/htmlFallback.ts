@@ -29,8 +29,8 @@ const SHARED_STYLES = `
 `;
 
 // نُستعمل في مكانين: (1) بديل عند فشل توليد PDF (banner تنبيه)، و(2) صفحة
-// الطباعة المباشرة في لوحة الإدارة (زر "اطبع الآن" بدل التنبيه، يختفي عند
-// الطباعة الفعلية). نفس التنسيق (@page A4) في الحالتين.
+// الطباعة المباشرة في لوحة الإدارة (زر "طباعة أو حفظ PDF" بدل التنبيه،
+// يختفي عند الطباعة الفعلية). نفس التنسيق (@page A4) في الحالتين.
 export function wrapHtmlDocument(
   title: string,
   bodyHtml: string,
@@ -43,7 +43,7 @@ export function wrapHtmlDocument(
           تعذّر توليد PDF مباشرة لهذا الطلب. هذه نسخة HTML بنفس المعلومات — استعمل
           طباعة المتصفح (Ctrl+P) لحفظها كـPDF عند الحاجة.
         </div>`
-      : `<button type="button" class="print-button" onclick="window.print()">🖨 اطبع الآن</button>`;
+      : `<button type="button" class="print-button" onclick="window.print()">🖨 طباعة أو حفظ PDF</button>`;
 
   const extraStyles =
     mode === "fallback"

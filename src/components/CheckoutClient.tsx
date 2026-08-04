@@ -9,6 +9,54 @@ import { isValidMoroccanPhone } from "@/lib/phone";
 import { buildOrderWhatsAppMessage, buildWhatsAppLink } from "@/lib/whatsapp";
 import { submitOrder } from "@/app/(storefront)/checkout/actions";
 
+const SAVE_ORDER_MAX_ATTEMPTS = 3;
+const SAVE_ORDER_RETRY_DELAYS_MS = [800, 2000];
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// يعيد المحاولة فقط على فشل تقني عام (مشكلة اتصال بقاعدة البيانات مثلاً) —
+// وليس على أخطاء تحقق/منطق (سعر خاطئ، مخزون غير كافٍ، حد أدنى...) التي لن
+// تتغيّر نتيجتها بإعادة المحاولة بنفس البيانات. idempotencyKey الثابتة عبر
+// المحاولات تمنع أي طلب مكرر حتى لو نجحت محاولة سابقة قبل وصول جوابها.
+// إن فشلت كل المحاولات، نُسجّل خطأً واضحاً فـlogs الخادم بدل إخفاء المشكلة
+// بالكامل — هذا يبقى العلامة الوحيدة على أن طلباً وصل عبر واتساب دون أن
+// يُسجَّل بلوحة الإدارة، إلى أن يُصلَح سبب الفشل.
+async function saveOrderWithRetry(formData: FormData): Promise<void> {
+  let lastFailure: unknown = null;
+
+  for (let attempt = 1; attempt <= SAVE_ORDER_MAX_ATTEMPTS; attempt++) {
+    try {
+      const result = await submitOrder({ ok: null }, formData);
+      if (result.ok !== false) {
+        return;
+      }
+      const isGenericFailure = result.errors.some((err) => err.field === "general");
+      if (!isGenericFailure) {
+        console.error(
+          "submitOrder (خلفية، لا تؤثر على واتساب): فشل تحقق/منطق غير قابل لإعادة المحاولة",
+          result.errors
+        );
+        return;
+      }
+      lastFailure = result.errors;
+    } catch (err) {
+      lastFailure = err;
+    }
+
+    if (attempt < SAVE_ORDER_MAX_ATTEMPTS) {
+      await delay(SAVE_ORDER_RETRY_DELAYS_MS[attempt - 1]);
+    }
+  }
+
+  console.error(
+    `submitOrder (خلفية): فشل حفظ الطلب نهائياً بعد ${SAVE_ORDER_MAX_ATTEMPTS} محاولات — ` +
+      "الطلب وصل عبر واتساب لكنه لم يُسجَّل في لوحة الإدارة، يلزم تسجيله يدوياً وفحص سبب الفشل",
+    lastFailure
+  );
+}
+
 // إتمام الطلب يفتح رسالة واتساب جاهزة بمعلومات الزبون والمنتجات مباشرة —
 // هذا هو المسار الذي يراه الزبون فعلياً ولا يتغيّر أبداً بنجاح الحفظ أو
 // فشله. بالتوازي (وليس بدلاً عن ذلك)، نحاول حفظ نفس الطلب في نظام الطلبات
@@ -127,34 +175,29 @@ export function CheckoutClient({
     // محاولة حفظ الطلب فنظام الطلبات الحقيقي (رقم طلب + بون تحضير) بأفضل
     // مجهود، قبل التوجه لواتساب — بانتظار انتهائها (نجحت أو فشلت) لضمان
     // أكبر فرصة لإتمام الحفظ قبل أن يغادر المتصفح الصفحة، دون أن يرى الزبون
-    // أي أثر لنجاحها أو فشلها.
+    // أي أثر لنجاحها أو فشلها. idempotencyKey ثابتة عبر كل المحاولات، فحتى
+    // لو نجحت محاولة سابقة قبل أن يصلنا الجواب (خطأ شبكة مثلاً)، لن يتكرر
+    // الطلب أبداً — نفس الطلب فقط يُعاد إرجاعه.
     setIsSubmitting(true);
-    try {
-      const formData = new FormData();
-      formData.set(
-        "cartItems",
-        JSON.stringify(
-          items.map((item) => ({
-            productId: item.productId,
-            variantId: item.variantId,
-            quantity: item.quantity,
-          }))
-        )
-      );
-      formData.set("fullName", fullName);
-      formData.set("phone", phone);
-      formData.set("city", city);
-      formData.set("address", address);
-      formData.set("notes", notes);
-      formData.set("idempotencyKey", idempotencyKey);
+    const formData = new FormData();
+    formData.set(
+      "cartItems",
+      JSON.stringify(
+        items.map((item) => ({
+          productId: item.productId,
+          variantId: item.variantId,
+          quantity: item.quantity,
+        }))
+      )
+    );
+    formData.set("fullName", fullName);
+    formData.set("phone", phone);
+    formData.set("city", city);
+    formData.set("address", address);
+    formData.set("notes", notes);
+    formData.set("idempotencyKey", idempotencyKey);
 
-      const result = await submitOrder({ ok: null }, formData);
-      if (result.ok === false) {
-        console.error("submitOrder (خلفية، لا تؤثر على واتساب): فشل حفظ الطلب", result.errors);
-      }
-    } catch (err) {
-      console.error("submitOrder (خلفية، لا تؤثر على واتساب): خطأ غير متوقع", err);
-    }
+    await saveOrderWithRetry(formData);
 
     clearCart();
     setSent(true);

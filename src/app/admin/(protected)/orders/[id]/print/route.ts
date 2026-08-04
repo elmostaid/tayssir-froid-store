@@ -5,7 +5,7 @@ import { wrapHtmlDocument } from "@/lib/pdf/htmlFallback";
 import { buildPickingSlipBodyHtml } from "@/lib/pdf/pickingSlipHtml";
 
 // صفحة طباعة مباشرة (وليست بديل PDF فاشل) — نفس محتوى بون التحضير، مع زر
-// "اطبع الآن" بدل تنبيه الفشل، مناسبة لورق A4 (نفس @page في htmlFallback).
+// "طباعة أو حفظ PDF" بدل تنبيه الفشل، مناسبة لورق A4 (نفس @page في htmlFallback).
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const admin = await getAdminUser();
   if (!admin) {
