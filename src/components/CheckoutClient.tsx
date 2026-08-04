@@ -1,43 +1,44 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useState } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useCart } from "@/components/CartProvider";
-import { submitOrder, type CheckoutState } from "@/app/(storefront)/checkout/actions";
 import { formatMad } from "@/lib/format";
 import { cartItemKey } from "@/lib/cart/cartMath";
+import { isValidMoroccanPhone } from "@/lib/phone";
+import { buildOrderWhatsAppMessage, buildWhatsAppLink } from "@/lib/whatsapp";
 
-const initialState: CheckoutState = { ok: null };
-
+// المسار الحالي: إتمام الطلب يفتح رسالة واتساب جاهزة بمعلومات الزبون
+// والمنتجات مباشرة، بدل الحفظ في قاعدة البيانات — إجراء مؤقت ريثما يُحل
+// مشكل الاتصال بقاعدة بيانات Supabase الحقيقية. لا حفظ تلقائي في لوحة
+// الإدارة حالياً؛ الطلب يصل مباشرة لفريق المبيعات عبر واتساب ويُتابَع يدوياً.
 export function CheckoutClient({
+  minOrderAmountMad,
   deliveryFeePerCartonMad,
 }: {
+  minOrderAmountMad: number;
   deliveryFeePerCartonMad: number;
 }) {
   const { items, subtotal, isHydrated, clearCart } = useCart();
-  const router = useRouter();
-  const [idempotencyKey] = useState(() => crypto.randomUUID());
-  const [state, formAction, isPending] = useActionState(submitOrder, initialState);
+  const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [city, setCity] = useState("");
+  const [address, setAddress] = useState("");
+  const [notes, setNotes] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
 
-  useEffect(() => {
-    if (state.ok === true) {
-      clearCart();
-      router.push(`/order/${state.publicReference}`);
-    }
-  }, [state, clearCart, router]);
+  const belowMinimum = subtotal < minOrderAmountMad;
 
-  const cartItemsJson = useMemo(
-    () =>
-      JSON.stringify(
-        items.map((item) => ({
-          productId: item.productId,
-          variantId: item.variantId,
-          quantity: item.quantity,
-        }))
-      ),
-    [items]
-  );
+  const whatsappHref = useMemo(() => {
+    if (items.length === 0) return null;
+    const message = buildOrderWhatsAppMessage({
+      customer: { fullName, phone, city, address, notes },
+      items,
+      subtotal,
+    });
+    return buildWhatsAppLink(message);
+  }, [fullName, phone, city, address, notes, items, subtotal]);
 
   if (!isHydrated) {
     return (
@@ -47,7 +48,7 @@ export function CheckoutClient({
     );
   }
 
-  if (items.length === 0) {
+  if (items.length === 0 && !sent) {
     return (
       <div className="mx-auto max-w-xl px-4 py-16 text-center">
         <h1 className="text-lg font-bold text-neutral-800">سلتك فارغة</h1>
@@ -61,13 +62,67 @@ export function CheckoutClient({
     );
   }
 
-  const errors = state.ok === false ? state.errors : [];
-  const fieldMessage = (field: string) =>
-    errors.find((e) => e.field === field)?.message;
-  const itemErrors = errors.filter(
-    (e) => e.field === "items" || e.field.startsWith("item:")
-  );
-  const generalError = errors.find((e) => e.field === "general");
+  if (sent) {
+    return (
+      <div className="mx-auto max-w-xl px-4 py-16 text-center">
+        <h1 className="text-lg font-bold text-neutral-800">
+          تم فتح واتساب لإرسال طلبك
+        </h1>
+        <p className="mt-2 text-sm text-neutral-600">
+          إذا لم يفتح واتساب تلقائياً، اضغط على الزر أدناه لإرسال الطلب. سنتواصل
+          معكم لتأكيد الطلب والمجموع النهائي شامل التوصيل.
+        </p>
+        {whatsappHref && (
+          <a
+            href={whatsappHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-4 inline-block rounded-full bg-brand-orange px-5 py-2.5 text-sm font-semibold text-white"
+          >
+            فتح واتساب الآن
+          </a>
+        )}
+        <div className="mt-4">
+          <Link href="/" className="text-sm font-semibold text-brand-turquoise-dark underline">
+            العودة إلى الرئيسية
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+
+    if (belowMinimum) {
+      setError(
+        `المجموع الحالي (${formatMad(subtotal)}) أقل من الحد الأدنى للطلب (${formatMad(
+          minOrderAmountMad
+        )})، دون احتساب التوصيل. أضف منتجات أخرى للوصول إلى الحد الأدنى.`
+      );
+      return;
+    }
+    if (!isValidMoroccanPhone(phone)) {
+      setError("رقم الهاتف غير صحيح. يجب أن يكون رقماً مغربياً صالحاً (مثال: 0612345678).");
+      return;
+    }
+    if (!fullName.trim() || !city.trim() || !address.trim()) {
+      setError("الرجاء تعبئة جميع الحقول الإجبارية.");
+      return;
+    }
+
+    const message = buildOrderWhatsAppMessage({
+      customer: { fullName, phone, city, address, notes },
+      items,
+      subtotal,
+    });
+    const link = buildWhatsAppLink(message);
+
+    clearCart();
+    setSent(true);
+    window.location.href = link;
+  }
 
   return (
     <div className="mx-auto max-w-xl px-4 py-6">
@@ -104,27 +159,25 @@ export function CheckoutClient({
         </p>
       </div>
 
-      {itemErrors.length > 0 && (
+      {belowMinimum && (
         <div className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-          {itemErrors.map((e, i) => (
-            <p key={i}>{e.message}</p>
-          ))}
+          <p>
+            المجموع الحالي ({formatMad(subtotal)}) أقل من الحد الأدنى للطلب (
+            {formatMad(minOrderAmountMad)}).
+          </p>
           <Link href="/cart" className="mt-1 inline-block font-semibold underline">
             العودة للسلة لتعديلها
           </Link>
         </div>
       )}
 
-      {generalError && (
+      {error && (
         <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
-          {generalError.message}
+          {error}
         </p>
       )}
 
-      <form action={formAction} className="mt-4 flex flex-col gap-3">
-        <input type="hidden" name="cartItems" value={cartItemsJson} />
-        <input type="hidden" name="idempotencyKey" value={idempotencyKey} />
-
+      <form onSubmit={handleSubmit} className="mt-4 flex flex-col gap-3">
         <label className="text-sm">
           <span className="mb-1 block font-medium text-neutral-700">
             الاسم الكامل *
@@ -133,13 +186,10 @@ export function CheckoutClient({
             name="fullName"
             required
             maxLength={100}
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
             className="w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-base focus:border-brand-turquoise focus:outline-none"
           />
-          {fieldMessage("fullName") && (
-            <span className="mt-1 block text-xs text-red-600">
-              {fieldMessage("fullName")}
-            </span>
-          )}
         </label>
 
         <label className="text-sm">
@@ -154,16 +204,13 @@ export function CheckoutClient({
             required
             pattern="^(?:\+212|0)[5-7]\d{2}[\s-]?\d{2}[\s-]?\d{2}[\s-]?\d{2}$"
             title="رقم هاتف مغربي صالح، مثال: 0612345678"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
             className="w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-base focus:border-brand-turquoise focus:outline-none"
           />
           <span className="mt-1 block text-xs text-neutral-500">
             رقم مغربي يبدأ بـ 06 أو 07 أو 05 (أو +212)، مثال: 0612345678
           </span>
-          {fieldMessage("phone") && (
-            <span className="mt-1 block text-xs text-red-600">
-              {fieldMessage("phone")}
-            </span>
-          )}
         </label>
 
         <label className="text-sm">
@@ -174,13 +221,10 @@ export function CheckoutClient({
             name="city"
             required
             maxLength={100}
+            value={city}
+            onChange={(e) => setCity(e.target.value)}
             className="w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-base focus:border-brand-turquoise focus:outline-none"
           />
-          {fieldMessage("city") && (
-            <span className="mt-1 block text-xs text-red-600">
-              {fieldMessage("city")}
-            </span>
-          )}
         </label>
 
         <label className="text-sm">
@@ -192,13 +236,10 @@ export function CheckoutClient({
             required
             rows={2}
             maxLength={300}
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
             className="w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-base focus:border-brand-turquoise focus:outline-none"
           />
-          {fieldMessage("address") && (
-            <span className="mt-1 block text-xs text-red-600">
-              {fieldMessage("address")}
-            </span>
-          )}
         </label>
 
         <label className="text-sm">
@@ -209,26 +250,22 @@ export function CheckoutClient({
             name="notes"
             rows={2}
             maxLength={500}
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
             className="w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-base focus:border-brand-turquoise focus:outline-none"
           />
-          {fieldMessage("notes") && (
-            <span className="mt-1 block text-xs text-red-600">
-              {fieldMessage("notes")}
-            </span>
-          )}
         </label>
 
         <p className="rounded-lg bg-neutral-100 px-3 py-2 text-xs text-neutral-600">
           طريقة الدفع: الدفع عند الاستلام فقط. يمكنك معاينة السلعة عند
-          الاستلام قبل الأداء. هذا طلب أولي في انتظار تأكيد فريقنا.
+          الاستلام قبل الأداء. سيُرسَل طلبك عبر واتساب مباشرة لفريقنا لتأكيده.
         </p>
 
         <button
           type="submit"
-          disabled={isPending}
-          className="mt-1 rounded-full bg-brand-orange px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-orange-dark disabled:opacity-60"
+          className="mt-1 rounded-full bg-brand-orange px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-orange-dark"
         >
-          {isPending ? "جارٍ الإرسال…" : "إرسال الطلب"}
+          إرسال الطلب عبر واتساب
         </button>
       </form>
     </div>

@@ -21,6 +21,9 @@ export default async function CheckoutPage() {
   );
 
   return (
-    <CheckoutClient deliveryFeePerCartonMad={settings.deliveryFeePerCartonMad} />
+    <CheckoutClient
+      minOrderAmountMad={settings.minOrderAmountMad}
+      deliveryFeePerCartonMad={settings.deliveryFeePerCartonMad}
+    />
   );
 }
