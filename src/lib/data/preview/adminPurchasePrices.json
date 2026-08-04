@@ -494,5 +494,9 @@
     {
         "sku": "TF-AC-043",
         "purchase_price": "150.00"
+    },
+    {
+        "sku": "TF-AC-044",
+        "purchase_price": "280.00"
     }
 ]

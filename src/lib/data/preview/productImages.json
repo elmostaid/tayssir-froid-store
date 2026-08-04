@@ -1359,4 +1359,13 @@
   "sort_order": 1,
   "is_primary": true
  }
+,
+ {
+  "id": 183,
+  "product_id": 168,
+  "storage_path": "product-images/TF-AC-044/TF-AC-044-1.webp",
+  "alt_text_ar": "صورة غاز R22 وزن 800 غرام ألفا كول",
+  "sort_order": 1,
+  "is_primary": true
+ }
 ]

@@ -3254,4 +3254,26 @@
   "primary_image_path": "product-images/TF-WM-001/white-round-knob.webp",
   "status": "published"
  }
+,
+ {
+  "id": 168,
+  "sku": "TF-AC-044",
+  "slug": "refrigerant-gas-r22-800g",
+  "category_id": 15,
+  "category_slug": "split-ac-parts",
+  "category_name_ar": "قطع غيار المكيفات المنزلية سبليت",
+  "name_ar": "غاز R22 وزن 800 غرام",
+  "name_fr": "Gaz R22 800g",
+  "description_ar": "غاز تبريد R22 صافي بوزن 800 غرام، يشمل شحنة الغاز والزيت ومكيّف الحلقات المطاطية ومادة سد التسريبات، لأنظمة R22 المتوافقة.",
+  "technical_specs": "الصيغة الكيميائية: CHCLF2. نقطة الغليان: -40.8°C. الرطوبة القصوى: 10ppm. الغازات غير القابلة للتكثيف: 2% كحد أقصى بالحجم.",
+  "unit_label": "قرعة",
+  "min_order_qty": 1,
+  "qty_increment": 1,
+  "sale_price": "330.00",
+  "stock_quantity": 500,
+  "meta_title": null,
+  "meta_description": null,
+  "primary_image_path": "product-images/TF-AC-044/TF-AC-044-1.webp",
+  "status": "published"
+ }
 ]
