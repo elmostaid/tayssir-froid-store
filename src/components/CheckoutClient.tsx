@@ -7,11 +7,14 @@ import { formatMad } from "@/lib/format";
 import { cartItemKey } from "@/lib/cart/cartMath";
 import { isValidMoroccanPhone } from "@/lib/phone";
 import { buildOrderWhatsAppMessage, buildWhatsAppLink } from "@/lib/whatsapp";
+import { submitOrder } from "@/app/(storefront)/checkout/actions";
 
-// المسار الحالي: إتمام الطلب يفتح رسالة واتساب جاهزة بمعلومات الزبون
-// والمنتجات مباشرة، بدل الحفظ في قاعدة البيانات — إجراء مؤقت ريثما يُحل
-// مشكل الاتصال بقاعدة بيانات Supabase الحقيقية. لا حفظ تلقائي في لوحة
-// الإدارة حالياً؛ الطلب يصل مباشرة لفريق المبيعات عبر واتساب ويُتابَع يدوياً.
+// إتمام الطلب يفتح رسالة واتساب جاهزة بمعلومات الزبون والمنتجات مباشرة —
+// هذا هو المسار الذي يراه الزبون فعلياً ولا يتغيّر أبداً بنجاح الحفظ أو
+// فشله. بالتوازي (وليس بدلاً عن ذلك)، نحاول حفظ نفس الطلب في نظام الطلبات
+// الحقيقي (رقم طلب، لوحة إدارة، بون تحضير) عبر submitOrder — بأفضل مجهود:
+// إن فشل الاتصال بقاعدة البيانات لأي سبب، لا نُظهر أي خطأ للزبون ولا نغيّر
+// رسالة واتساب أو وجهتها، فقط نُسجّل الفشل في الخادم للتصحيح لاحقاً.
 export function CheckoutClient({
   minOrderAmountMad,
   deliveryFeePerCartonMad,
@@ -27,6 +30,8 @@ export function CheckoutClient({
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [idempotencyKey] = useState(() => crypto.randomUUID());
 
   const belowMinimum = subtotal < minOrderAmountMad;
 
@@ -91,7 +96,7 @@ export function CheckoutClient({
     );
   }
 
-  function handleSubmit(e: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
 
@@ -118,6 +123,38 @@ export function CheckoutClient({
       subtotal,
     });
     const link = buildWhatsAppLink(message);
+
+    // محاولة حفظ الطلب فنظام الطلبات الحقيقي (رقم طلب + بون تحضير) بأفضل
+    // مجهود، قبل التوجه لواتساب — بانتظار انتهائها (نجحت أو فشلت) لضمان
+    // أكبر فرصة لإتمام الحفظ قبل أن يغادر المتصفح الصفحة، دون أن يرى الزبون
+    // أي أثر لنجاحها أو فشلها.
+    setIsSubmitting(true);
+    try {
+      const formData = new FormData();
+      formData.set(
+        "cartItems",
+        JSON.stringify(
+          items.map((item) => ({
+            productId: item.productId,
+            variantId: item.variantId,
+            quantity: item.quantity,
+          }))
+        )
+      );
+      formData.set("fullName", fullName);
+      formData.set("phone", phone);
+      formData.set("city", city);
+      formData.set("address", address);
+      formData.set("notes", notes);
+      formData.set("idempotencyKey", idempotencyKey);
+
+      const result = await submitOrder({ ok: null }, formData);
+      if (result.ok === false) {
+        console.error("submitOrder (خلفية، لا تؤثر على واتساب): فشل حفظ الطلب", result.errors);
+      }
+    } catch (err) {
+      console.error("submitOrder (خلفية، لا تؤثر على واتساب): خطأ غير متوقع", err);
+    }
 
     clearCart();
     setSent(true);
@@ -263,9 +300,10 @@ export function CheckoutClient({
 
         <button
           type="submit"
-          className="mt-1 rounded-full bg-brand-orange px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-orange-dark"
+          disabled={isSubmitting}
+          className="mt-1 rounded-full bg-brand-orange px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-orange-dark disabled:opacity-60"
         >
-          إرسال الطلب عبر واتساب
+          {isSubmitting ? "جارٍ الإرسال…" : "إرسال الطلب عبر واتساب"}
         </button>
       </form>
     </div>
