@@ -1,4 +1,5 @@
 import { sql } from "@/lib/db";
+import { safeQuery } from "@/lib/safeQuery";
 import type {
   Category,
   CatalogProduct,
@@ -82,6 +83,18 @@ export async function getCategories(): Promise<Category[]> {
     logDbFallback("getCategories", error);
     return getPreviewCategories();
   }
+}
+
+// المصدر الوحيد لقائمة التصنيفات الظاهرة للزبون فأي مكان فالموقع (رأس
+// الصفحة على الحاسوب والهاتف، الصفحة الرئيسية، وأي قائمة تصنيفات عامة
+// مستقبلية) — يجب استعمال هذه الدالة فقط، وليس getCategories() مباشرة، حتى
+// يبقى مصدر الفلترة موحَّداً فمكان واحد بدل تكراره فكل صفحة. getCategories()
+// نفسها تُخفي أصلاً أي تصنيف بلا منتج منشور واحد على الأقل، ديناميكياً من
+// المنتجات الحالية (وليس بأسماء تصنيفات مكتوبة يدوياً) — إضافة أول منتج
+// منشور لتصنيف تُظهره تلقائياً بلا أي تعديل هنا. لا تُستعمل فلوحة الإدارة
+// (اللي يجب أن تعرض كل التصنيفات، حتى الفارغة، للإدارة).
+export async function getFilteredCategories(context: string): Promise<Category[]> {
+  return safeQuery(() => getCategories(), [], context);
 }
 
 export async function getCategoryBySlug(slug: string): Promise<Category | null> {

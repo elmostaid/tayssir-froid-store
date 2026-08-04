@@ -1,5 +1,5 @@
 import type { MetadataRoute } from "next";
-import { getCategories, getProducts } from "@/lib/queries/catalog";
+import { getFilteredCategories, getProducts } from "@/lib/queries/catalog";
 import { safeQuery } from "@/lib/safeQuery";
 import { getSiteUrl } from "@/lib/siteUrl";
 
@@ -10,7 +10,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   if (!siteUrl) return [];
 
   const [categories, products] = await Promise.all([
-    safeQuery(() => getCategories(), [], "sitemap.getCategories"),
+    getFilteredCategories("sitemap.getCategories"),
     safeQuery(() => getProducts({ limit: 1000 }), [], "sitemap.getProducts"),
   ]);
 

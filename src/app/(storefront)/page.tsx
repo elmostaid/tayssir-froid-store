@@ -1,6 +1,6 @@
 import Link from "next/link";
 import {
-  getCategories,
+  getFilteredCategories,
   getProductCountsByCategory,
   getProductIdsWithVariants,
   getProducts,
@@ -27,7 +27,7 @@ function buildTrustPoints(minOrderAmountMad: number): string[] {
 
 export default async function HomePage() {
   const [categories, productCounts, products, variantProductIds, settings] = await Promise.all([
-    safeQuery(() => getCategories(), [], "home.getCategories"),
+    getFilteredCategories("home.getCategories"),
     safeQuery(() => getProductCountsByCategory(), {}, "home.getProductCountsByCategory"),
     safeQuery(() => getProducts({ limit: 12 }), [], "home.getProducts"),
     safeQuery(() => getProductIdsWithVariants(), new Set<number>(), "home.getProductIdsWithVariants"),

@@ -1,19 +1,14 @@
 import Image from "next/image";
 import Link from "next/link";
-import { getCategories } from "@/lib/queries/catalog";
+import { getFilteredCategories } from "@/lib/queries/catalog";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
-import { safeQuery } from "@/lib/safeQuery";
 import { CartBadge } from "@/components/CartBadge";
 import { MobileNav } from "@/components/MobileNav";
 
 export async function SiteHeader() {
-  // لا نثق بتوفّر قاعدة البيانات دائماً: إن تعذّر الجلب، يستمر الموقع
-  // بالعمل والرأس يُعرض بدون قائمة التصنيفات بدل انهيار الصفحة بالكامل.
-  const categories = await safeQuery(
-    () => getCategories(),
-    [],
-    "SiteHeader.getCategories"
-  );
+  // نفس القائمة المُصفَّاة بالضبط تُستعمل هنا لكل من قائمة الحاسوب (أسفل)
+  // وقائمة الهاتف (MobileNav) — مصدر واحد مشترك، لا فرق بين الاثنين أبداً.
+  const categories = await getFilteredCategories("SiteHeader.getCategories");
 
   const whatsappLink = buildWhatsAppLink(
     "مرحباً، عندي سؤال بخصوص منتجات Tayssir Froid."
