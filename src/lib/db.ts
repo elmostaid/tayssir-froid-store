@@ -28,6 +28,17 @@ function getClient(): SqlClient {
   const client = postgres(connectionString, {
     max: 5,
     idle_timeout: 20,
+    // postgres.js يُعِدّ (PREPARE) كل استعلام افتراضياً ويُخزِّن اسمه على
+    // اتصال TCP الحالي ليعيد استعماله لاحقاً. هذا يفشل بشكل متقطّع خلف أي
+    // pooler على مستوى المعاملة (transaction pooling، كما في Supabase
+    // Transaction Pooler / PgBouncer pool_mode=transaction): الـpooler قد
+    // يُبدِّل اتصال Postgres الحقيقي خلف نفس مقبس postgres.js بين معاملة
+    // وأخرى، فيحاول العميل إعادة استعمال اسم prepared statement غير موجود
+    // فعلاً على الاتصال الجديد → "prepared statement ... does not exist".
+    // عطّلناه هنا نهائياً (غير مشروط بنوع الاتصال) لأنه لا ضرر منه على
+    // اتصال مباشر أيضاً، وهذا هو الإعداد الموصى به رسمياً من توثيق
+    // postgres.js وSupabase عند استعمال أي pooler بنمط transaction.
+    prepare: false,
     types: {
       // postgres.js يُعيد bigint (المستعمل لكل الأعمدة id في هذا المشروع)
       // كنص افتراضياً تفادياً لفقدان الدقة مع أرقام ضخمة جداً. حجم بياناتنا
