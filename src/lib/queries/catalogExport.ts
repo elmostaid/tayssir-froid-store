@@ -2,8 +2,9 @@ import { sql } from "@/lib/db";
 import {
   getAllPreviewProductsForExport,
   getAllPreviewVariantsForExport,
+  getAllPreviewProductImagesForExport,
 } from "@/lib/previewCatalog";
-import type { CatalogProduct, CatalogProductVariant } from "@/lib/types";
+import type { CatalogProduct, CatalogProductVariant, CatalogProductImage } from "@/lib/types";
 
 const hasDatabase = Boolean(process.env.DATABASE_URL);
 
@@ -69,5 +70,26 @@ export async function getAllVariantsForExport(): Promise<CatalogProductVariant[]
       error
     );
     return getAllPreviewVariantsForExport();
+  }
+}
+
+// كل صور كل المنتجات (وليس فقط الصورة الرئيسية)، لأغراض التصدير/الخلاصة
+// فقط (مثل additional_image_link في Meta Commerce Catalog) — وليس لأي صفحة
+// يراها الزبون مباشرة.
+export async function getAllProductImagesForExport(): Promise<CatalogProductImage[]> {
+  if (!hasDatabase) return getAllPreviewProductImagesForExport();
+
+  try {
+    return await sql<CatalogProductImage[]>`
+      select id, product_id, storage_path, alt_text_ar, sort_order, is_primary
+      from public.product_images
+      order by product_id asc, is_primary desc, sort_order asc
+    `;
+  } catch (error) {
+    console.error(
+      "getAllProductImagesForExport: تعذّر الاتصال بقاعدة البيانات، استعمال البيانات المحلية الاحتياطية",
+      error
+    );
+    return getAllPreviewProductImagesForExport();
   }
 }

@@ -145,6 +145,12 @@ export function getAllPreviewVariantsForExport(): CatalogProductVariant[] {
   return previewProductVariants.slice();
 }
 
+// كل صور كل المنتجات (وليس فقط منتج واحد)، لأغراض التصدير/الخلاصة فقط
+// (مثل additional_image_link في Meta Commerce Catalog).
+export function getAllPreviewProductImagesForExport(): CatalogProductImage[] {
+  return previewProductImages.slice();
+}
+
 export function getPreviewProductImages(productId: number): CatalogProductImage[] {
   return previewProductImages
     .filter((image) => image.product_id === productId)
