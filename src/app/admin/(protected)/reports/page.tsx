@@ -67,12 +67,19 @@ export default async function AdminReportsPage() {
         الربح الإجمالي (طلبات مسلَّمة فقط)
       </h2>
       <p className="mt-1 text-xs text-neutral-500">
-        الربح = قيمة المنتجات (items_subtotal) − تكلفة الشراء (purchase price
-        الحالي للمنتج/المتغيّر × الكمية)، بدون احتساب مصاريف التوصيل. ثمن
-        الشراء غير محفوظ تاريخياً مع كل طلب، فالحساب هنا يعتمد على ثمن الشراء
-        الحالي فالمنتج — إذا تغيّر لاحقاً يتغيّر معه ربح الطلبات القديمة
-        المعروضة هنا.
+        الربح = قيمة المنتجات (items_subtotal) − تكلفة الشراء المحفوظة وقت
+        إنشاء كل طلب (purchase price snapshot × الكمية)، بدون احتساب مصاريف
+        التوصيل. ربح الطلب لا يتغيّر بعد ذلك حتى لو عُدِّل ثمن شراء المنتج
+        لاحقاً.
       </p>
+      {profit.approximateProfitOrdersCount > 0 && (
+        <p className="mt-1 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          {profit.approximateProfitOrdersCount} من الطلبات المسلَّمة أُنشئت
+          قبل حفظ ثمن الشراء لحظياً — ربحها هنا تقدير تاريخي بثمن الشراء
+          الحالي فقط، وقد يتغيّر إذا عُدِّل ثمن الشراء لاحقاً (موسومة
+          &quot;تقدير&quot; فـجدول آخر الطلبات أسفله).
+        </p>
+      )}
       <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
         <StatCard label="ربح اليوم" value={formatMad(profit.profitTodayMad)} accent />
         <StatCard label="ربح آخر 7 أيام" value={formatMad(profit.profitLast7DaysMad)} accent />
@@ -161,7 +168,14 @@ export default async function AdminReportsPage() {
                   <td className="py-2">{new Date(o.createdAt).toLocaleDateString("ar-MA")}</td>
                   <td className="py-2">{formatMad(o.revenueMad)}</td>
                   <td className="py-2 text-neutral-500">{formatMad(o.cogsMad)}</td>
-                  <td className="py-2 font-bold text-brand-orange">{formatMad(o.profitMad)}</td>
+                  <td className="py-2 font-bold text-brand-orange">
+                    {formatMad(o.profitMad)}
+                    {!o.isExactHistoricalProfit && (
+                      <span className="ms-1.5 inline-block rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-normal text-amber-700">
+                        تقدير
+                      </span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

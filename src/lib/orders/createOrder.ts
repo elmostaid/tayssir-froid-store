@@ -74,6 +74,7 @@ type ValidatedLineItem = {
   unitPrice: number;
   quantity: number;
   lineTotal: number;
+  purchasePriceSnapshot: number | null;
 };
 
 export async function createOrder(input: CreateOrderInput): Promise<CreateOrderResult> {
@@ -135,6 +136,25 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
             select * from public.catalog_product_variants where id = any(${variantIds})
           `
         : [];
+
+    // ثمن الشراء سري ولا يظهر فـcatalog_products/catalog_product_variants (انظر
+    // supabase/migrations/20260730000002_security.sql) — نجلبه هنا من الجداول
+    // الأصلية مباشرة (اتصال خادم مباشر عبر DATABASE_URL، ليس عبر anon key/
+    // PostgREST) فقط لتخزين "صورة مجمَّدة" (snapshot) وقت إنشاء الطلب.
+    const purchasePriceRows = await sql<{ id: number; purchase_price: string | null }[]>`
+      select id, purchase_price from public.products where id = any(${productIds})
+    `;
+    const variantPurchasePriceRows =
+      variantIds.length > 0
+        ? await sql<{ id: number; purchase_price_override: string | null }[]>`
+            select id, purchase_price_override from public.product_variants where id = any(${variantIds})
+          `
+        : [];
+
+    const purchasePriceById = new Map(purchasePriceRows.map((p) => [p.id, p.purchase_price]));
+    const variantPurchasePriceById = new Map(
+      variantPurchasePriceRows.map((v) => [v.id, v.purchase_price_override])
+    );
 
     const productById = new Map(products.map((p) => [p.id, p]));
     const variantById = new Map(variants.map((v) => [v.id, v]));
@@ -200,6 +220,16 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
         continue;
       }
 
+      // ثمن الشراء الفعلي وقت الطلب: أولوية لـvariant.purchase_price_override
+      // إن وُجد، وإلا product.purchase_price — يُخزَّن كـsnapshot ثابت فـ
+      // order_items ولا يتأثر بأي تعديل لاحق على ثمن الشراء (انظر
+      // adminReports.ts للاستهلاك).
+      const rawPurchasePrice =
+        item.variantId !== null
+          ? (variantPurchasePriceById.get(item.variantId) ?? purchasePriceById.get(item.productId) ?? null)
+          : (purchasePriceById.get(item.productId) ?? null);
+      const purchasePriceSnapshot = rawPurchasePrice === null ? null : Number(rawPurchasePrice);
+
       lineItems.push({
         productId: product.id,
         variantId: item.variantId,
@@ -208,6 +238,7 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
         unitPrice: effectivePrice,
         quantity: item.quantity,
         lineTotal: effectivePrice * item.quantity,
+        purchasePriceSnapshot,
       });
     }
 
@@ -280,10 +311,12 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
           await trx`
             insert into public.order_items (
               order_id, product_id, variant_id, product_name_snapshot,
-              sku_snapshot, unit_price_snapshot, quantity, line_total
+              sku_snapshot, unit_price_snapshot, quantity, line_total,
+              purchase_price_snapshot
             ) values (
               ${orderId}, ${line.productId}, ${line.variantId}, ${line.nameSnapshot},
-              ${line.skuSnapshot}, ${line.unitPrice}, ${line.quantity}, ${line.lineTotal}
+              ${line.skuSnapshot}, ${line.unitPrice}, ${line.quantity}, ${line.lineTotal},
+              ${line.purchasePriceSnapshot}
             )
           `;
 

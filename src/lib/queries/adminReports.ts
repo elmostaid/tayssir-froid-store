@@ -4,16 +4,21 @@ import { sql } from "@/lib/db";
 // (لا تُستعمل أبداً خارج مسارات /admin، ولا يظهر ثمن الشراء أو الربح في أي
 // واجهة يراها الزبون).
 //
-// ملاحظة مهمة عن دقة التكلفة (COGS): order_items لا يخزّن "صورة مجمَّدة"
-// (snapshot) لثمن الشراء وقت البيع — فقط ثمن البيع (unit_price_snapshot).
-// كل حسابات التكلفة/الربح هنا تعتمد إذن على ثمن الشراء **الحالي** فالمنتج/
-// المتغيّر (purchase_price / purchase_price_override)، وليس ثمن الشراء
-// الفعلي وقت ذلك البيع تحديداً. إذا تغيّر ثمن الشراء لاحقاً، تتغيّر معه
-// أرباح الطلبات القديمة المعروضة هنا بأثر رجعي — هذا قيد حقيقي فبنية
-// البيانات الحالية، وليس خطأ فهذا الاستعلام. منتج محذوف بالكامل لاحقاً
-// (product_id يصبح null عبر on delete set null) يُحتسَب بتكلفة صفر لتلك
-// السطور تحديداً (COALESCE)، فيظهر ربحها الظاهري أعلى من الحقيقي — محدود
-// الأثر عملياً (نادر) لكن يستحق الذكر.
+// ملاحظة عن دقة التكلفة (COGS): order_items.purchase_price_snapshot (منذ
+// migration 20260807000000) يخزّن ثمن الشراء الفعلي وقت إنشاء الطلب —
+// variant.purchase_price_override إن وُجد، وإلا product.purchase_price،
+// كما كانا وقتها بالضبط. الحساب هنا يعتمد عليه أولاً، فربح طلب مسلَّم لا
+// يتغيّر بعد ذلك أبداً حتى لو عُدِّل ثمن شراء المنتج لاحقاً.
+//
+// الطلبات السابقة لتلك الهجرة (purchase_price_snapshot = NULL) ليس لها أي
+// snapshot تاريخي حقيقي — لا يوجد مصدر بيانات آخر لثمن الشراء وقتها، ولا
+// يجوز تخمينه. لتلك الطلبات فقط، الحساب يرجع لثمن الشراء **الحالي** كـ
+// "تقدير تاريخي" (historical approximation) — يتغيّر بأثر رجعي إذا عُدِّل
+// ثمن الشراء لاحقاً، وموسوم صراحة فالنتائج (has_full_snapshot/
+// isHistoricalApproximation) لتُعرَض بوضوح فالواجهة، وليس كرقم دقيق. منتج
+// محذوف بالكامل لاحقاً (product_id يصبح null عبر on delete set null)
+// يُحتسَب بتكلفة صفر لتلك السطور تحديداً (COALESCE)، فيظهر ربحها الظاهري
+// أعلى من الحقيقي — محدود الأثر عملياً (نادر) لكن يستحق الذكر.
 //
 // "الربح الإجمالي" (gross profit) = items_subtotal - COGS، من طلبات
 // delivered فقط. لا يشمل مصاريف التوصيل (تكلفة لوجستية وليست ربح بضاعة)،
@@ -29,13 +34,19 @@ export type ProfitSummary = {
   profitTodayMad: string;
   profitLast7DaysMad: string;
   profitThisMonthMad: string;
+  // عدد الطلبات المسلَّمة التي لا تملك purchase_price_snapshot لسطر واحد
+  // على الأقل — ربحها معروض بـ"تقدير تاريخي" (ثمن شراء حالي)، وليس بدقة.
+  approximateProfitOrdersCount: number;
 };
 
 const ORDER_COGS_CTE = sql`
   with order_cogs as (
     select
       oi.order_id,
-      sum(oi.quantity * coalesce(pv.purchase_price_override, p.purchase_price, 0)) as cogs
+      sum(
+        oi.quantity * coalesce(oi.purchase_price_snapshot, pv.purchase_price_override, p.purchase_price, 0)
+      ) as cogs,
+      bool_and(oi.purchase_price_snapshot is not null) as has_full_snapshot
     from public.order_items oi
     left join public.products p on p.id = oi.product_id
     left join public.product_variants pv on pv.id = oi.variant_id
@@ -55,6 +66,7 @@ export async function getProfitSummary(): Promise<ProfitSummary> {
       profit_today: string;
       profit_7d: string;
       profit_month: string;
+      approximate_profit_orders_count: number;
     }[]
   >`
     ${ORDER_COGS_CTE}
@@ -64,6 +76,9 @@ export async function getProfitSummary(): Promise<ProfitSummary> {
       count(*) filter (where o.status = 'cancelled')::int as cancelled_orders_count,
       count(*) filter (where o.status = 'returned')::int as returned_orders_count,
       coalesce(sum(oc.cogs) filter (where o.status = 'delivered'), 0) as cogs_total,
+      count(*) filter (
+        where o.status = 'delivered' and coalesce(oc.has_full_snapshot, true) = false
+      )::int as approximate_profit_orders_count,
       coalesce(sum(o.items_subtotal - coalesce(oc.cogs, 0)) filter (where o.status = 'delivered'), 0)
         as gross_profit_total,
       coalesce(sum(o.items_subtotal - coalesce(oc.cogs, 0)) filter (
@@ -89,6 +104,7 @@ export async function getProfitSummary(): Promise<ProfitSummary> {
     profitTodayMad: row?.profit_today ?? "0",
     profitLast7DaysMad: row?.profit_7d ?? "0",
     profitThisMonthMad: row?.profit_month ?? "0",
+    approximateProfitOrdersCount: row?.approximate_profit_orders_count ?? 0,
   };
 }
 
@@ -99,6 +115,10 @@ export type DeliveredOrderProfit = {
   revenueMad: string;
   cogsMad: string;
   profitMad: string;
+  // false إذا كان لسطر واحد فأكثر بهذا الطلب purchase_price_snapshot = NULL
+  // (طلب سابق لـmigration 20260807000000) — الربح المعروض حينها تقدير
+  // تاريخي بثمن الشراء الحالي، وليس دقيقاً.
+  isExactHistoricalProfit: boolean;
 };
 
 export async function getDeliveredOrdersProfitBreakdown(
@@ -112,13 +132,15 @@ export async function getDeliveredOrdersProfitBreakdown(
       items_subtotal: string;
       cogs: string;
       profit: string;
+      has_full_snapshot: boolean | null;
     }[]
   >`
     ${ORDER_COGS_CTE}
     select
       o.id, o.order_number, o.created_at, o.items_subtotal,
       coalesce(oc.cogs, 0) as cogs,
-      (o.items_subtotal - coalesce(oc.cogs, 0)) as profit
+      (o.items_subtotal - coalesce(oc.cogs, 0)) as profit,
+      oc.has_full_snapshot
     from public.orders o
     left join order_cogs oc on oc.order_id = o.id
     where o.status = 'delivered'
@@ -133,6 +155,7 @@ export async function getDeliveredOrdersProfitBreakdown(
     revenueMad: r.items_subtotal,
     cogsMad: r.cogs,
     profitMad: r.profit,
+    isExactHistoricalProfit: r.has_full_snapshot ?? true,
   }));
 }
 
