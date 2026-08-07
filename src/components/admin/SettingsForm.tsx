@@ -109,6 +109,20 @@ export function SettingsForm({ settings }: { settings: StoreSettings }) {
 
       <label className="flex items-center gap-2 text-sm">
         <input
+          // React 19 يُعيد ضبط عناصر النموذج غير المُتحكَّم بها (uncontrolled)
+          // إلى defaultChecked/defaultValue تلقائياً بعد نجاح أي form action —
+          // لكن القيمة التي يُعاد الضبط إليها هي defaultChecked الحالية
+          // للعنصر المُثبَّت أصلاً فالـDOM (وقت آخر mount)، وليست القيمة
+          // الطازجة القادمة من الخادم بعد الحفظ. بدون key هنا، checkbox كان
+          // يرجع مرئياً لحالته الأولى وقت تحميل الصفحة (defaultChecked
+          // القديمة) رغم أن الحفظ الفعلي فقاعدة البيانات كان يتم بشكل صحيح —
+          // كان يبدو وكأن التعطيل "لا يُحفَظ" رغم أنه محفوظ فعلاً. تغيير
+          // key مع تغيّر settings.codEnabled الحقيقي يجبر React على إعادة
+          // mount العنصر بـdefaultChecked الطازج فعلياً فكل مرة يختلف فيها
+          // عن آخر قيمة مرئية (يضمن هذا تصحيحاً حتمياً بغض النظر عن تفاصيل
+          // دقيقة فسلوك "dirty checkedness flag" الخاص بالمتصفح، بدل
+          // الاعتماد عليها).
+          key={settings.codEnabled ? "cod-enabled-on" : "cod-enabled-off"}
           name="codEnabled"
           type="checkbox"
           defaultChecked={settings.codEnabled}

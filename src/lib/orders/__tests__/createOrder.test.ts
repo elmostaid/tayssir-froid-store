@@ -245,6 +245,64 @@ describe("createOrder — حالة غير متوفر للطلب", () => {
   });
 });
 
+describe("createOrder — تعطيل استقبال الطلبات (cod_enabled)", () => {
+  test("cod_enabled=false يرفض الطلب، ولا يُنشأ أي صف، ولا ينقص المخزون", async () => {
+    const demo003 = await getRawProduct("TEST-FIXTURE-003"); // 120 درهم، حد أدنى 1
+    const originalStock = demo003.stock_quantity;
+
+    try {
+      await sql`update public.settings set value = to_jsonb(false) where key = 'cod_enabled'`;
+
+      const idempotencyKey = randomUUID();
+      const input: CreateOrderInput = {
+        items: [{ productId: demo003.id, variantId: null, quantity: 10 }], // 1200 (يتجاوز الحد الأدنى)
+        customer: baseCustomer(),
+        idempotencyKey,
+      };
+
+      const result = await createOrder(input);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.errors.some((e) => e.message.includes("متوقف"))).toBe(true);
+      }
+
+      const orders = await sql`select id from public.orders where idempotency_key = ${idempotencyKey}`;
+      expect(orders.length).toBe(0);
+
+      const afterStock = await getRawProduct("TEST-FIXTURE-003");
+      expect(afterStock.stock_quantity).toBe(originalStock);
+    } finally {
+      await sql`update public.settings set value = to_jsonb(true) where key = 'cod_enabled'`;
+    }
+  });
+
+  test("cod_enabled=true (إعادة التفعيل) يسمح بإنشاء الطلب عادياً", async () => {
+    const demo003 = await getRawProduct("TEST-FIXTURE-003");
+    const originalStock = demo003.stock_quantity;
+
+    await sql`update public.settings set value = to_jsonb(false) where key = 'cod_enabled'`;
+    await sql`update public.settings set value = to_jsonb(true) where key = 'cod_enabled'`;
+
+    try {
+      const input: CreateOrderInput = {
+        items: [{ productId: demo003.id, variantId: null, quantity: 10 }], // 1200
+        customer: baseCustomer(),
+        idempotencyKey: randomUUID(),
+      };
+
+      const result = await createOrder(input);
+
+      expect(result.ok).toBe(true);
+    } finally {
+      // نُعيد المخزون كما كان — هذا الاختبار يتحقق فقط أن إعادة التفعيل
+      // تسمح بإنشاء الطلب، وليس المقصود منه استهلاك مخزون منتج الاختبار
+      // المشترك مع اختبارات أخرى فهذا الملف.
+      await sql`update public.products set stock_quantity = ${originalStock} where id = ${demo003.id}`;
+    }
+  });
+});
+
 describe("createOrder — حدود طول بيانات الزبون", () => {
   test("يرفض اسماً كاملاً أطول من 100 حرف", async () => {
     const demo003 = await getRawProduct("TEST-FIXTURE-003");
