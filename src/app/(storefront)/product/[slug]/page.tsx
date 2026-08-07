@@ -7,7 +7,7 @@ import {
   getProductImages,
   getProductVariants,
 } from "@/lib/queries/catalog";
-import { getSettings } from "@/lib/queries/settings";
+import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 import { resolveImageUrl } from "@/lib/images";
 import { formatMad } from "@/lib/format";
 import { buildProductWhatsAppLink } from "@/lib/whatsapp";
@@ -68,15 +68,11 @@ export default async function ProductPage({ params }: Props) {
   const [images, variants, settings] = await Promise.all([
     safeQuery(() => getProductImages(product.id), [], "product.getProductImages"),
     safeQuery(() => getProductVariants(product.id), [], "product.getProductVariants"),
-    safeQuery(
-      () => getSettings(),
-      { minOrderAmountMad: 1000, deliveryFeePerCartonMad: 45, whatsappNumber: "+212722083458", storeCity: "" },
-      "product.getSettings"
-    ),
+    safeQuery(() => getSettings(), FALLBACK_SETTINGS, "product.getSettings"),
   ]);
 
   const mainImage = images[0];
-  const whatsappLink = buildProductWhatsAppLink(product.name_ar, product.sku);
+  const whatsappLink = buildProductWhatsAppLink(settings.whatsappNumber, product.name_ar, product.sku);
   const isUnavailable = product.status === "out_of_stock" || product.stock_quantity <= 0;
   const statusLabel =
     product.status === "out_of_stock"

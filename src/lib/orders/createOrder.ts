@@ -98,6 +98,23 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
   try {
     const settings = await getSettings();
 
+    // دفاع إضافي (defense-in-depth) وليس الحماية الأساسية — الزبون العادي
+    // يُمنَع فعلياً من الوصول لهنا أصلاً لأن CheckoutClient نفسه يُعطِّل زر
+    // الإرسال ولا يبني رابط واتساب حين تكون الطلبات متوقفة (انظر
+    // CheckoutClient.tsx). هذا الفحص هنا يحمي فقط من استدعاء مباشر لـ
+    // submitOrder متجاوزاً الواجهة (مثلاً عبر إعادة إرسال نموذج قديم).
+    if (!settings.codEnabled) {
+      return {
+        ok: false,
+        errors: [
+          {
+            field: "general",
+            message: "استقبال الطلبات الجديدة متوقف مؤقتاً. الرجاء التواصل معنا عبر واتساب.",
+          },
+        ],
+      };
+    }
+
     const productIds = [...new Set(input.items.map((item) => item.productId))];
     const variantIds = [
       ...new Set(

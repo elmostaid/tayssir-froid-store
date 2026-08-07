@@ -66,9 +66,15 @@ async function saveOrderWithRetry(formData: FormData): Promise<void> {
 export function CheckoutClient({
   minOrderAmountMad,
   deliveryFeePerCartonMad,
+  whatsappNumber,
+  storeName,
+  codEnabled,
 }: {
   minOrderAmountMad: number;
   deliveryFeePerCartonMad: number;
+  whatsappNumber: string;
+  storeName: string;
+  codEnabled: boolean;
 }) {
   const { items, subtotal, isHydrated, clearCart } = useCart();
   const [fullName, setFullName] = useState("");
@@ -86,12 +92,13 @@ export function CheckoutClient({
   const whatsappHref = useMemo(() => {
     if (items.length === 0) return null;
     const message = buildOrderWhatsAppMessage({
+      storeName,
       customer: { fullName, phone, city, address, notes },
       items,
       subtotal,
     });
-    return buildWhatsAppLink(message);
-  }, [fullName, phone, city, address, notes, items, subtotal]);
+    return buildWhatsAppLink(whatsappNumber, message);
+  }, [storeName, whatsappNumber, fullName, phone, city, address, notes, items, subtotal]);
 
   if (!isHydrated) {
     return (
@@ -148,6 +155,12 @@ export function CheckoutClient({
     e.preventDefault();
     setError(null);
 
+    if (!codEnabled) {
+      setError(
+        "استقبال الطلبات الجديدة متوقف مؤقتاً. الرجاء التواصل معنا عبر واتساب مباشرة."
+      );
+      return;
+    }
     if (belowMinimum) {
       setError(
         `المجموع الحالي (${formatMad(subtotal)}) أقل من الحد الأدنى للطلب (${formatMad(
@@ -166,11 +179,12 @@ export function CheckoutClient({
     }
 
     const message = buildOrderWhatsAppMessage({
+      storeName,
       customer: { fullName, phone, city, address, notes },
       items,
       subtotal,
     });
-    const link = buildWhatsAppLink(message);
+    const link = buildWhatsAppLink(whatsappNumber, message);
 
     // محاولة حفظ الطلب فنظام الطلبات الحقيقي (رقم طلب + بون تحضير) بأفضل
     // مجهود، قبل التوجه لواتساب — بانتظار انتهائها (نجحت أو فشلت) لضمان
@@ -238,6 +252,20 @@ export function CheckoutClient({
           فريقنا، وسنتواصل معكم لتأكيد المجموع النهائي قبل الشحن.
         </p>
       </div>
+
+      {!codEnabled && (
+        <div className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+          <p>
+            استقبال الطلبات الجديدة متوقف مؤقتاً. الرجاء التواصل معنا عبر
+            واتساب مباشرة لإتمام طلبكم.
+          </p>
+          {whatsappHref && (
+            <a href={whatsappHref} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block font-semibold underline">
+              تواصل معنا عبر واتساب
+            </a>
+          )}
+        </div>
+      )}
 
       {belowMinimum && (
         <div className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -343,7 +371,7 @@ export function CheckoutClient({
 
         <button
           type="submit"
-          disabled={isSubmitting}
+          disabled={isSubmitting || !codEnabled}
           className="mt-1 rounded-full bg-brand-orange px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-orange-dark disabled:opacity-60"
         >
           {isSubmitting ? "جارٍ الإرسال…" : "إرسال الطلب عبر واتساب"}

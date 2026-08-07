@@ -9,10 +9,12 @@ export function ProductCard({
   product,
   imageUrl,
   hasVariants = false,
+  whatsappNumber,
 }: {
   product: CatalogProduct;
   imageUrl: string | null;
   hasVariants?: boolean;
+  whatsappNumber: string;
 }) {
   const isUnavailable = product.status === "out_of_stock" || product.stock_quantity <= 0;
 
@@ -60,7 +62,12 @@ export function ProductCard({
           الكمية الدنيا: {product.min_order_qty} {product.unit_label}
         </span>
 
-        <ProductCardActions product={product} imageUrl={imageUrl} hasVariants={hasVariants} />
+        <ProductCardActions
+          product={product}
+          imageUrl={imageUrl}
+          hasVariants={hasVariants}
+          whatsappNumber={whatsappNumber}
+        />
       </div>
     </div>
   );

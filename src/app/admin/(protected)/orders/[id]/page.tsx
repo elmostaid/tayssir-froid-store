@@ -16,6 +16,8 @@ import { CopyBonButton } from "@/components/admin/CopyBonButton";
 import { CopyDeliveryInfoButton } from "@/components/admin/CopyDeliveryInfoButton";
 import { buildCustomerWhatsAppLink } from "@/lib/whatsapp";
 import { toInternationalDigits } from "@/lib/phone";
+import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
+import { safeQuery } from "@/lib/safeQuery";
 
 export const dynamic = "force-dynamic";
 
@@ -32,9 +34,10 @@ export default async function AdminOrderDetailPage({ params }: Props) {
   const order = await getAdminOrderById(orderId);
   if (!order) notFound();
 
-  const [items, history] = await Promise.all([
+  const [items, history, settings] = await Promise.all([
     getAdminOrderItems(orderId),
     getAdminOrderStatusHistory(orderId),
+    safeQuery(() => getSettings(), FALLBACK_SETTINGS, "adminOrderDetail.getSettings"),
   ]);
 
   return (
@@ -49,7 +52,12 @@ export default async function AdminOrderDetailPage({ params }: Props) {
         </h1>
         <div className="flex flex-wrap gap-2">
           <a
-            href={buildCustomerWhatsAppLink(order.customerPhone, order.orderNumber)}
+            href={buildCustomerWhatsAppLink(
+              order.customerPhone,
+              order.orderNumber,
+              settings.whatsappOrderMessageTemplate,
+              settings.storeName
+            )}
             target="_blank"
             rel="noopener noreferrer"
             className="rounded-lg border border-whatsapp bg-whatsapp/10 px-3 py-2 text-xs font-semibold text-whatsapp-dark"

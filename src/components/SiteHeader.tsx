@@ -1,6 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { getFilteredCategories } from "@/lib/queries/catalog";
+import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
+import { safeQuery } from "@/lib/safeQuery";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
 import { CartBadge } from "@/components/CartBadge";
 import { MobileNav } from "@/components/MobileNav";
@@ -8,10 +10,14 @@ import { MobileNav } from "@/components/MobileNav";
 export async function SiteHeader() {
   // نفس القائمة المُصفَّاة بالضبط تُستعمل هنا لكل من قائمة الحاسوب (أسفل)
   // وقائمة الهاتف (MobileNav) — مصدر واحد مشترك، لا فرق بين الاثنين أبداً.
-  const categories = await getFilteredCategories("SiteHeader.getCategories");
+  const [categories, settings] = await Promise.all([
+    getFilteredCategories("SiteHeader.getCategories"),
+    safeQuery(() => getSettings(), FALLBACK_SETTINGS, "SiteHeader.getSettings"),
+  ]);
 
   const whatsappLink = buildWhatsAppLink(
-    "مرحباً، عندي سؤال بخصوص منتجات Tayssir Froid."
+    settings.whatsappNumber,
+    `مرحباً، عندي سؤال بخصوص منتجات ${settings.storeName}.`
   );
 
   return (

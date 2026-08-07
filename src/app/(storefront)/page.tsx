@@ -5,7 +5,7 @@ import {
   getProductIdsWithVariants,
   getProducts,
 } from "@/lib/queries/catalog";
-import { getSettings } from "@/lib/queries/settings";
+import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 import { ProductCard } from "@/components/ProductCard";
 import { CategoryIcon } from "@/components/CategoryIcon";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
@@ -31,14 +31,11 @@ export default async function HomePage() {
     safeQuery(() => getProductCountsByCategory(), {}, "home.getProductCountsByCategory"),
     safeQuery(() => getProducts({ limit: 12 }), [], "home.getProducts"),
     safeQuery(() => getProductIdsWithVariants(), new Set<number>(), "home.getProductIdsWithVariants"),
-    safeQuery(
-      () => getSettings(),
-      { minOrderAmountMad: 1000, deliveryFeePerCartonMad: 45, whatsappNumber: "+212722083458", storeCity: "" },
-      "home.getSettings"
-    ),
+    safeQuery(() => getSettings(), FALLBACK_SETTINGS, "home.getSettings"),
   ]);
 
   const whatsappLink = buildWhatsAppLink(
+    settings.whatsappNumber,
     "مرحباً، أريد الاطلاع على منتجاتكم بالجملة."
   );
   const trustPoints = buildTrustPoints(settings.minOrderAmountMad);
@@ -128,6 +125,7 @@ export default async function HomePage() {
                 product={product}
                 imageUrl={product.primary_image_path}
                 hasVariants={variantProductIds.has(product.id)}
+                whatsappNumber={settings.whatsappNumber}
               />
             ))}
           </div>

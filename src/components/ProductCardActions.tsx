@@ -11,15 +11,17 @@ export function ProductCardActions({
   product,
   imageUrl,
   hasVariants,
+  whatsappNumber,
 }: {
   product: CatalogProduct;
   imageUrl: string | null;
   hasVariants: boolean;
+  whatsappNumber: string;
 }) {
   const { addItem } = useCart();
   const [added, setAdded] = useState(false);
   const outOfStock = product.status === "out_of_stock" || product.stock_quantity <= 0;
-  const whatsappLink = buildProductWhatsAppLink(product.name_ar, product.sku);
+  const whatsappLink = buildProductWhatsAppLink(whatsappNumber, product.name_ar, product.sku);
 
   function handleAdd() {
     if (outOfStock || hasVariants) return;

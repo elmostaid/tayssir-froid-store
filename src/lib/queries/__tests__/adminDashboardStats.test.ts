@@ -6,7 +6,10 @@ import { getDashboardOrderStats } from "@/lib/queries/adminOrders";
 
 // getDashboardOrderStats() يجمّع على كل جدول orders (بيانات محيطة حقيقية
 // موجودة أصلاً فالقاعدة، خارج سيطرة هذا الملف) — فنتحقق من "الفرق" (delta)
-// الناتج عن طلب اختبار واحد معروف بالضبط، بدل افتراض قيم مطلقة هشة.
+// الناتج عن طلب اختبار واحد معروف بالضبط، بدل افتراض قيم مطلقة هشة. هذا
+// يعتمد على أن ملفات الاختبار لا تعمل بالتوازي (fileParallelism: false في
+// vitest.config.mts) — وإلا يمكن لملف آخر أن يُنشئ/يحذف طلبات فنفس اللحظة
+// فيُفسد دقة "قبل/بعد" هنا دون أي خطأ حقيقي فالكود.
 // 10 خانات بالضبط: 0 + [5-7] + 8 أرقام (نفس شرط isValidMoroccanPhone).
 const randomSuffix = Math.floor(Math.random() * 10000).toString().padStart(4, "0");
 const TEST_PHONE = `0644${randomSuffix}01`;
@@ -94,6 +97,5 @@ describe("getDashboardOrderStats — الفرق الناتج عن طلب جدي�
     expect(after.ordersToday).toBe(before.ordersToday);
     expect(Number(before.salesTodayMad) - Number(after.salesTodayMad)).toBeCloseTo(1050, 2);
     expect(after.countsByStatus.cancelled).toBe(before.countsByStatus.cancelled + 1);
-
   });
 });

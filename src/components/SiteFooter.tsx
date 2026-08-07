@@ -1,23 +1,19 @@
 import Image from "next/image";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
-import { getSettings } from "@/lib/queries/settings";
+import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 import { safeQuery } from "@/lib/safeQuery";
 import { formatMad } from "@/lib/format";
 
 export async function SiteFooter() {
-  const whatsappLink = buildWhatsAppLink(
-    "مرحباً، عندي سؤال بخصوص منتجات Tayssir Froid."
-  );
-
   const settings = await safeQuery(
     () => getSettings(),
-    {
-      minOrderAmountMad: 1000,
-      deliveryFeePerCartonMad: 45,
-      whatsappNumber: "+212722083458",
-      storeCity: "مراكش - حي المحاميد",
-    },
+    FALLBACK_SETTINGS,
     "SiteFooter.getSettings"
+  );
+
+  const whatsappLink = buildWhatsAppLink(
+    settings.whatsappNumber,
+    `مرحباً، عندي سؤال بخصوص منتجات ${settings.storeName}.`
   );
 
   return (

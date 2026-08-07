@@ -10,6 +10,7 @@ import { ProductCard } from "@/components/ProductCard";
 import { safeQuery } from "@/lib/safeQuery";
 import { ServiceUnavailable } from "@/components/ServiceUnavailable";
 import { getSiteUrl } from "@/lib/siteUrl";
+import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 
 export const dynamic = "force-dynamic";
 
@@ -70,13 +71,14 @@ export default async function CategoryPage({ params, searchParams }: Props) {
     notFound();
   }
 
-  const [products, variantProductIds] = await Promise.all([
+  const [products, variantProductIds, settings] = await Promise.all([
     safeQuery(
       () => getProducts({ categorySlug: slug, limit: 100, query, sort }),
       [],
       "category.getProducts"
     ),
     safeQuery(() => getProductIdsWithVariants(), new Set<number>(), "category.getProductIdsWithVariants"),
+    safeQuery(() => getSettings(), FALLBACK_SETTINGS, "category.getSettings"),
   ]);
 
   return (
@@ -142,6 +144,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
               product={product}
               imageUrl={product.primary_image_path}
               hasVariants={variantProductIds.has(product.id)}
+              whatsappNumber={settings.whatsappNumber}
             />
           ))}
         </div>

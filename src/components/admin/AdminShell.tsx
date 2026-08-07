@@ -58,6 +58,18 @@ export async function AdminShell({
           >
             الزبائن
           </Link>
+          <Link
+            href="/admin/reports"
+            className="shrink-0 rounded-full border border-neutral-200 px-3 py-1.5 text-neutral-700 hover:border-brand-turquoise hover:text-brand-turquoise-dark"
+          >
+            التقارير
+          </Link>
+          <Link
+            href="/admin/settings"
+            className="shrink-0 rounded-full border border-neutral-200 px-3 py-1.5 text-neutral-700 hover:border-brand-turquoise hover:text-brand-turquoise-dark"
+          >
+            الإعدادات
+          </Link>
         </nav>
       </header>
 

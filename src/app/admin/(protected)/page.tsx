@@ -191,6 +191,24 @@ export default async function AdminDashboardPage() {
             قائمة الزبائن حسب طلباتهم، تواصل مباشر عبر واتساب أو اتصال
           </p>
         </Link>
+        <Link
+          href="/admin/reports"
+          className="rounded-xl border border-neutral-200 bg-white p-5 hover:border-brand-turquoise"
+        >
+          <h2 className="text-base font-semibold text-neutral-800">التقارير والأرباح</h2>
+          <p className="mt-1 text-sm text-neutral-500">
+            الربح الإجمالي، أفضل المنتجات مبيعاً، تفصيل الطلبات المسلَّمة
+          </p>
+        </Link>
+        <Link
+          href="/admin/settings"
+          className="rounded-xl border border-neutral-200 bg-white p-5 hover:border-brand-turquoise"
+        >
+          <h2 className="text-base font-semibold text-neutral-800">الإعدادات</h2>
+          <p className="mt-1 text-sm text-neutral-500">
+            الحد الأدنى للطلب، مصاريف التوصيل، واتساب، واستقبال الطلبات
+          </p>
+        </Link>
       </div>
     </div>
   );

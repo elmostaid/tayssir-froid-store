@@ -6,7 +6,7 @@ import {
   type OrderSummary,
   type OrderLineSummary,
 } from "@/lib/queries/orders";
-import { getSettings } from "@/lib/queries/settings";
+import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 import { safeQuery } from "@/lib/safeQuery";
 import { registerPdfFonts } from "@/lib/pdf/theme";
 import { CustomerReceiptDocument } from "@/lib/pdf/CustomerReceiptDocument";
@@ -62,11 +62,7 @@ export async function GET(
 
   const [items, settings] = await Promise.all([
     getOrderItemsByPublicReference(reference),
-    safeQuery(
-      () => getSettings(),
-      { minOrderAmountMad: 1000, deliveryFeePerCartonMad: 45, whatsappNumber: "+212722083458", storeCity: "" },
-      "receiptPdf.getSettings"
-    ),
+    safeQuery(() => getSettings(), FALLBACK_SETTINGS, "receiptPdf.getSettings"),
   ]);
 
   try {

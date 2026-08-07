@@ -7,6 +7,8 @@ import {
 } from "@/lib/queries/orders";
 import { formatMad } from "@/lib/format";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
+import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
+import { safeQuery } from "@/lib/safeQuery";
 import { ServiceUnavailable } from "@/components/ServiceUnavailable";
 
 export const dynamic = "force-dynamic";
@@ -35,9 +37,15 @@ export default async function OrderSuccessPage({ params }: Props) {
   }
 
   const items = await getOrderItemsByPublicReference(reference);
+  const settings = await safeQuery(
+    () => getSettings(),
+    FALLBACK_SETTINGS,
+    "orderSuccess.getSettings"
+  );
 
   // رابط واتساب يحتوي فقط على مرجع الطلب العام، بدون أي بيانات شخصية حساسة
   const whatsappLink = buildWhatsAppLink(
+    settings.whatsappNumber,
     `مرحباً، أريد الاستفسار عن طلبي رقم ${order.publicReference}.`
   );
 

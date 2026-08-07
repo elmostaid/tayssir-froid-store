@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { searchProducts, getProductIdsWithVariants } from "@/lib/queries/catalog";
 import { ProductCard } from "@/components/ProductCard";
 import { safeQuery } from "@/lib/safeQuery";
+import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 
 export const dynamic = "force-dynamic";
 
@@ -22,11 +23,12 @@ export default async function SearchPage({ searchParams }: Props) {
   const { q } = await searchParams;
   const query = (q ?? "").trim();
 
-  const [products, variantProductIds] = await Promise.all([
+  const [products, variantProductIds, settings] = await Promise.all([
     query
       ? safeQuery(() => searchProducts(query), [], "search.searchProducts")
       : Promise.resolve([]),
     safeQuery(() => getProductIdsWithVariants(), new Set<number>(), "search.getProductIdsWithVariants"),
+    safeQuery(() => getSettings(), FALLBACK_SETTINGS, "search.getSettings"),
   ]);
 
   return (
@@ -73,6 +75,7 @@ export default async function SearchPage({ searchParams }: Props) {
                 product={product}
                 imageUrl={product.primary_image_path}
                 hasVariants={variantProductIds.has(product.id)}
+                whatsappNumber={settings.whatsappNumber}
               />
             ))}
           </div>
