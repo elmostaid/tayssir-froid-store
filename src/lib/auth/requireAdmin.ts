@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { sql } from "@/lib/db";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
@@ -14,16 +15,34 @@ export type AdminUser = { id: string; email: string; role: AdminRole };
  *
  * بدون NEXT_PUBLIC_SUPABASE_URL/ANON_KEY، تُعيد null دائماً — لا يوجد أي
  * باب دخول بديل يعمل بدون Supabase حقيقي.
+ *
+ * مُغلَّفة بـ cache() (تخزين مؤقَّت لعمر الطلب الواحد فقط من React): كل
+ * صفحة إدارية تستدعيها بنفسها فوق استدعاء admin/layout.tsx — بدون هذا، كل
+ * عرض صفحة واحد (مثلاً /admin/orders/1) كان يُنفِّذ auth.getUser() (طلب
+ * HTTP خارجي حقيقي نحو Supabase) مرتين فعلياً فنفس الزيارة. نفس النتيجة
+ * بالضبط، فقط طلب واحد فعلي بدل عدة — لا إضعاف لأي تحقق أمني، فكل موقع
+ * استدعاء لا يزال يفحص النتيجة كما كان.
+ *
+ * Fail-closed صريح: أي خطأ أثناء التحقق (بما فيه انتهاء مهلة fetch عبر
+ * fetchWithTimeout.ts عند تعطّل خدمة Supabase Auth نفسها — هذا بالضبط ما
+ * أظهرته Vercel Runtime Logs الحقيقية: FUNCTION_INVOCATION_TIMEOUT بعد 5
+ * دقائق بسبب طلب HTTP خارجي عالق نحو Supabase، وليس استعلام SQL) يُعامَل
+ * كزائر غير مسجَّل بلا أي استثناء — لا صلاحية، ولا fallback غير آمن.
  */
-export async function getAdminUser(): Promise<AdminUser | null> {
+export const getAdminUser = cache(async (): Promise<AdminUser | null> => {
   if (!isSupabaseConfigured()) {
     return null;
   }
 
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user;
+  try {
+    const supabase = await createSupabaseServerClient();
+    const result = await supabase.auth.getUser();
+    user = result.data.user;
+  } catch (error) {
+    console.error("getAdminUser: تعذّر التحقق من جلسة Supabase Auth", error);
+    return null;
+  }
 
   if (!user) {
     return null;
@@ -48,7 +67,7 @@ export async function getAdminUser(): Promise<AdminUser | null> {
   const role: AdminRole = rows[0].role === "admin" ? "admin" : "staff";
 
   return { id: user.id, email: user.email ?? "", role };
-}
+});
 
 /**
  * true فقط لصاحب الحساب (Owner/Admin) — false لـstaff أو لزائر غير مسجَّل.
