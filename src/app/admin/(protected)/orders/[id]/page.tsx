@@ -14,6 +14,8 @@ import { OrderNoteForm } from "@/components/admin/OrderNoteForm";
 import { DeliveryFeeForm } from "@/components/admin/DeliveryFeeForm";
 import { CopyBonButton } from "@/components/admin/CopyBonButton";
 import { CopyDeliveryInfoButton } from "@/components/admin/CopyDeliveryInfoButton";
+import { buildCustomerWhatsAppLink } from "@/lib/whatsapp";
+import { toInternationalDigits } from "@/lib/phone";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +48,20 @@ export default async function AdminOrderDetailPage({ params }: Props) {
           {order.orderNumber}
         </h1>
         <div className="flex flex-wrap gap-2">
+          <a
+            href={buildCustomerWhatsAppLink(order.customerPhone, order.orderNumber)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-lg border border-whatsapp bg-whatsapp/10 px-3 py-2 text-xs font-semibold text-whatsapp-dark"
+          >
+            واتساب الزبون
+          </a>
+          <a
+            href={`tel:+${toInternationalDigits(order.customerPhone)}`}
+            className="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-semibold text-neutral-700"
+          >
+            اتصال بالزبون
+          </a>
           <CopyBonButton order={order} items={items} />
           <a
             href={`/admin/orders/${order.id}/picking-slip.pdf`}

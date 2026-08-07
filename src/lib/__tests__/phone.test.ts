@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { isValidMoroccanPhone } from "@/lib/phone";
+import { isValidMoroccanPhone, toInternationalDigits } from "@/lib/phone";
 
 describe("isValidMoroccanPhone", () => {
   test("يقبل صيغة محلية تبدأ بـ 0", () => {
@@ -29,5 +29,19 @@ describe("isValidMoroccanPhone", () => {
   test("يرفض نصاً فارغاً أو غير رقمي", () => {
     expect(isValidMoroccanPhone("")).toBe(false);
     expect(isValidMoroccanPhone("ليس رقماً")).toBe(false);
+  });
+});
+
+describe("toInternationalDigits", () => {
+  test("يحوّل صيغة محلية 0X إلى 212X", () => {
+    expect(toInternationalDigits("0612345678")).toBe("212612345678");
+  });
+
+  test("يحوّل صيغة +212 إلى أرقام خالصة بدون +", () => {
+    expect(toInternationalDigits("+212612345678")).toBe("212612345678");
+  });
+
+  test("يتجاهل المسافات والشرطات قبل التحويل", () => {
+    expect(toInternationalDigits("06 12 34 56 78")).toBe("212612345678");
   });
 });

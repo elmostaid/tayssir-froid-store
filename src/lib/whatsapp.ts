@@ -1,5 +1,6 @@
 import type { CartItem } from "@/lib/cart/types";
 import { formatMad } from "@/lib/format";
+import { toInternationalDigits } from "@/lib/phone";
 
 // رقم واتساب Tayssir Froid بصيغة دولية بدون علامة + (كما يتطلبه رابط wa.me)
 const WHATSAPP_NUMBER = "212722083458";
@@ -10,6 +11,14 @@ export function buildWhatsAppLink(message: string): string {
 
 export function buildProductWhatsAppLink(productName: string, sku: string): string {
   return buildWhatsAppLink(`مرحباً، أريد الاستفسار عن المنتج: ${productName} (${sku})`);
+}
+
+// رابط واتساب من لوحة الإدارة إلى **الزبون نفسه** (رقمه من الطلب)، وليس إلى
+// رقم المتجر — يُستعمل من صفحة تفاصيل الطلب فقط للتواصل المباشر بشأن طلبه.
+export function buildCustomerWhatsAppLink(customerPhone: string, orderNumber: string): string {
+  const digits = toInternationalDigits(customerPhone);
+  const message = `مرحباً، بخصوص طلبكم رقم ${orderNumber} في Tayssir Froid.`;
+  return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
 }
 
 // رسالة طلب جاهزة عبر واتساب — تُستعمل كبديل مؤقت لإتمام الطلب عندما يكون

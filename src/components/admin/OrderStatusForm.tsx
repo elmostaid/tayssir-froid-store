@@ -2,7 +2,7 @@
 
 import { useActionState, useRef } from "react";
 import { updateOrderStatus, type OrderActionState } from "@/app/admin/(protected)/orders/actions";
-import { ORDER_STATUSES, ORDER_STATUS_LABELS } from "@/lib/orders/orderStatus";
+import { ORDER_STATUSES, ORDER_STATUS_LABELS, RESTOCKING_STATUSES } from "@/lib/orders/orderStatus";
 
 const initialState: OrderActionState = { error: null };
 
@@ -34,7 +34,7 @@ export function OrderStatusForm({ orderId, currentStatus }: { orderId: number; c
           {ORDER_STATUSES.map((s) => (
             <option key={s} value={s}>
               {ORDER_STATUS_LABELS[s]}
-              {s === "cancelled" ? " (يُرجع المخزون المحجوز)" : ""}
+              {RESTOCKING_STATUSES.includes(s) ? " (يُرجع المخزون المحجوز)" : ""}
             </option>
           ))}
         </select>

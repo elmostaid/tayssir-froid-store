@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { sql } from "@/lib/db";
 import { getAdminUser } from "@/lib/auth/requireAdmin";
 import { ORDER_STATUSES, type OrderStatus } from "@/lib/queries/adminOrders";
+import { RESTOCKING_STATUSES } from "@/lib/orders/orderStatus";
 
 export type OrderActionState = { error: string | null };
 
@@ -22,8 +23,8 @@ export async function updateOrderStatus(
     return { error: "بيانات غير صالحة." };
   }
 
-  if (status === "cancelled") {
-    return cancelOrderInternal(orderId, admin.email, note);
+  if (RESTOCKING_STATUSES.includes(status as OrderStatus)) {
+    return restockOrderInternal(orderId, admin.email, note, status as "cancelled" | "returned");
   }
 
   await sql.begin(async (trx) => {
@@ -104,16 +105,30 @@ export async function cancelOrderAction(
   const note = String(formData.get("note") ?? "").trim() || null;
   if (!orderId) return { error: "بيانات غير صالحة." };
 
-  return cancelOrderInternal(orderId, admin.email, note);
+  return restockOrderInternal(orderId, admin.email, note, "cancelled");
 }
 
-// إلغاء الطلب: يُرجع المخزون المحجوز عند إنشائه (سطراً بسطر، مع تسجيل حركة
-// مخزون معاكسة لكل سطر)، ويمنع إلغاء نفس الطلب مرتين (فحص الحالة الحالية
-// داخل نفس Transaction قبل أي تحديث).
-async function cancelOrderInternal(
+const RESTOCK_MOVEMENT_REASON: Record<"cancelled" | "returned", string> = {
+  cancelled: "order_cancelled",
+  returned: "order_returned",
+};
+
+const RESTOCK_DEFAULT_NOTE: Record<"cancelled" | "returned", string> = {
+  cancelled: "تم إلغاء الطلب وإرجاع المخزون",
+  returned: "تم تسجيل الطلب كراجع وإرجاع المخزون",
+};
+
+// إلغاء الطلب أو تسجيله كراجع (returned): نفس المنطق بالضبط لكلتا الحالتين
+// — يُرجع المخزون المحجوز عند إنشاء الطلب (سطراً بسطر، مع تسجيل حركة مخزون
+// معاكسة لكل سطر). الحماية من استرجاع مزدوج للمخزون تمنع الانتقال بين
+// الحالتين المُرجِعتين للمخزون في أي اتجاه (ملغى→راجع أو راجع→ملغى أو نفس
+// الحالة مرتين) — فحص الحالة الحالية داخل نفس Transaction (مع قفل الصف عبر
+// for update) قبل أي تحديث يمنع أي سباق (race condition) أيضاً.
+async function restockOrderInternal(
   orderId: number,
   adminEmail: string,
-  note: string | null
+  note: string | null,
+  targetStatus: "cancelled" | "returned"
 ): Promise<OrderActionState> {
   try {
     await sql.begin(async (trx) => {
@@ -121,7 +136,9 @@ async function cancelOrderInternal(
         select status from public.orders where id = ${orderId} for update
       `;
       if (!order) throw new Error("ORDER_NOT_FOUND");
-      if (order.status === "cancelled") throw new Error("ALREADY_CANCELLED");
+      if (RESTOCKING_STATUSES.includes(order.status as OrderStatus)) {
+        throw new Error("ALREADY_RESTOCKED");
+      }
 
       const items = await trx<
         { product_id: number | null; variant_id: number | null; quantity: number }[]
@@ -146,26 +163,34 @@ async function cancelOrderInternal(
           insert into public.stock_movements (
             product_id, variant_id, order_id, quantity_delta, reason
           ) values (
-            ${item.product_id}, ${item.variant_id}, ${orderId}, ${item.quantity}, 'order_cancelled'
+            ${item.product_id}, ${item.variant_id}, ${orderId}, ${item.quantity},
+            ${RESTOCK_MOVEMENT_REASON[targetStatus]}
           )
         `;
       }
 
-      await trx`update public.orders set status = 'cancelled' where id = ${orderId}`;
+      await trx`update public.orders set status = ${targetStatus} where id = ${orderId}`;
       await trx`
         insert into public.order_status_history (order_id, status, note, changed_by)
-        values (${orderId}, 'cancelled', ${note ?? "تم إلغاء الطلب وإرجاع المخزون"}, ${adminEmail})
+        values (
+          ${orderId}, ${targetStatus}, ${note ?? RESTOCK_DEFAULT_NOTE[targetStatus]}, ${adminEmail}
+        )
       `;
     });
   } catch (error) {
-    if (error instanceof Error && error.message === "ALREADY_CANCELLED") {
-      return { error: "هذا الطلب مُلغى مسبقاً." };
+    if (error instanceof Error && error.message === "ALREADY_RESTOCKED") {
+      return {
+        error:
+          targetStatus === "cancelled"
+            ? "هذا الطلب مُلغى أو راجع مسبقاً — لا يمكن إلغاؤه مرة أخرى."
+            : "هذا الطلب مُلغى أو راجع مسبقاً — لا يمكن تسجيله كراجع مرة أخرى.",
+      };
     }
     if (error instanceof Error && error.message === "ORDER_NOT_FOUND") {
       return { error: "الطلب غير موجود." };
     }
-    console.error("cancelOrderInternal: خطأ غير متوقع", error);
-    return { error: "تعذّر إلغاء الطلب حالياً بسبب مشكلة تقنية." };
+    console.error("restockOrderInternal: خطأ غير متوقع", error);
+    return { error: "تعذّر تنفيذ الإجراء حالياً بسبب مشكلة تقنية." };
   }
 
   revalidatePath("/admin/orders");

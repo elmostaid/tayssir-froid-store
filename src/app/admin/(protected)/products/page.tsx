@@ -16,6 +16,10 @@ const STATUS_LABELS: Record<string, { label: string; className: string }> = {
   archived: { label: "مؤرشف", className: "bg-neutral-200 text-neutral-500" },
 };
 
+// عتبة "مخزون منخفض" — تنبيه بصري فقط فلوحة الإدارة، لا يمس أي منطق طلب أو
+// حجز مخزون حقيقي.
+const LOW_STOCK_THRESHOLD = 10;
+
 export default async function AdminProductsPage() {
   // فحص مباشر هنا قبل أي استعلام — الـlayout الأب وحده لا يمنع تنفيذ هذه
   // الصفحة وجلب بياناتها (بما فيها ثمن الشراء) لأن Next.js يُنفّذ صفحة
@@ -70,8 +74,18 @@ export default async function AdminProductsPage() {
               </div>
               <div className="shrink-0 text-left text-sm font-semibold text-neutral-800">
                 {product.sale_price} د.م.
-                <p className="text-xs font-normal text-neutral-500">
+                <p
+                  className={`text-xs font-normal ${
+                    product.stock_quantity <= LOW_STOCK_THRESHOLD
+                      ? "font-semibold text-red-600"
+                      : "text-neutral-500"
+                  }`}
+                >
                   المخزون: {product.stock_quantity}
+                  {product.stock_quantity <= LOW_STOCK_THRESHOLD && product.stock_quantity > 0
+                    ? " ⚠️ منخفض"
+                    : ""}
+                  {product.stock_quantity <= 0 ? " ⚠️ نفد" : ""}
                 </p>
               </div>
             </Link>
