@@ -169,60 +169,59 @@ export default async function AdminDashboardPage() {
         </div>
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+      {/* اختصارات عملية — كل الأقسام صارت متاحة أصلاً من قائمة لوحة الإدارة
+          (الدرج الجانبي فـAdminHeader)، فهذا القسم لا يكرّرها كدليل عام، بل
+          إجراءات محدَّدة مرتبطة مباشرة ببيانات حقيقية أعلاه (العدّادات) أو
+          بمهمة يومية شائعة (إضافة منتج). */}
+      <h2 className="mt-6 border-r-4 border-brand-turquoise pr-3 text-base font-bold text-neutral-800">
+        اختصارات سريعة
+      </h2>
+      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
         <Link
-          href="/admin/categories"
-          className="rounded-xl border border-neutral-200 bg-white p-5 hover:border-brand-turquoise"
+          href="/admin/orders?status=new"
+          className="flex items-center justify-between gap-2 rounded-xl border border-neutral-200 bg-white p-4 hover:border-brand-turquoise"
         >
-          <h2 className="text-base font-semibold text-neutral-800">التصنيفات</h2>
-          <p className="mt-1 text-sm text-neutral-500">
-            إضافة وتعديل التصنيفات والتصنيفات الفرعية
-          </p>
+          <span className="text-sm font-semibold text-neutral-800">الطلبات الجديدة</span>
+          {stats.countsByStatus.new > 0 && (
+            <span className="shrink-0 rounded-full bg-brand-orange px-2 py-0.5 text-xs font-bold text-white">
+              {stats.countsByStatus.new}
+            </span>
+          )}
         </Link>
         <Link
-          href="/admin/products"
-          className="rounded-xl border border-neutral-200 bg-white p-5 hover:border-brand-turquoise"
+          href="/admin/orders"
+          className="flex items-center rounded-xl border border-neutral-200 bg-white p-4 hover:border-brand-turquoise"
         >
-          <h2 className="text-base font-semibold text-neutral-800">المنتجات</h2>
-          <p className="mt-1 text-sm text-neutral-500">
-            إضافة وتعديل المنتجات، الأسعار، المخزون، والصور
-          </p>
+          <span className="text-sm font-semibold text-neutral-800">كل الطلبات</span>
+        </Link>
+        <Link
+          href="/admin/products?lowStock=1"
+          className="flex items-center justify-between gap-2 rounded-xl border border-neutral-200 bg-white p-4 hover:border-brand-turquoise"
+        >
+          <span className="text-sm font-semibold text-neutral-800">مخزون منخفض</span>
+          {lowStockCount > 0 && (
+            <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700">
+              {lowStockCount}
+            </span>
+          )}
+        </Link>
+        <Link
+          href="/admin/products/new"
+          className="flex items-center rounded-xl border border-neutral-200 bg-white p-4 hover:border-brand-turquoise"
+        >
+          <span className="text-sm font-semibold text-neutral-800">+ إضافة منتج</span>
         </Link>
         <Link
           href="/admin/customers"
-          className="rounded-xl border border-neutral-200 bg-white p-5 hover:border-brand-turquoise"
+          className="flex items-center rounded-xl border border-neutral-200 bg-white p-4 hover:border-brand-turquoise"
         >
-          <h2 className="text-base font-semibold text-neutral-800">الزبائن</h2>
-          <p className="mt-1 text-sm text-neutral-500">
-            قائمة الزبائن حسب طلباتهم، تواصل مباشر عبر واتساب أو اتصال
-          </p>
+          <span className="text-sm font-semibold text-neutral-800">الزبائن</span>
         </Link>
         <Link
           href="/admin/reports"
-          className="rounded-xl border border-neutral-200 bg-white p-5 hover:border-brand-turquoise"
+          className="flex items-center rounded-xl border border-neutral-200 bg-white p-4 hover:border-brand-turquoise"
         >
-          <h2 className="text-base font-semibold text-neutral-800">التقارير والأرباح</h2>
-          <p className="mt-1 text-sm text-neutral-500">
-            الربح الإجمالي، أفضل المنتجات مبيعاً، تفصيل الطلبات المسلَّمة
-          </p>
-        </Link>
-        <Link
-          href="/admin/settings"
-          className="rounded-xl border border-neutral-200 bg-white p-5 hover:border-brand-turquoise"
-        >
-          <h2 className="text-base font-semibold text-neutral-800">الإعدادات</h2>
-          <p className="mt-1 text-sm text-neutral-500">
-            الحد الأدنى للطلب، مصاريف التوصيل، واتساب، واستقبال الطلبات
-          </p>
-        </Link>
-        <Link
-          href="/admin/users"
-          className="rounded-xl border border-neutral-200 bg-white p-5 hover:border-brand-turquoise"
-        >
-          <h2 className="text-base font-semibold text-neutral-800">المستخدمون والخدامة</h2>
-          <p className="mt-1 text-sm text-neutral-500">
-            إنشاء حسابات Staff، تغيير الأدوار، تعطيل أو حذف حساب
-          </p>
+          <span className="text-sm font-semibold text-neutral-800">التقارير والأرباح</span>
         </Link>
       </div>
     </div>
