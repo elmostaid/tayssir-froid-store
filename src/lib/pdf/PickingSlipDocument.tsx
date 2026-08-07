@@ -3,6 +3,7 @@ import { pdfStyles, LOGO_PATH } from "@/lib/pdf/theme";
 import type { AdminOrderDetail, AdminOrderItem } from "@/lib/queries/adminOrders";
 import { formatMad } from "@/lib/format";
 import { splitProductNameSnapshot } from "@/lib/orders/productNameSnapshot";
+import { ORDER_STATUS_LABELS } from "@/lib/orders/orderStatus";
 
 function Field({ label, value }: { label: string; value: string }) {
   return (
@@ -37,6 +38,7 @@ export function PickingSlipDocument({
         <View style={pdfStyles.section}>
           <Text style={pdfStyles.sectionTitle}>معلومات الطلب</Text>
           <Field label="التاريخ" value={createdAtLabel} />
+          <Field label="حالة الطلب" value={ORDER_STATUS_LABELS[order.status]} />
           <Field label="اسم الزبون" value={order.customerName} />
           <Field label="رقم الهاتف" value={order.customerPhone} />
           <Field label="المدينة" value={order.customerCity} />
@@ -58,10 +60,10 @@ export function PickingSlipDocument({
             const { productName, variantName } = splitProductNameSnapshot(item.productNameSnapshot);
             return (
               <View key={item.id} style={pdfStyles.tableRow} wrap={false}>
-                <Text style={pdfStyles.colName}>{productName}</Text>
+                <Text style={pdfStyles.pickingColName}>{productName}</Text>
                 <Text style={pdfStyles.colSku}>{item.skuSnapshot}</Text>
                 <Text style={pdfStyles.colVariant}>{variantName ?? ""}</Text>
-                <Text style={pdfStyles.colQty}>{item.quantity}</Text>
+                <Text style={pdfStyles.pickingColQty}>{item.quantity}</Text>
                 <Text style={pdfStyles.colPrice}>{formatMad(item.unitPriceSnapshot)}</Text>
                 <Text style={pdfStyles.colLineTotal}>{formatMad(item.lineTotal)}</Text>
                 <Text style={pdfStyles.colCheck}>[ ]</Text>

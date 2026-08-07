@@ -20,6 +20,10 @@ const SHARED_STYLES = `
   table { width: 100%; border-collapse: collapse; margin-top: 12px; }
   th, td { border: 1px solid #e5e5e5; padding: 6px 8px; font-size: 13px; text-align: right; }
   th { background: #03AFB9; color: #fff; }
+  /* اسم المنتج والكمية هما أهم معلومتين للخدّام اللي كيجمع السلعة (بون
+     التحضير فقط — وصل الزبون لا يستعمل هذا الصنف إطلاقاً)، فخاصهم يبانو
+     بوضوح وبحجم أكبر من بعيد. */
+  td.picking-emphasis { font-weight: bold; font-size: 16px; }
   .field { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 13px; }
   .field span:first-child { color: #737373; }
   .field.total-final { margin-top: 8px; padding-top: 8px; border-top: 1px solid #292524; font-size: 16px; font-weight: bold; }

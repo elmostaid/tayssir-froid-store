@@ -70,6 +70,13 @@ export const pdfStyles = StyleSheet.create({
     fontSize: 9,
   },
   colName: { flexGrow: 1, flexBasis: 0 },
+  // نسخة أكبر وأعرض (bold) من colName/colQty خاصة ببون التحضير فقط (وليس
+  // وصل الزبون، اللي كيشارك نفس pdfStyles) — اسم المنتج والكمية هما أهم
+  // معلومتين للخدّام اللي كيجمع السلعة، فخاصهم يبانو بوضوح من بعيد. نفس
+  // العرض (width) بالضبط فـpickingColQty حتى يبقى العمود متراصف مع رأس
+  // الجدول (tableHeaderRow يستعمل colQty العادي).
+  pickingColName: { flexGrow: 1, flexBasis: 0, fontFamily: "NotoNaskhBold", fontSize: 12 },
+  pickingColQty: { width: 40, textAlign: "center", fontFamily: "NotoNaskhBold", fontSize: 13 },
   colSku: { width: 65 },
   colVariant: { width: 65 },
   colQty: { width: 40, textAlign: "center" },

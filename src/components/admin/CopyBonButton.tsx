@@ -3,12 +3,14 @@
 import { useState } from "react";
 import { formatMad } from "@/lib/format";
 import { splitProductNameSnapshot } from "@/lib/orders/productNameSnapshot";
+import { ORDER_STATUS_LABELS } from "@/lib/orders/orderStatus";
 import type { AdminOrderDetail, AdminOrderItem } from "@/lib/queries/adminOrders";
 
 function buildBonText(order: AdminOrderDetail, items: AdminOrderItem[]): string {
   const lines: string[] = [];
   lines.push(`بون تحضير الطلب ${order.orderNumber}`);
   lines.push(`التاريخ: ${new Date(order.createdAt).toLocaleString("ar-MA")}`);
+  lines.push(`حالة الطلب: ${ORDER_STATUS_LABELS[order.status]}`);
   lines.push(`اسم الزبون: ${order.customerName}`);
   lines.push(`رقم الهاتف: ${order.customerPhone}`);
   lines.push(`المدينة: ${order.customerCity}`);

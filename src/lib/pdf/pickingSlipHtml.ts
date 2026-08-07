@@ -1,6 +1,7 @@
 import { escapeHtml } from "@/lib/pdf/htmlFallback";
 import { splitProductNameSnapshot } from "@/lib/orders/productNameSnapshot";
 import { formatMad } from "@/lib/format";
+import { ORDER_STATUS_LABELS } from "@/lib/orders/orderStatus";
 import type { AdminOrderDetail, AdminOrderItem } from "@/lib/queries/adminOrders";
 
 // المحتوى المشترك لبون التحضير (HTML)، يُستعمل في مكانين: بديل HTML عند فشل
@@ -11,10 +12,10 @@ export function buildPickingSlipBodyHtml(order: AdminOrderDetail, items: AdminOr
     .map((item) => {
       const { productName, variantName } = splitProductNameSnapshot(item.productNameSnapshot);
       return `<tr>
-        <td>${escapeHtml(productName)}</td>
+        <td class="picking-emphasis">${escapeHtml(productName)}</td>
         <td>${escapeHtml(item.skuSnapshot)}</td>
         <td>${escapeHtml(variantName ?? "")}</td>
-        <td>${item.quantity}</td>
+        <td class="picking-emphasis">${item.quantity}</td>
         <td>${escapeHtml(formatMad(item.unitPriceSnapshot))}</td>
         <td>${escapeHtml(formatMad(item.lineTotal))}</td>
         <td>[ ]</td>
@@ -31,6 +32,7 @@ export function buildPickingSlipBodyHtml(order: AdminOrderDetail, items: AdminOr
       </div>
     </div>
     <div class="field"><span>التاريخ</span><span>${escapeHtml(new Date(order.createdAt).toLocaleString("ar-MA"))}</span></div>
+    <div class="field"><span>حالة الطلب</span><span>${escapeHtml(ORDER_STATUS_LABELS[order.status])}</span></div>
     <div class="field"><span>اسم الزبون</span><span>${escapeHtml(order.customerName)}</span></div>
     <div class="field"><span>رقم الهاتف</span><span>${escapeHtml(order.customerPhone)}</span></div>
     <div class="field"><span>المدينة</span><span>${escapeHtml(order.customerCity)}</span></div>

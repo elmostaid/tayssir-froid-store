@@ -48,12 +48,12 @@ export default async function AdminOrderDetailPage({ params }: Props) {
         <div className="flex flex-wrap gap-2">
           <CopyBonButton order={order} items={items} />
           <a
-            href={`/admin/orders/${order.id}/print`}
+            href={`/admin/orders/${order.id}/picking-slip.pdf`}
             target="_blank"
             rel="noopener noreferrer"
-            className="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-semibold text-neutral-700"
+            className="rounded-lg border border-brand-turquoise bg-brand-turquoise-tint px-3 py-2 text-xs font-semibold text-brand-turquoise-dark"
           >
-            طباعة أو حفظ PDF
+            تحميل / طباعة البون PDF
           </a>
           <CopyDeliveryInfoButton order={order} />
           <a

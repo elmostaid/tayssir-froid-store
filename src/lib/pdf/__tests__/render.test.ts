@@ -4,6 +4,8 @@ import { registerPdfFonts } from "@/lib/pdf/theme";
 import { PickingSlipDocument } from "@/lib/pdf/PickingSlipDocument";
 import { CustomerReceiptDocument } from "@/lib/pdf/CustomerReceiptDocument";
 import { wrapHtmlDocument } from "@/lib/pdf/htmlFallback";
+import { buildPickingSlipBodyHtml } from "@/lib/pdf/pickingSlipHtml";
+import { ORDER_STATUS_LABELS } from "@/lib/orders/orderStatus";
 import type { AdminOrderDetail, AdminOrderItem } from "@/lib/queries/adminOrders";
 
 // ملاحظة مهمة (اكتُشفت أثناء بناء هذا الملف): @react-pdf/renderer (جُرِّبت
@@ -127,5 +129,13 @@ describe("توليد ملفات PDF (بون التحضير ووصل الزبون
     expect(result.mode).toBe("html");
     expect(result.content as string).toContain("<!doctype html>");
     expect(result.content as string).toContain("غاز تبريد");
+  });
+
+  test("بون التحضير: يحتوي حالة الطلب، واسم المنتج والكمية بارزان (picking-emphasis)", () => {
+    const html = buildPickingSlipBodyHtml(fixtureOrder, fixtureItems);
+
+    expect(html).toContain(ORDER_STATUS_LABELS[fixtureOrder.status]);
+    expect(html).toContain(`class="picking-emphasis">${fixtureItems[0].productNameSnapshot}`);
+    expect(html).toContain(`class="picking-emphasis">${fixtureItems[0].quantity}`);
   });
 });
