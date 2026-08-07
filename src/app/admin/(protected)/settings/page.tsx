@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getAdminUser } from "@/lib/auth/requireAdmin";
+import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import { getSettings } from "@/lib/queries/settings";
 import { SettingsForm } from "@/components/admin/SettingsForm";
 
@@ -10,6 +10,7 @@ export const metadata = { title: "الإعدادات" };
 export default async function AdminSettingsPage() {
   const admin = await getAdminUser();
   if (!admin) redirect("/admin/login");
+  if (!isOwnerAdmin(admin)) redirect("/admin/orders");
 
   // قراءة مباشرة (بدون safeQuery/fallback) عمداً — هذه لوحة الإدارة، فإذا
   // تعذّر الاتصال بقاعدة البيانات يجب أن يظهر خطأ حقيقي بدل حفظ إعدادات فوق

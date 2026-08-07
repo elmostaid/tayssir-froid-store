@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { getAdminUser } from "@/lib/auth/requireAdmin";
+import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import {
   getAdminOrderById,
   getAdminOrderItems,
@@ -167,9 +167,13 @@ export default async function AdminOrderDetailPage({ params }: Props) {
           </div>
         )}
 
-        <div className="mt-4 border-t border-neutral-200 pt-4">
-          <DeliveryFeeForm orderId={order.id} currentDeliveryFee={order.deliveryFee} />
-        </div>
+        {/* تعديل مصاريف التوصيل مقصور على Owner/Admin — ليس ضمن قائمة
+            صلاحيات Staff الصريحة (عرض/طباعة/تغيير حالة فقط)، وهو حقل مالي. */}
+        {isOwnerAdmin(admin) && (
+          <div className="mt-4 border-t border-neutral-200 pt-4">
+            <DeliveryFeeForm orderId={order.id} currentDeliveryFee={order.deliveryFee} />
+          </div>
+        )}
       </div>
 
       <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-4">

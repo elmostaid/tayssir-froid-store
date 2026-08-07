@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getAdminUser } from "@/lib/auth/requireAdmin";
+import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import {
   listAdminCustomers,
   type AdminCustomerSort,
@@ -24,6 +24,7 @@ type Props = {
 export default async function AdminCustomersPage({ searchParams }: Props) {
   const admin = await getAdminUser();
   if (!admin) redirect("/admin/login");
+  if (!isOwnerAdmin(admin)) redirect("/admin/orders");
 
   const { q, sort } = await searchParams;
   const validSort: AdminCustomerSort =

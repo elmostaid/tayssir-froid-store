@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getAdminUser } from "@/lib/auth/requireAdmin";
+import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import { getAllCategoriesAdmin } from "@/lib/queries/adminCategories";
 import { DeleteCategoryButton } from "@/components/admin/DeleteCategoryButton";
 
@@ -14,6 +14,9 @@ export default async function AdminCategoriesPage() {
   const admin = await getAdminUser();
   if (!admin) {
     redirect("/admin/login");
+  }
+  if (!isOwnerAdmin(admin)) {
+    redirect("/admin/orders");
   }
 
   const categories = await getAllCategoriesAdmin();

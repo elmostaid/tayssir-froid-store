@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { sql } from "@/lib/db";
-import { getAdminUser } from "@/lib/auth/requireAdmin";
+import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 
 export type SettingsActionState = { error: string | null; success?: boolean };
 
@@ -15,6 +15,7 @@ export async function updateSettings(
 ): Promise<SettingsActionState> {
   const admin = await getAdminUser();
   if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+  if (!isOwnerAdmin(admin)) return { error: "هذا الإجراء مقصور على صاحب الحساب (Admin)." };
 
   const minOrderAmountMad = Number(formData.get("minOrderAmountMad"));
   const deliveryFeePerCartonMad = Number(formData.get("deliveryFeePerCartonMad"));

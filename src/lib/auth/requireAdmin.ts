@@ -2,7 +2,8 @@ import { sql } from "@/lib/db";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
-export type AdminUser = { id: string; email: string };
+export type AdminRole = "admin" | "staff";
+export type AdminUser = { id: string; email: string; role: AdminRole };
 
 /**
  * الحماية الحقيقية للوحة الإدارة: تتحقق من جلسة Supabase Auth الحالية، ثم
@@ -28,13 +29,31 @@ export async function getAdminUser(): Promise<AdminUser | null> {
     return null;
   }
 
-  const rows = await sql<{ id: string }[]>`
-    select id from public.admin_profiles where id = ${user.id} limit 1
+  const rows = await sql<{ id: string; role: string }[]>`
+    select id, role from public.admin_profiles where id = ${user.id} limit 1
   `;
 
   if (rows.length === 0) {
     return null;
   }
 
-  return { id: user.id, email: user.email ?? "" };
+  // أي قيمة غير 'admin' بالضبط (بما فيها بيانات قديمة/غير متوقعة قبل قيد
+  // admin_profiles_role_check) تُعامَل صراحة كـ"staff" — الدور الأقل
+  // صلاحية (fail-closed)، وليس كخطأ يمنع الدخول بالكامل. الحساب الحقيقي
+  // الوحيد المعروف حالياً role='admin' نصاً صريحاً (migration
+  // 20260803020000)، فلن يتأثر بهذا الافتراضي أبداً.
+  const role: AdminRole = rows[0].role === "admin" ? "admin" : "staff";
+
+  return { id: user.id, email: user.email ?? "", role };
+}
+
+/**
+ * true فقط لصاحب الحساب (Owner/Admin) — false لـstaff أو لزائر غير مسجَّل.
+ * يُستعمل فـكل صفحة/Server Action مقصورة على الصلاحيات الكاملة: المنتجات
+ * والمخزون وثمن الشراء، التصنيفات، الزبائن، الأرباح والتقارير، الإعدادات.
+ * صفحات/إجراءات الطلبات (عرض، تغيير حالة، طباعة البون) لا تستعمل هذا الفحص
+ * — متاحة لكل من getAdminUser() ترجع له مستخدماً (admin أو staff).
+ */
+export function isOwnerAdmin(admin: AdminUser | null): admin is AdminUser & { role: "admin" } {
+  return admin !== null && admin.role === "admin";
 }

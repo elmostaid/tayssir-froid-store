@@ -31,8 +31,8 @@ export async function signInAdmin(
 
   // المصادقة عبر Supabase نجحت، لكن هذا وحده لا يكفي: يجب أن يكون هذا
   // المستخدم موجوداً فعلاً في admin_profiles حتى يُعتبر مديراً.
-  const rows = await sql<{ id: string }[]>`
-    select id from public.admin_profiles where id = ${data.user.id} limit 1
+  const rows = await sql<{ id: string; role: string }[]>`
+    select id, role from public.admin_profiles where id = ${data.user.id} limit 1
   `;
 
   if (rows.length === 0) {
@@ -40,5 +40,9 @@ export async function signInAdmin(
     return { error: "هذا الحساب غير مخوَّل بالدخول إلى لوحة الإدارة." };
   }
 
-  redirect("/admin");
+  // Staff ليس له حق الدخول إلى /admin (لوحة التحكم الرئيسية) — توجيهه مباشرة
+  // إلى /admin/orders بدل تركه يصطدم بارتداد فوري (نفس منطق الصلاحيات فـ
+  // isOwnerAdmin، لكن لا يمكن استيراده هنا مباشرة لأن هذا مسار عام قبل أي
+  // صفحة محمية).
+  redirect(rows[0].role === "admin" ? "/admin" : "/admin/orders");
 }

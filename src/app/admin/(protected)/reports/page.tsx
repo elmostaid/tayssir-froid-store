@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getAdminUser } from "@/lib/auth/requireAdmin";
+import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import {
   getProfitSummary,
   getDeliveredOrdersProfitBreakdown,
@@ -26,6 +26,7 @@ function StatCard({ label, value, accent }: { label: string; value: string; acce
 export default async function AdminReportsPage() {
   const admin = await getAdminUser();
   if (!admin) redirect("/admin/login");
+  if (!isOwnerAdmin(admin)) redirect("/admin/orders");
 
   const [salesStats, profit, recentDelivered, bestByQuantity, bestByValue] = await Promise.all([
     getDashboardOrderStats(),

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { sql } from "@/lib/db";
-import { getAdminUser } from "@/lib/auth/requireAdmin";
+import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import { categorySchema } from "@/lib/validation/category";
 import { flattenZodErrors } from "@/lib/validation/zodErrors";
 import {
@@ -35,6 +35,7 @@ export async function createCategory(
 ): Promise<CategoryFormState> {
   const admin = await getAdminUser();
   if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+  if (!isOwnerAdmin(admin)) return { error: "هذا الإجراء مقصور على صاحب الحساب (Admin)." };
 
   const parsed = parseCategoryForm(formData);
   if (!parsed.success) {
@@ -67,6 +68,7 @@ export async function updateCategory(
 ): Promise<CategoryFormState> {
   const admin = await getAdminUser();
   if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+  if (!isOwnerAdmin(admin)) return { error: "هذا الإجراء مقصور على صاحب الحساب (Admin)." };
 
   const parsed = parseCategoryForm(formData);
   if (!parsed.success) {
@@ -102,6 +104,7 @@ export async function updateCategory(
 export async function deleteCategory(categoryId: number): Promise<{ error: string | null }> {
   const admin = await getAdminUser();
   if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+  if (!isOwnerAdmin(admin)) return { error: "هذا الإجراء مقصور على صاحب الحساب (Admin)." };
 
   const [productCount, childCount] = await Promise.all([
     countProductsInCategory(categoryId),

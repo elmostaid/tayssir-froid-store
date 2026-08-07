@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getAdminUser } from "@/lib/auth/requireAdmin";
+import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import { getDashboardOrderStats, getRecentAdminOrders } from "@/lib/queries/adminOrders";
 import { getLowStockProductsAdmin, countLowStockProductsAdmin } from "@/lib/queries/adminProducts";
 import { ORDER_STATUS_LABELS, ORDER_STATUS_BADGE_CLASSES, type OrderStatus } from "@/lib/orders/orderStatus";
@@ -40,6 +40,12 @@ export default async function AdminDashboardPage() {
   const admin = await getAdminUser();
   if (!admin) {
     redirect("/admin/login");
+  }
+  // لوحة التحكم الرئيسية (مبيعات، أرباح غير مباشرة عبر روابط، مخزون منخفض
+  // عبر كل المنتجات) مقصورة على Owner/Admin — Staff يُعاد توجيهه لصفحته
+  // الافتراضية بدل ارتداد فارغ.
+  if (!isOwnerAdmin(admin)) {
+    redirect("/admin/orders");
   }
 
   const [stats, recentOrders, lowStockProducts, lowStockCount] = await Promise.all([

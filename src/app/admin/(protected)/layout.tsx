@@ -18,5 +18,9 @@ export default async function ProtectedAdminLayout({
     redirect("/admin/login");
   }
 
-  return <AdminShell email={admin.email}>{children}</AdminShell>;
+  return (
+    <AdminShell email={admin.email} role={admin.role}>
+      {children}
+    </AdminShell>
+  );
 }

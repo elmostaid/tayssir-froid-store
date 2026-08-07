@@ -1,7 +1,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getAdminUser } from "@/lib/auth/requireAdmin";
-import { getAllProductsAdmin, LOW_STOCK_THRESHOLD } from "@/lib/queries/adminProducts";
+import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
+import { listProductsAdmin } from "@/lib/queries/adminProducts";
+import { getAllCategoriesAdmin } from "@/lib/queries/adminCategories";
+import { quickUpdateProduct } from "@/app/admin/(protected)/products/actions";
+import { ProductQuickEditRow } from "@/components/admin/ProductQuickEditRow";
 
 export const dynamic = "force-dynamic";
 
@@ -9,14 +12,19 @@ export const metadata = {
   title: "المنتجات",
 };
 
-const STATUS_LABELS: Record<string, { label: string; className: string }> = {
-  draft: { label: "مسودة", className: "bg-neutral-200 text-neutral-700" },
-  published: { label: "منشور", className: "bg-green-100 text-green-700" },
-  out_of_stock: { label: "غير متوفر", className: "bg-amber-100 text-amber-700" },
-  archived: { label: "مؤرشف", className: "bg-neutral-200 text-neutral-500" },
+const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
+  { value: "", label: "كل الحالات" },
+  { value: "published", label: "منشور" },
+  { value: "draft", label: "مسودة" },
+  { value: "out_of_stock", label: "غير متوفر" },
+  { value: "archived", label: "مؤرشف" },
+];
+
+type Props = {
+  searchParams: Promise<{ q?: string; category?: string; status?: string; lowStock?: string }>;
 };
 
-export default async function AdminProductsPage() {
+export default async function AdminProductsPage({ searchParams }: Props) {
   // فحص مباشر هنا قبل أي استعلام — الـlayout الأب وحده لا يمنع تنفيذ هذه
   // الصفحة وجلب بياناتها (بما فيها ثمن الشراء) لأن Next.js يُنفّذ صفحة
   // الطفل بغض النظر عمّا يعرضه الـlayout فعلياً.
@@ -24,8 +32,28 @@ export default async function AdminProductsPage() {
   if (!admin) {
     redirect("/admin/login");
   }
+  // هذه الصفحة نفسها (وليس فقط ثمن الشراء داخلها) مقصورة على Owner/Admin —
+  // ليست ضمن قائمة صلاحيات Staff الصريحة (طلبات فقط).
+  if (!isOwnerAdmin(admin)) {
+    redirect("/admin/orders");
+  }
 
-  const products = await getAllProductsAdmin();
+  const { q, category, status, lowStock } = await searchParams;
+  const categoryId = category ? Number(category) : undefined;
+  const validStatus =
+    status === "published" || status === "draft" || status === "out_of_stock" || status === "archived"
+      ? status
+      : undefined;
+
+  const [products, categories] = await Promise.all([
+    listProductsAdmin({
+      query: q,
+      categoryId: Number.isInteger(categoryId) ? categoryId : undefined,
+      status: validStatus,
+      lowStockOnly: lowStock === "1",
+    }),
+    getAllCategoriesAdmin(),
+  ]);
 
   return (
     <div>
@@ -39,55 +67,68 @@ export default async function AdminProductsPage() {
         </Link>
       </div>
 
-      {products.length === 0 && (
-        <p className="mt-6 text-sm text-neutral-500">لا توجد منتجات بعد.</p>
-      )}
+      <form
+        action="/admin/products"
+        method="GET"
+        className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap"
+      >
+        <input
+          type="search"
+          name="q"
+          defaultValue={q}
+          placeholder="بحث بالاسم أو SKU"
+          className="min-h-11 flex-1 rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-turquoise focus:outline-none"
+        />
+        <select
+          name="category"
+          defaultValue={category ?? ""}
+          className="min-h-11 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm"
+        >
+          <option value="">كل التصنيفات</option>
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.parent_id ? `— ${c.name_ar}` : c.name_ar}
+            </option>
+          ))}
+        </select>
+        <select
+          name="status"
+          defaultValue={validStatus ?? ""}
+          className="min-h-11 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm"
+        >
+          {STATUS_FILTER_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        <label className="flex min-h-11 items-center gap-2 rounded-lg border border-neutral-300 px-3 text-sm">
+          <input type="checkbox" name="lowStock" value="1" defaultChecked={lowStock === "1"} />
+          مخزون منخفض فقط
+        </label>
+        <button
+          type="submit"
+          className="min-h-11 rounded-lg bg-brand-turquoise px-4 text-sm font-semibold text-white"
+        >
+          فلترة
+        </button>
+      </form>
 
-      <div className="mt-4 flex flex-col gap-3">
-        {products.map((product) => {
-          const status = STATUS_LABELS[product.status] ?? {
-            label: product.status,
-            className: "bg-neutral-200 text-neutral-700",
-          };
-          return (
-            <Link
+      <p className="mt-3 text-sm text-neutral-500">{products.length} منتج</p>
+
+      {products.length === 0 ? (
+        <p className="mt-6 text-sm text-neutral-500">لا توجد منتجات مطابقة.</p>
+      ) : (
+        <div className="mt-4 flex flex-col gap-3">
+          {products.map((product) => (
+            <ProductQuickEditRow
               key={product.id}
-              href={`/admin/products/${product.id}`}
-              className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 bg-white p-4"
-            >
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="truncate font-semibold text-neutral-800">
-                    {product.name_ar}
-                  </span>
-                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${status.className}`}>
-                    {status.label}
-                  </span>
-                </div>
-                <p className="truncate text-xs text-neutral-500">
-                  {product.category_name_ar} · SKU: <span dir="ltr">{product.sku}</span>
-                </p>
-              </div>
-              <div className="shrink-0 text-left text-sm font-semibold text-neutral-800">
-                {product.sale_price} د.م.
-                <p
-                  className={`text-xs font-normal ${
-                    product.stock_quantity <= LOW_STOCK_THRESHOLD
-                      ? "font-semibold text-red-600"
-                      : "text-neutral-500"
-                  }`}
-                >
-                  المخزون: {product.stock_quantity}
-                  {product.stock_quantity <= LOW_STOCK_THRESHOLD && product.stock_quantity > 0
-                    ? " ⚠️ منخفض"
-                    : ""}
-                  {product.stock_quantity <= 0 ? " ⚠️ نفد" : ""}
-                </p>
-              </div>
-            </Link>
-          );
-        })}
-      </div>
+              product={product}
+              action={quickUpdateProduct.bind(null, product.id)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

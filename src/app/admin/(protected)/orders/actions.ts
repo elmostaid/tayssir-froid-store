@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { sql } from "@/lib/db";
-import { getAdminUser } from "@/lib/auth/requireAdmin";
+import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import { ORDER_STATUSES, type OrderStatus } from "@/lib/queries/adminOrders";
 import { RESTOCKING_STATUSES } from "@/lib/orders/orderStatus";
 
@@ -49,6 +49,10 @@ export async function updateDeliveryFee(
 ): Promise<OrderActionState> {
   const admin = await getAdminUser();
   if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+  // مصاريف التوصيل حقل مالي — مقصور على Owner/Admin، ليس ضمن صلاحيات Staff.
+  if (!isOwnerAdmin(admin)) {
+    return { error: "تعديل مصاريف التوصيل مقصور على صاحب الحساب (Admin)." };
+  }
 
   const orderId = Number(formData.get("orderId"));
   const feeRaw = String(formData.get("deliveryFee") ?? "").trim();

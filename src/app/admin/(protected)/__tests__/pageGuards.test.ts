@@ -31,7 +31,9 @@ describe("صفحات لوحة الإدارة — الحماية داخل كل ص
     const { default: AdminProductsPage } = await import(
       "@/app/admin/(protected)/products/page"
     );
-    await expectsRedirectToLogin(() => AdminProductsPage());
+    await expectsRedirectToLogin(() =>
+      AdminProductsPage({ searchParams: Promise.resolve({}) })
+    );
   });
 
   test("منتج جديد ترفض الزائر قبل جلب التصنيفات", async () => {
