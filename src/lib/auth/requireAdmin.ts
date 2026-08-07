@@ -29,11 +29,14 @@ export async function getAdminUser(): Promise<AdminUser | null> {
     return null;
   }
 
-  const rows = await sql<{ id: string; role: string }[]>`
-    select id, role from public.admin_profiles where id = ${user.id} limit 1
+  const rows = await sql<{ id: string; role: string; disabled_at: string | null }[]>`
+    select id, role, disabled_at from public.admin_profiles where id = ${user.id} limit 1
   `;
 
-  if (rows.length === 0) {
+  // حساب مُعطَّل (disabled_at غير NULL، انظر migration
+  // 20260809000000_add_admin_profiles_disabled_at) يُعامَل تماماً كأنه غير
+  // موجود إطلاقاً — نفس أثر عدم وجود صف بـadmin_profiles، بلا استثناء.
+  if (rows.length === 0 || rows[0].disabled_at !== null) {
     return null;
   }
 

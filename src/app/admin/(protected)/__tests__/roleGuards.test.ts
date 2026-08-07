@@ -130,6 +130,12 @@ describe("صفحات مقصورة على Owner/Admin — Staff يُعاد توج
     const { default: AdminSettingsPage } = await import("@/app/admin/(protected)/settings/page");
     await expectsRedirectTo(() => AdminSettingsPage(), "/admin/orders");
   });
+
+  test("المستخدمون والخدامة", async () => {
+    getAdminUserMock.mockResolvedValueOnce(STAFF_USER);
+    const { default: AdminUsersPage } = await import("@/app/admin/(protected)/users/page");
+    await expectsRedirectTo(() => AdminUsersPage(), "/admin/orders");
+  });
 });
 
 describe("Admin لا يُعاد توجيهه من الصفحات المقصورة عليه (فحص الصلاحية نفسه لا يمنعه)", () => {
@@ -154,6 +160,12 @@ describe("Admin لا يُعاد توجيهه من الصفحات المقصور�
     getAdminUserMock.mockResolvedValueOnce(ADMIN_USER);
     const { default: AdminSettingsPage } = await import("@/app/admin/(protected)/settings/page");
     await expectsNoRedirectTo(() => AdminSettingsPage(), "/admin/orders");
+  });
+
+  test("المستخدمون والخدامة تُحمَّل كاملة بدون ارتداد", async () => {
+    getAdminUserMock.mockResolvedValueOnce(ADMIN_USER);
+    const { default: AdminUsersPage } = await import("@/app/admin/(protected)/users/page");
+    await expectsNoRedirectTo(() => AdminUsersPage(), "/admin/orders");
   });
 });
 

@@ -215,6 +215,15 @@ export default async function AdminDashboardPage() {
             الحد الأدنى للطلب، مصاريف التوصيل، واتساب، واستقبال الطلبات
           </p>
         </Link>
+        <Link
+          href="/admin/users"
+          className="rounded-xl border border-neutral-200 bg-white p-5 hover:border-brand-turquoise"
+        >
+          <h2 className="text-base font-semibold text-neutral-800">المستخدمون والخدامة</h2>
+          <p className="mt-1 text-sm text-neutral-500">
+            إنشاء حسابات Staff، تغيير الأدوار، تعطيل أو حذف حساب
+          </p>
+        </Link>
       </div>
     </div>
   );
