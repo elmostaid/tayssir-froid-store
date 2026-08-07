@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { sql } from "@/lib/db";
 import { safeQuery } from "@/lib/safeQuery";
 import type {
@@ -58,7 +59,15 @@ function logEmptyFallback(context: string) {
   );
 }
 
-export async function getCategories(): Promise<Category[]> {
+// مُغلَّفة بـcache() (تخزين مؤقَّت لعمر الطلب الواحد فقط من React) لأن
+// SiteHeader والصفحة الرئيسية (وSitemap) يستدعونها كلهم فنفس عرض الصفحة
+// الواحدة — بدون هذا، كل عرض صفحة واحد كان يُنفِّذ نفس استعلام التصنيفات
+// مرتين فعلياً (مرة من SiteHeader المشترك، ومرة أخرى من الصفحة نفسها)،
+// يضاعف عدد الاتصالات/الاستعلامات المتزامنة اللازمة لكل زيارة بلا أي فائدة
+// — هذا أحد أسباب تراكم التأخير عند تدهور قاعدة البيانات (انظر التعليق
+// الكامل فـdb.ts عن statement_timeout للسبب الجذري الأساسي). لا تأثير على
+// دقة البيانات: نفس النتيجة بالضبط، فقط استعلام واحد فعلي بدل عدة.
+export const getCategories = cache(async (): Promise<Category[]> => {
   if (!hasDatabase) return getPreviewCategories();
 
   try {
@@ -83,7 +92,7 @@ export async function getCategories(): Promise<Category[]> {
     logDbFallback("getCategories", error);
     return getPreviewCategories();
   }
-}
+});
 
 // المصدر الوحيد لقائمة التصنيفات الظاهرة للزبون فأي مكان فالموقع (رأس
 // الصفحة على الحاسوب والهاتف، الصفحة الرئيسية، وأي قائمة تصنيفات عامة
@@ -97,7 +106,12 @@ export async function getFilteredCategories(context: string): Promise<Category[]
   return safeQuery(() => getCategories(), [], context);
 }
 
-export async function getCategoryBySlug(slug: string): Promise<Category | null> {
+// مُغلَّفة بـcache() لأن صفحة التصنيف تستدعيها مرتين فعلياً فنفس الطلب —
+// مرة من generateMetadata() ومرة من مكوّن الصفحة نفسه (سلوك عادي فـNext.js
+// App Router: لا تجميع تلقائي بين الاثنين لاستدعاءات SQL مباشرة كما يحدث
+// مع fetch()) — بدون هذا كانت كل زيارة لصفحة تصنيف تُنفِّذ نفس الاستعلام
+// مرتين. نفس النتيجة بالضبط، فقط استعلام واحد فعلي بدل اثنين.
+export const getCategoryBySlug = cache(async (slug: string): Promise<Category | null> => {
   if (!hasDatabase) return getPreviewCategoryBySlug(slug);
 
   try {
@@ -116,7 +130,7 @@ export async function getCategoryBySlug(slug: string): Promise<Category | null> 
     logDbFallback("getCategoryBySlug", error);
     return getPreviewCategoryBySlug(slug);
   }
-}
+});
 
 export async function getProducts(
   options: {
@@ -165,7 +179,9 @@ export async function getProducts(
   }
 }
 
-export async function getProductBySlug(slug: string): Promise<CatalogProduct | null> {
+// مُغلَّفة بـcache() لنفس سبب getCategoryBySlug أعلاه بالضبط: صفحة المنتج
+// تستدعيها مرتين فعلياً (generateMetadata + مكوّن الصفحة).
+export const getProductBySlug = cache(async (slug: string): Promise<CatalogProduct | null> => {
   if (!hasDatabase) return getPreviewProductBySlug(slug);
 
   try {
@@ -181,7 +197,7 @@ export async function getProductBySlug(slug: string): Promise<CatalogProduct | n
     logDbFallback("getProductBySlug", error);
     return getPreviewProductBySlug(slug);
   }
-}
+});
 
 export async function getProductCountsByCategory(): Promise<Record<number, number>> {
   if (!hasDatabase) return getPreviewProductCountsByCategory();

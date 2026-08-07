@@ -59,19 +59,17 @@ export default async function CategoryPage({ params, searchParams }: Props) {
   const query = (q ?? "").trim();
   const sort = parseSort(sortParam);
 
-  let category: Awaited<ReturnType<typeof getCategoryBySlug>>;
-  try {
-    category = await getCategoryBySlug(slug);
-  } catch (error) {
-    console.error("CategoryPage: تعذّر الاتصال بقاعدة البيانات", error);
-    return <ServiceUnavailable />;
-  }
-
-  if (!category) {
-    notFound();
-  }
-
-  const [products, variantProductIds, settings] = await Promise.all([
+  // كانت getCategoryBySlug تُنتظَر بمفردها قبل بدء أي استعلام آخر — تأخير
+  // مضاف بالكامل فوق تأخير المنتجات/الإعدادات بدل التوازي معه، رغم أن
+  // getProducts({categorySlug}) يفلتر بالـslug مباشرة (نص) ولا يحتاج كائن
+  // التصنيف المُحلَّل إطلاقاً. الآن الأربعة تُنفَّذ فـPromise.all واحد؛
+  // فحص "غير موجود" يبقى بعدها كما كان تماماً. نفس السلوك بالضبط، فقط أسرع
+  // تحت تدهور قاعدة البيانات (لا "تراكم" استعلامات متتالية).
+  const [categoryResult, products, variantProductIds, settings] = await Promise.all([
+    getCategoryBySlug(slug).catch((error) => {
+      console.error("CategoryPage: تعذّر الاتصال بقاعدة البيانات", error);
+      return "SERVICE_UNAVAILABLE" as const;
+    }),
     safeQuery(
       () => getProducts({ categorySlug: slug, limit: 100, query, sort }),
       [],
@@ -80,6 +78,14 @@ export default async function CategoryPage({ params, searchParams }: Props) {
     safeQuery(() => getProductIdsWithVariants(), new Set<number>(), "category.getProductIdsWithVariants"),
     safeQuery(() => getSettings(), FALLBACK_SETTINGS, "category.getSettings"),
   ]);
+
+  if (categoryResult === "SERVICE_UNAVAILABLE") {
+    return <ServiceUnavailable />;
+  }
+  const category = categoryResult;
+  if (!category) {
+    notFound();
+  }
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">

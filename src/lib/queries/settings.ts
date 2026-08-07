@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { sql } from "@/lib/db";
 
 export type StoreSettings = {
@@ -33,7 +34,15 @@ export const FALLBACK_SETTINGS: StoreSettings = {
   codEnabled: true,
 };
 
-export async function getSettings(): Promise<StoreSettings> {
+// مُغلَّفة بـcache() (تخزين مؤقَّت لعمر الطلب الواحد من React) — SiteHeader
+// وSiteFooter وكل صفحة عامة (وبعض صفحات الإدارة) يستدعون getSettings()
+// مستقلّين عن بعضهم؛ بدون هذا، عرض صفحة واحدة (مثلاً /category/x) كان
+// يُنفِّذ استعلام settings المتطابق 3 مرات فعلياً (SiteHeader + SiteFooter
+// + الصفحة نفسها). نفس النتيجة بالضبط فكل مرة، فقط استعلام واحد فعلي بدل
+// عدة — يقلّل عدد الاتصالات المتزامنة اللازمة لكل زيارة، وهو أحد أسباب
+// تراكم التأخير عند تدهور قاعدة البيانات (انظر db.ts لشرح statement_timeout،
+// السبب الجذري الأساسي للعطل).
+export const getSettings = cache(async (): Promise<StoreSettings> => {
   const rows = await sql<{ key: string; value: unknown }[]>`
     select key, value from public.settings
   `;
@@ -60,4 +69,4 @@ export async function getSettings(): Promise<StoreSettings> {
       map.has("cod_enabled") ? map.get("cod_enabled") : FALLBACK_SETTINGS.codEnabled
     ),
   };
-}
+});
