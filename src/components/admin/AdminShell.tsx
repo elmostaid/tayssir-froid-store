@@ -52,6 +52,12 @@ export async function AdminShell({
               </span>
             )}
           </Link>
+          <Link
+            href="/admin/customers"
+            className="shrink-0 rounded-full border border-neutral-200 px-3 py-1.5 text-neutral-700 hover:border-brand-turquoise hover:text-brand-turquoise-dark"
+          >
+            الزبائن
+          </Link>
         </nav>
       </header>
 

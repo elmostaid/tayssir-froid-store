@@ -110,6 +110,112 @@ export async function countNewOrders(): Promise<number> {
   return rows[0]?.count ?? 0;
 }
 
+// آخر N طلب (بدون فلترة)، لعرض مختصر في Dashboard — استعلام منفصل عن
+// listAdminOrders() (المُستعملة في /admin/orders الكاملة بلا حد أقصى) بدل
+// إضافة limit اختياري هناك، حتى لا يتغيّر سلوك تلك الدالة المستعملة أصلاً.
+export async function getRecentAdminOrders(limit: number): Promise<AdminOrderListItem[]> {
+  const rows = await sql<
+    {
+      id: number;
+      order_number: string;
+      public_reference: string;
+      status: OrderStatus;
+      customer_name: string;
+      customer_phone: string;
+      customer_city: string;
+      items_subtotal: string;
+      created_at: string;
+    }[]
+  >`
+    select id, order_number, public_reference, status, customer_name,
+      customer_phone, customer_city, items_subtotal, created_at
+    from public.orders
+    order by created_at desc
+    limit ${limit}
+  `;
+
+  return rows.map((r) => ({
+    id: r.id,
+    orderNumber: r.order_number,
+    publicReference: r.public_reference,
+    status: r.status,
+    customerName: r.customer_name,
+    customerPhone: r.customer_phone,
+    customerCity: r.customer_city,
+    itemsSubtotal: r.items_subtotal,
+    createdAt: r.created_at,
+  }));
+}
+
+export type DashboardOrderStats = {
+  ordersToday: number;
+  // "مبيعات" هنا = مجموع items_subtotal (قيمة المنتجات وقت الطلب، متوفرة
+  // دائماً فور إنشاء الطلب) للطلبات التي ليست ملغاة ولا راجعة فقط — هذا هو
+  // "المُحقَّق/النهائي" المطلوب صراحة استبعاد الملغى والراجع منه. لا نستعمل
+  // final_total لأنه يبقى NULL لأغلب الطلبات حتى يُحدِّد المدير مصاريف
+  // التوصيل يدوياً لاحقاً (لا يصلح كأساس لمؤشر لحظي)، ولا نشترط status =
+  // 'delivered' لأن ذلك مقياس مختلف تماماً ("الإيراد المُسلَّم فعلياً")
+  // لم يُطلَب هنا صراحة — فقط استبعاد الملغى/الراجع.
+  salesTodayMad: string;
+  sales7DaysMad: string;
+  salesThisMonthMad: string;
+  countsByStatus: Record<OrderStatus, number>;
+};
+
+export async function getDashboardOrderStats(): Promise<DashboardOrderStats> {
+  const [row] = await sql<
+    {
+      orders_today: number;
+      sales_today: string;
+      sales_7d: string;
+      sales_month: string;
+      count_new: number;
+      count_confirmed: number;
+      count_preparing: number;
+      count_shipped: number;
+      count_delivered: number;
+      count_cancelled: number;
+      count_returned: number;
+    }[]
+  >`
+    select
+      count(*) filter (where created_at >= current_date) ::int as orders_today,
+      coalesce(sum(items_subtotal) filter (
+        where created_at >= current_date and status not in ('cancelled', 'returned')
+      ), 0) as sales_today,
+      coalesce(sum(items_subtotal) filter (
+        where created_at >= current_date - interval '6 days' and status not in ('cancelled', 'returned')
+      ), 0) as sales_7d,
+      coalesce(sum(items_subtotal) filter (
+        where created_at >= date_trunc('month', current_date) and status not in ('cancelled', 'returned')
+      ), 0) as sales_month,
+      count(*) filter (where status = 'new')::int as count_new,
+      count(*) filter (where status = 'confirmed')::int as count_confirmed,
+      count(*) filter (where status = 'preparing')::int as count_preparing,
+      count(*) filter (where status = 'shipped')::int as count_shipped,
+      count(*) filter (where status = 'delivered')::int as count_delivered,
+      count(*) filter (where status = 'cancelled')::int as count_cancelled,
+      count(*) filter (where status = 'returned')::int as count_returned
+    from public.orders
+  `;
+
+  return {
+    ordersToday: row?.orders_today ?? 0,
+    salesTodayMad: row?.sales_today ?? "0",
+    sales7DaysMad: row?.sales_7d ?? "0",
+    salesThisMonthMad: row?.sales_month ?? "0",
+    countsByStatus: {
+      new: row?.count_new ?? 0,
+      confirmed: row?.count_confirmed ?? 0,
+      preparing: row?.count_preparing ?? 0,
+      shipped: row?.count_shipped ?? 0,
+      delivered: row?.count_delivered ?? 0,
+      cancelled: row?.count_cancelled ?? 0,
+      returned: row?.count_returned ?? 0,
+    },
+  };
+}
+
 export async function getAdminOrderById(id: number): Promise<AdminOrderDetail | null> {
   const rows = await sql<
     {

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAdminUser } from "@/lib/auth/requireAdmin";
-import { getAllProductsAdmin } from "@/lib/queries/adminProducts";
+import { getAllProductsAdmin, LOW_STOCK_THRESHOLD } from "@/lib/queries/adminProducts";
 
 export const dynamic = "force-dynamic";
 
@@ -15,10 +15,6 @@ const STATUS_LABELS: Record<string, { label: string; className: string }> = {
   out_of_stock: { label: "غير متوفر", className: "bg-amber-100 text-amber-700" },
   archived: { label: "مؤرشف", className: "bg-neutral-200 text-neutral-500" },
 };
-
-// عتبة "مخزون منخفض" — تنبيه بصري فقط فلوحة الإدارة، لا يمس أي منطق طلب أو
-// حجز مخزون حقيقي.
-const LOW_STOCK_THRESHOLD = 10;
 
 export default async function AdminProductsPage() {
   // فحص مباشر هنا قبل أي استعلام — الـlayout الأب وحده لا يمنع تنفيذ هذه
