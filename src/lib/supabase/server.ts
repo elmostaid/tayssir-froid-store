@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
+import { createTimeoutFetch, SUPABASE_AUTH_FETCH_TIMEOUT_MS } from "./fetchWithTimeout";
 
 /**
  * عميل Supabase لاستعماله داخل Server Components وServer Actions.
@@ -12,6 +13,12 @@ export async function createSupabaseServerClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
     {
+      // انظر fetchWithTimeout.ts: بدون هذا، أي استدعاء auth.getUser() هنا
+      // (المستعمل من getAdminUser() فكل صفحة/Server Action إداري) عرضة
+      // لتعليق غير محدود عند تدهور خدمة Supabase Auth نفسها.
+      global: {
+        fetch: createTimeoutFetch(SUPABASE_AUTH_FETCH_TIMEOUT_MS),
+      },
       cookies: {
         getAll: () => cookieStore.getAll(),
         setAll: (cookiesToSet) => {

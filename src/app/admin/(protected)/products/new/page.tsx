@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getAdminUser } from "@/lib/auth/requireAdmin";
+import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import { getAllCategoriesAdmin } from "@/lib/queries/adminCategories";
 import { ProductForm } from "@/components/admin/ProductForm";
 import { createProduct } from "@/app/admin/(protected)/products/actions";
@@ -14,6 +14,9 @@ export default async function NewProductPage() {
   const admin = await getAdminUser();
   if (!admin) {
     redirect("/admin/login");
+  }
+  if (!isOwnerAdmin(admin)) {
+    redirect("/admin/orders");
   }
 
   const categories = await getAllCategoriesAdmin();

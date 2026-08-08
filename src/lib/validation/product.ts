@@ -44,6 +44,19 @@ export const productSchema = z.object({
 
 export type ProductInput = z.infer<typeof productSchema>;
 
+// حقول التعديل السريع فقط (من قائمة /admin/products مباشرة، بدون فتح
+// المنتج) — نفس قيود الحقول المقابلة فـproductSchema بالضبط، دون الحقول
+// الأخرى (sku/slug/name/category/...) غير القابلة للتعديل السريع.
+export const productQuickEditSchema = z.object({
+  salePrice: z.number().min(0, "يجب أن يكون 0 أو أكثر."),
+  purchasePrice: z.number().min(0, "يجب أن يكون 0 أو أكثر.").nullable(),
+  stockQuantity: z.number().int().min(0, "يجب أن يكون 0 أو أكثر."),
+  minOrderQty: z.number().int().min(1, "يجب أن تكون 1 على الأقل."),
+  status: z.enum(PRODUCT_STATUSES),
+});
+
+export type ProductQuickEditInput = z.infer<typeof productQuickEditSchema>;
+
 export const variantSchema = z.object({
   variantName: z.string().trim().min(1, "اسم المتغير إجباري.").max(60, "الاسم طويل جداً."),
   salePriceOverride: z.number().min(0, "يجب أن يكون 0 أو أكثر.").nullable(),

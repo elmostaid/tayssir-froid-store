@@ -1,7 +1,10 @@
 import { sql } from "@/lib/db";
+import { LOW_STOCK_THRESHOLD } from "@/lib/lowStockThreshold";
 
 // استعلامات لوحة الإدارة فقط — تشمل purchase_price وكل الحالات (مسودة/
 // منشور/غير متوفر/مؤرشف). لا تُستعمل هذه الدوال خارج مسارات /admin أبداً.
+
+export { LOW_STOCK_THRESHOLD };
 
 export type AdminProduct = {
   id: number;
@@ -33,6 +36,67 @@ export async function getAllProductsAdmin(): Promise<AdminProduct[]> {
     join public.categories c on c.id = p.category_id
     order by p.created_at desc
   `;
+}
+
+export type AdminProductListFilter = {
+  query?: string;
+  categoryId?: number;
+  status?: "draft" | "published" | "out_of_stock" | "archived";
+  lowStockOnly?: boolean;
+};
+
+// قائمة /admin/products (التعديل السريع اليومي): بحث بالاسم أو SKU، فلترة
+// تصنيف/حالة/مخزون منخفض — نفس أسلوب الفلاتر الشرطية المستعمل أصلاً فـ
+// listAdminOrders (adminOrders.ts): كل شرط (${x} is null or ...) يتجاهَل
+// نفسه تلقائياً حين لا يُمرَّر، بدل بناء الاستعلام ديناميكياً بنصوص متسلسلة.
+export async function listProductsAdmin(
+  filter: AdminProductListFilter = {}
+): Promise<AdminProduct[]> {
+  const { query, categoryId, status, lowStockOnly } = filter;
+  const pattern = query?.trim() ? `%${query.trim()}%` : null;
+
+  return sql<AdminProduct[]>`
+    select
+      p.id, p.sku, p.slug, p.category_id, c.name_ar as category_name_ar,
+      p.name_ar, p.name_fr, p.description_ar, p.technical_specs, p.unit_label,
+      p.min_order_qty, p.qty_increment, p.purchase_price, p.sale_price,
+      p.stock_quantity, p.status
+    from public.products p
+    join public.categories c on c.id = p.category_id
+    where (${pattern}::text is null or p.name_ar ilike ${pattern} or p.sku ilike ${pattern})
+      and (${categoryId ?? null}::bigint is null or p.category_id = ${categoryId ?? null})
+      and (${status ?? null}::text is null or p.status = ${status ?? null})
+      and (${lowStockOnly ?? false} = false or p.stock_quantity <= ${LOW_STOCK_THRESHOLD})
+    order by p.created_at desc
+  `;
+}
+
+export type LowStockProduct = {
+  id: number;
+  sku: string;
+  name_ar: string;
+  stock_quantity: number;
+};
+
+// منتجات فقط (بدون متغيّراتها) بمخزون <= العتبة — لعرض مختصر فـDashboard.
+// المتغيّرات لها مخزونها الخاص المنفصل تماماً عن المنتج الأب، فمخزون منخفض
+// لمتغيّر واحد وسط متغيّرات أخرى وفيرة ليس بالضرورة مؤشراً مفيداً هنا بنفس
+// طريقة "منتج كامل أوشك على النفاد" — نفس النطاق المعروض أصلاً فـ/admin/products.
+export async function getLowStockProductsAdmin(limit: number): Promise<LowStockProduct[]> {
+  return sql<LowStockProduct[]>`
+    select id, sku, name_ar, stock_quantity
+    from public.products
+    where stock_quantity <= ${LOW_STOCK_THRESHOLD}
+    order by stock_quantity asc
+    limit ${limit}
+  `;
+}
+
+export async function countLowStockProductsAdmin(): Promise<number> {
+  const [row] = await sql<{ count: number }[]>`
+    select count(*)::int as count from public.products where stock_quantity <= ${LOW_STOCK_THRESHOLD}
+  `;
+  return row?.count ?? 0;
 }
 
 export async function getProductByIdAdmin(id: number): Promise<AdminProduct | null> {

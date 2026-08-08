@@ -9,12 +9,22 @@ import type { CreateOrderInput } from "@/lib/orders/types";
 // القديمة حُذفت الآن. TEST-FIXTURE-001/002/003 منتجات اختبار مؤقتة
 // (تُنشأ وتُحذف في هذا الملف فقط) بنفس مواصفات DEMO-001/002/003 السابقة.
 
-const TEST_PHONE = "0600000099";
+// كل اختبار يستعمل رقم هاتف مختلف (بادئة ثابتة 060000 + عدّاد) بدل رقم واحد
+// مشترك — لأن isRateLimited() (حماية حقيقية ضد تكرار الطلبات من نفس الرقم،
+// 5 محاولات كحد أقصى كل 5 دقائق) حماية إنتاجية صحيحة يجب ألا تُضعَف من أجل
+// الاختبارات، لكنها كانت تُحجب اختبارات لاحقة في هذا الملف عن طريق الخطأ
+// لأنها كلها كانت تشارك نفس رقم الهاتف الواحد فتتراكم المحاولات وتتجاوز 5.
+const TEST_PHONE_PREFIX = "060000";
+let testPhoneCounter = 0;
+function nextTestPhone(): string {
+  testPhoneCounter += 1;
+  return `${TEST_PHONE_PREFIX}${String(testPhoneCounter).padStart(4, "0")}`;
+}
 
 function baseCustomer() {
   return {
     fullName: "زبون اختبار",
-    phone: TEST_PHONE,
+    phone: nextTestPhone(),
     city: "مراكش",
     address: "حي المحاميد، شارع تجريبي",
     notes: null,
@@ -57,7 +67,7 @@ beforeAll(async () => {
 afterAll(async () => {
   // تنظيف كل الطلبات التي أنشأتها هذه الاختبارات (order_items وسجل الحالة
   // يُحذَفان تلقائياً عبر on delete cascade)، ثم منتجات الاختبار المؤقتة.
-  await sql`delete from public.orders where customer_phone = ${TEST_PHONE}`;
+  await sql`delete from public.orders where customer_phone like ${TEST_PHONE_PREFIX + "%"}`;
   await sql`delete from public.products where sku in ('TEST-FIXTURE-001', 'TEST-FIXTURE-002', 'TEST-FIXTURE-003')`;
 });
 
@@ -231,6 +241,64 @@ describe("createOrder — حالة غير متوفر للطلب", () => {
       }
     } finally {
       await sql`update public.products set status = 'published' where id = ${demo001.id}`;
+    }
+  });
+});
+
+describe("createOrder — تعطيل استقبال الطلبات (cod_enabled)", () => {
+  test("cod_enabled=false يرفض الطلب، ولا يُنشأ أي صف، ولا ينقص المخزون", async () => {
+    const demo003 = await getRawProduct("TEST-FIXTURE-003"); // 120 درهم، حد أدنى 1
+    const originalStock = demo003.stock_quantity;
+
+    try {
+      await sql`update public.settings set value = to_jsonb(false) where key = 'cod_enabled'`;
+
+      const idempotencyKey = randomUUID();
+      const input: CreateOrderInput = {
+        items: [{ productId: demo003.id, variantId: null, quantity: 10 }], // 1200 (يتجاوز الحد الأدنى)
+        customer: baseCustomer(),
+        idempotencyKey,
+      };
+
+      const result = await createOrder(input);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.errors.some((e) => e.message.includes("متوقف"))).toBe(true);
+      }
+
+      const orders = await sql`select id from public.orders where idempotency_key = ${idempotencyKey}`;
+      expect(orders.length).toBe(0);
+
+      const afterStock = await getRawProduct("TEST-FIXTURE-003");
+      expect(afterStock.stock_quantity).toBe(originalStock);
+    } finally {
+      await sql`update public.settings set value = to_jsonb(true) where key = 'cod_enabled'`;
+    }
+  });
+
+  test("cod_enabled=true (إعادة التفعيل) يسمح بإنشاء الطلب عادياً", async () => {
+    const demo003 = await getRawProduct("TEST-FIXTURE-003");
+    const originalStock = demo003.stock_quantity;
+
+    await sql`update public.settings set value = to_jsonb(false) where key = 'cod_enabled'`;
+    await sql`update public.settings set value = to_jsonb(true) where key = 'cod_enabled'`;
+
+    try {
+      const input: CreateOrderInput = {
+        items: [{ productId: demo003.id, variantId: null, quantity: 10 }], // 1200
+        customer: baseCustomer(),
+        idempotencyKey: randomUUID(),
+      };
+
+      const result = await createOrder(input);
+
+      expect(result.ok).toBe(true);
+    } finally {
+      // نُعيد المخزون كما كان — هذا الاختبار يتحقق فقط أن إعادة التفعيل
+      // تسمح بإنشاء الطلب، وليس المقصود منه استهلاك مخزون منتج الاختبار
+      // المشترك مع اختبارات أخرى فهذا الملف.
+      await sql`update public.products set stock_quantity = ${originalStock} where id = ${demo003.id}`;
     }
   });
 });

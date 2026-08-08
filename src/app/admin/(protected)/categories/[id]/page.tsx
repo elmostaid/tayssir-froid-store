@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { getAdminUser } from "@/lib/auth/requireAdmin";
+import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import { getAllCategoriesAdmin, getCategoryByIdAdmin } from "@/lib/queries/adminCategories";
 import { CategoryForm } from "@/components/admin/CategoryForm";
 import { updateCategory } from "@/app/admin/(protected)/categories/actions";
@@ -18,6 +18,9 @@ export default async function EditCategoryPage({ params }: Props) {
   const admin = await getAdminUser();
   if (!admin) {
     redirect("/admin/login");
+  }
+  if (!isOwnerAdmin(admin)) {
+    redirect("/admin/orders");
   }
 
   const { id } = await params;

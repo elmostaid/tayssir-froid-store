@@ -7,6 +7,8 @@ import {
 } from "@/lib/queries/orders";
 import { formatMad } from "@/lib/format";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
+import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
+import { safeQuery } from "@/lib/safeQuery";
 import { ServiceUnavailable } from "@/components/ServiceUnavailable";
 
 export const dynamic = "force-dynamic";
@@ -35,9 +37,15 @@ export default async function OrderSuccessPage({ params }: Props) {
   }
 
   const items = await getOrderItemsByPublicReference(reference);
+  const settings = await safeQuery(
+    () => getSettings(),
+    FALLBACK_SETTINGS,
+    "orderSuccess.getSettings"
+  );
 
   // رابط واتساب يحتوي فقط على مرجع الطلب العام، بدون أي بيانات شخصية حساسة
   const whatsappLink = buildWhatsAppLink(
+    settings.whatsappNumber,
     `مرحباً، أريد الاستفسار عن طلبي رقم ${order.publicReference}.`
   );
 
@@ -80,7 +88,16 @@ export default async function OrderSuccessPage({ params }: Props) {
         شاملاً مصاريف التوصيل. الدفع عند الاستلام بعد معاينة السلعة.
       </p>
 
-      <div className="mt-6 flex flex-col gap-2 sm:flex-row">
+      <a
+        href={`/order/${order.publicReference}/receipt.pdf`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mt-4 block rounded-full border border-neutral-300 px-5 py-3 text-sm font-semibold text-neutral-700"
+      >
+        تحميل وصل الطلب (PDF)
+      </a>
+
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
         <a
           href={whatsappLink}
           target="_blank"

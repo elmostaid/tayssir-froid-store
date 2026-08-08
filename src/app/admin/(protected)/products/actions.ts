@@ -3,10 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { sql } from "@/lib/db";
-import { getAdminUser } from "@/lib/auth/requireAdmin";
-import { productSchema, variantSchema } from "@/lib/validation/product";
+import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
+import { productSchema, variantSchema, productQuickEditSchema } from "@/lib/validation/product";
 import { flattenZodErrors } from "@/lib/validation/zodErrors";
 import { isProductSlugTaken, isSkuTakenByOtherProduct } from "@/lib/queries/adminProducts";
+
+const OWNER_ONLY_ERROR = "هذا الإجراء مقصور على صاحب الحساب (Admin)." as const;
 
 export type ProductFormState = {
   error: string | null;
@@ -43,6 +45,7 @@ export async function createProduct(
 ): Promise<ProductFormState> {
   const admin = await getAdminUser();
   if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+  if (!isOwnerAdmin(admin)) return { error: OWNER_ONLY_ERROR };
 
   const parsed = parseProductForm(formData);
   if (!parsed.success) {
@@ -81,6 +84,7 @@ export async function updateProduct(
 ): Promise<ProductFormState> {
   const admin = await getAdminUser();
   if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+  if (!isOwnerAdmin(admin)) return { error: OWNER_ONLY_ERROR };
 
   const parsed = parseProductForm(formData);
   if (!parsed.success) {
@@ -143,6 +147,7 @@ export async function createVariant(
 ): Promise<ProductFormState> {
   const admin = await getAdminUser();
   if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+  if (!isOwnerAdmin(admin)) return { error: OWNER_ONLY_ERROR };
 
   const parsed = parseVariantForm(formData);
   if (!parsed.success) {
@@ -176,6 +181,7 @@ export async function updateVariant(
 ): Promise<ProductFormState> {
   const admin = await getAdminUser();
   if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+  if (!isOwnerAdmin(admin)) return { error: OWNER_ONLY_ERROR };
 
   const parsed = parseVariantForm(formData);
   if (!parsed.success) {
@@ -208,8 +214,86 @@ export async function deleteVariant(
 ): Promise<{ error: string | null }> {
   const admin = await getAdminUser();
   if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+  if (!isOwnerAdmin(admin)) return { error: OWNER_ONLY_ERROR };
 
   await sql`delete from public.product_variants where id = ${variantId} and product_id = ${productId}`;
   revalidatePath(`/admin/products/${productId}`);
   return { error: null };
+}
+
+function parseQuickEditForm(formData: FormData) {
+  const purchasePriceRaw = formData.get("purchasePrice");
+  return productQuickEditSchema.safeParse({
+    salePrice: Number(formData.get("salePrice")),
+    purchasePrice:
+      purchasePriceRaw && String(purchasePriceRaw).trim() !== "" ? Number(purchasePriceRaw) : null,
+    stockQuantity: Number(formData.get("stockQuantity")),
+    minOrderQty: Number(formData.get("minOrderQty")),
+    status: formData.get("status"),
+  });
+}
+
+// التعديل السريع من قائمة /admin/products مباشرة (بدون فتح المنتج): ثمن
+// البيع، ثمن الشراء، المخزون، أقل كمية للطلب، ونشر/إخفاء (status). كل صف
+// منتج نموذج (form) مستقل بـServer Action خاص به — حفظ منتج لا يرسل أو
+// يمس حقول أي منتج آخر فـنفس الصفحة (لا "ضياع تعديلات" متبادل).
+//
+// تعديل المخزون هنا يمر عبر نفس منطق stock_movements الموجود (وليس تحديثاً
+// صامتاً): نقرأ الكمية الحالية بقفل صف (for update) داخل معاملة واحدة،
+// نحسب الفرق (delta) الفعلي، ونسجّله بسبب 'manual_adjustment' (نفس قيمة
+// reason المستعملة أصلاً فـstock_movements منذ migration
+// 20260801000000_orders_admin_phase13) — فقط إن تغيّرت الكمية فعلاً.
+export async function quickUpdateProduct(
+  productId: number,
+  _prevState: ProductFormState,
+  formData: FormData
+): Promise<ProductFormState> {
+  const admin = await getAdminUser();
+  if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+  if (!isOwnerAdmin(admin)) return { error: OWNER_ONLY_ERROR };
+
+  const parsed = parseQuickEditForm(formData);
+  if (!parsed.success) {
+    return { error: "تحقق من القيم المدخلة.", fieldErrors: flattenZodErrors(parsed.error) };
+  }
+
+  try {
+    await sql.begin(async (trx) => {
+      const [current] = await trx<{ stock_quantity: number }[]>`
+        select stock_quantity from public.products where id = ${productId} for update
+      `;
+      if (!current) throw new Error("PRODUCT_NOT_FOUND");
+
+      await trx`
+        update public.products set
+          sale_price = ${parsed.data.salePrice},
+          purchase_price = ${parsed.data.purchasePrice},
+          stock_quantity = ${parsed.data.stockQuantity},
+          min_order_qty = ${parsed.data.minOrderQty},
+          status = ${parsed.data.status}
+        where id = ${productId}
+      `;
+
+      const stockDelta = parsed.data.stockQuantity - current.stock_quantity;
+      if (stockDelta !== 0) {
+        await trx`
+          insert into public.stock_movements (
+            product_id, variant_id, order_id, quantity_delta, reason
+          ) values (
+            ${productId}, null, null, ${stockDelta}, 'manual_adjustment'
+          )
+        `;
+      }
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "PRODUCT_NOT_FOUND") {
+      return { error: "المنتج غير موجود." };
+    }
+    console.error("quickUpdateProduct: خطأ غير متوقع", error);
+    return { error: "تعذّر حفظ التعديل حالياً بسبب مشكلة تقنية." };
+  }
+
+  revalidatePath("/admin/products");
+  revalidatePath(`/admin/products/${productId}`);
+  return { error: null, success: true };
 }

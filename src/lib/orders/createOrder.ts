@@ -2,6 +2,9 @@ import { sql } from "@/lib/db";
 import { getSettings } from "@/lib/queries/settings";
 import { isValidMoroccanPhone, normalizePhone } from "@/lib/phone";
 import { isValidQuantity } from "@/lib/cart/cartMath";
+import { isRateLimited } from "@/lib/orders/rateLimit";
+import { notifyNewOrder } from "@/lib/notifications/notifyNewOrder";
+import { getSiteUrl } from "@/lib/siteUrl";
 import type { CatalogProduct, CatalogProductVariant } from "@/lib/types";
 import type {
   CreateOrderFieldError,
@@ -71,6 +74,7 @@ type ValidatedLineItem = {
   unitPrice: number;
   quantity: number;
   lineTotal: number;
+  purchasePriceSnapshot: number | null;
 };
 
 export async function createOrder(input: CreateOrderInput): Promise<CreateOrderResult> {
@@ -79,8 +83,38 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     return { ok: false, errors: structuralErrors };
   }
 
+  if (isValidMoroccanPhone(input.customer.phone) && isRateLimited(normalizePhone(input.customer.phone))) {
+    return {
+      ok: false,
+      errors: [
+        {
+          field: "general",
+          message:
+            "تم إرسال عدة طلبات في وقت قصير من هذا الرقم. الرجاء الانتظار قليلاً قبل إعادة المحاولة، أو التواصل معنا عبر واتساب.",
+        },
+      ],
+    };
+  }
+
   try {
     const settings = await getSettings();
+
+    // دفاع إضافي (defense-in-depth) وليس الحماية الأساسية — الزبون العادي
+    // يُمنَع فعلياً من الوصول لهنا أصلاً لأن CheckoutClient نفسه يُعطِّل زر
+    // الإرسال ولا يبني رابط واتساب حين تكون الطلبات متوقفة (انظر
+    // CheckoutClient.tsx). هذا الفحص هنا يحمي فقط من استدعاء مباشر لـ
+    // submitOrder متجاوزاً الواجهة (مثلاً عبر إعادة إرسال نموذج قديم).
+    if (!settings.codEnabled) {
+      return {
+        ok: false,
+        errors: [
+          {
+            field: "general",
+            message: "استقبال الطلبات الجديدة متوقف مؤقتاً. الرجاء التواصل معنا عبر واتساب.",
+          },
+        ],
+      };
+    }
 
     const productIds = [...new Set(input.items.map((item) => item.productId))];
     const variantIds = [
@@ -102,6 +136,25 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
             select * from public.catalog_product_variants where id = any(${variantIds})
           `
         : [];
+
+    // ثمن الشراء سري ولا يظهر فـcatalog_products/catalog_product_variants (انظر
+    // supabase/migrations/20260730000002_security.sql) — نجلبه هنا من الجداول
+    // الأصلية مباشرة (اتصال خادم مباشر عبر DATABASE_URL، ليس عبر anon key/
+    // PostgREST) فقط لتخزين "صورة مجمَّدة" (snapshot) وقت إنشاء الطلب.
+    const purchasePriceRows = await sql<{ id: number; purchase_price: string | null }[]>`
+      select id, purchase_price from public.products where id = any(${productIds})
+    `;
+    const variantPurchasePriceRows =
+      variantIds.length > 0
+        ? await sql<{ id: number; purchase_price_override: string | null }[]>`
+            select id, purchase_price_override from public.product_variants where id = any(${variantIds})
+          `
+        : [];
+
+    const purchasePriceById = new Map(purchasePriceRows.map((p) => [p.id, p.purchase_price]));
+    const variantPurchasePriceById = new Map(
+      variantPurchasePriceRows.map((v) => [v.id, v.purchase_price_override])
+    );
 
     const productById = new Map(products.map((p) => [p.id, p]));
     const variantById = new Map(variants.map((v) => [v.id, v]));
@@ -167,6 +220,16 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
         continue;
       }
 
+      // ثمن الشراء الفعلي وقت الطلب: أولوية لـvariant.purchase_price_override
+      // إن وُجد، وإلا product.purchase_price — يُخزَّن كـsnapshot ثابت فـ
+      // order_items ولا يتأثر بأي تعديل لاحق على ثمن الشراء (انظر
+      // adminReports.ts للاستهلاك).
+      const rawPurchasePrice =
+        item.variantId !== null
+          ? (variantPurchasePriceById.get(item.variantId) ?? purchasePriceById.get(item.productId) ?? null)
+          : (purchasePriceById.get(item.productId) ?? null);
+      const purchasePriceSnapshot = rawPurchasePrice === null ? null : Number(rawPurchasePrice);
+
       lineItems.push({
         productId: product.id,
         variantId: item.variantId,
@@ -175,6 +238,7 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
         unitPrice: effectivePrice,
         quantity: item.quantity,
         lineTotal: effectivePrice * item.quantity,
+        purchasePriceSnapshot,
       });
     }
 
@@ -198,8 +262,10 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
 
     const normalizedPhone = normalizePhone(input.customer.phone);
 
-    const publicReference = await sql.begin(async (trx) => {
-      const inserted = await trx<{ id: number; public_reference: string }[]>`
+    let stockConflict: CreateOrderFieldError | null = null;
+
+    const result = await sql.begin(async (trx) => {
+      const inserted = await trx<{ id: number; public_reference: string; order_number: string }[]>`
         insert into public.orders (
           customer_name, customer_phone, customer_city, customer_address,
           customer_notes, items_subtotal, status, source, idempotency_key
@@ -209,20 +275,56 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
           ${subtotal}, 'new', 'website', ${input.idempotencyKey}
         )
         on conflict (idempotency_key) do nothing
-        returning id, public_reference
+        returning id, public_reference, order_number
       `;
 
       if (inserted.length > 0) {
         const orderId = inserted[0].id;
 
         for (const line of lineItems) {
+          // حجز المخزون: إنقاص فوري وذَرّي (atomic) عند إنشاء الطلب — الشرط
+          // "stock_quantity >= quantity" داخل UPDATE نفسه يمنع أي سباق (race
+          // condition) بين طلبين متزامنين على نفس القطعة، ويمنع مخزوناً
+          // سالباً دون الحاجة لقفل يدوي منفصل.
+          const decremented = line.variantId
+            ? await trx<{ id: number }[]>`
+                update public.product_variants
+                set stock_quantity = stock_quantity - ${line.quantity}
+                where id = ${line.variantId} and stock_quantity >= ${line.quantity}
+                returning id
+              `
+            : await trx<{ id: number }[]>`
+                update public.products
+                set stock_quantity = stock_quantity - ${line.quantity}
+                where id = ${line.productId} and stock_quantity >= ${line.quantity}
+                returning id
+              `;
+
+          if (decremented.length === 0) {
+            stockConflict = {
+              field: `item:${line.productId}:${line.variantId ?? "base"}`,
+              message: `الكمية المطلوبة من "${line.nameSnapshot}" لم تعد متوفرة بالكامل في المخزون الآن. الرجاء تعديل الكمية أو إزالة المنتج.`,
+            };
+            throw new Error("STOCK_CONFLICT");
+          }
+
           await trx`
             insert into public.order_items (
               order_id, product_id, variant_id, product_name_snapshot,
-              sku_snapshot, unit_price_snapshot, quantity, line_total
+              sku_snapshot, unit_price_snapshot, quantity, line_total,
+              purchase_price_snapshot
             ) values (
               ${orderId}, ${line.productId}, ${line.variantId}, ${line.nameSnapshot},
-              ${line.skuSnapshot}, ${line.unitPrice}, ${line.quantity}, ${line.lineTotal}
+              ${line.skuSnapshot}, ${line.unitPrice}, ${line.quantity}, ${line.lineTotal},
+              ${line.purchasePriceSnapshot}
+            )
+          `;
+
+          await trx`
+            insert into public.stock_movements (
+              product_id, variant_id, order_id, quantity_delta, reason
+            ) values (
+              ${line.productId}, ${line.variantId}, ${orderId}, ${-line.quantity}, 'order_created'
             )
           `;
         }
@@ -232,25 +334,62 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
           values (${orderId}, 'new', 'طلب جديد من الموقع')
         `;
 
-        return inserted[0].public_reference;
+        return {
+          id: orderId,
+          publicReference: inserted[0].public_reference,
+          orderNumber: inserted[0].order_number,
+          isNew: true as const,
+        };
       }
 
       // تعارض على idempotency_key => نفس الطلب أُرسل مسبقاً (ضغط مزدوج على
-      // الزر مثلاً). نُعيد مرجع الطلب الموجود أصلاً بدل إنشاء طلب مكرر.
-      const existing = await trx<{ public_reference: string }[]>`
-        select public_reference from public.orders
+      // الزر مثلاً). نُعيد مرجع الطلب الموجود أصلاً بدل إنشاء طلب مكرر ودون
+      // إعادة حجز المخزون مرة ثانية.
+      const existing = await trx<{ id: number; public_reference: string; order_number: string }[]>`
+        select id, public_reference, order_number from public.orders
         where idempotency_key = ${input.idempotencyKey}
         limit 1
       `;
-      return existing[0]?.public_reference ?? null;
+      if (!existing[0]) return null;
+      return {
+        id: existing[0].id,
+        publicReference: existing[0].public_reference,
+        orderNumber: existing[0].order_number,
+        isNew: false as const,
+      };
+    }).catch((error) => {
+      if (error instanceof Error && error.message === "STOCK_CONFLICT") return null;
+      throw error;
     });
 
-    if (!publicReference) {
+    if (stockConflict) {
+      return { ok: false, errors: [stockConflict] };
+    }
+
+    if (!result) {
       console.error("createOrder: فشل الحصول على مرجع الطلب بعد الإدخال");
       return GENERIC_ERROR;
     }
 
-    return { ok: true, publicReference };
+    if (result.isNew) {
+      const siteUrl = getSiteUrl();
+      const base = siteUrl ?? "";
+      // إشعار "أفضل مجهود": لا ننتظره (fire-and-forget) ولا يمكن أبداً أن
+      // يمحو الطلب المحفوظ فعلاً إذا فشل — انظر notifyNewOrder.
+      void notifyNewOrder({
+        orderNumber: result.orderNumber,
+        publicReference: result.publicReference,
+        customerName: input.customer.fullName.trim(),
+        customerPhone: normalizedPhone,
+        city: input.customer.city.trim(),
+        itemsSubtotal: subtotal.toFixed(2),
+        itemsCount: lineItems.length,
+        adminOrderUrl: `${base}/admin/orders/${result.id}`,
+        pickingSlipUrl: `${base}/admin/orders/${result.id}/picking-slip.pdf`,
+      });
+    }
+
+    return { ok: true, publicReference: result.publicReference };
   } catch (error) {
     console.error("createOrder: خطأ غير متوقع أثناء إنشاء الطلب", error);
     return GENERIC_ERROR;

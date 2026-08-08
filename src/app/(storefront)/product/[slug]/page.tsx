@@ -7,12 +7,14 @@ import {
   getProductImages,
   getProductVariants,
 } from "@/lib/queries/catalog";
+import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 import { resolveImageUrl } from "@/lib/images";
 import { formatMad } from "@/lib/format";
 import { buildProductWhatsAppLink } from "@/lib/whatsapp";
 import { safeQuery } from "@/lib/safeQuery";
 import { AddToCartForm } from "@/components/AddToCartForm";
 import { ServiceUnavailable } from "@/components/ServiceUnavailable";
+import { getSiteUrl } from "@/lib/siteUrl";
 
 export const dynamic = "force-dynamic";
 
@@ -28,9 +30,23 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     "product.generateMetadata"
   );
   if (!product) return {};
+
+  const title = product.meta_title ?? product.name_ar;
+  const description = product.meta_description ?? product.description_ar ?? undefined;
+  const siteUrl = getSiteUrl();
+  const path = `/product/${product.slug}`;
+  const imageUrl = product.primary_image_path ? resolveImageUrl(product.primary_image_path) : undefined;
+
   return {
-    title: product.meta_title ?? product.name_ar,
-    description: product.meta_description ?? product.description_ar ?? undefined,
+    title,
+    description,
+    alternates: siteUrl ? { canonical: path } : undefined,
+    openGraph: {
+      title,
+      description,
+      url: siteUrl ? path : undefined,
+      images: imageUrl ? [{ url: imageUrl }] : undefined,
+    },
   };
 }
 
@@ -49,13 +65,14 @@ export default async function ProductPage({ params }: Props) {
     notFound();
   }
 
-  const [images, variants] = await Promise.all([
+  const [images, variants, settings] = await Promise.all([
     safeQuery(() => getProductImages(product.id), [], "product.getProductImages"),
     safeQuery(() => getProductVariants(product.id), [], "product.getProductVariants"),
+    safeQuery(() => getSettings(), FALLBACK_SETTINGS, "product.getSettings"),
   ]);
 
   const mainImage = images[0];
-  const whatsappLink = buildProductWhatsAppLink(product.name_ar, product.sku);
+  const whatsappLink = buildProductWhatsAppLink(settings.whatsappNumber, product.name_ar, product.sku);
   const isUnavailable = product.status === "out_of_stock" || product.stock_quantity <= 0;
   const statusLabel =
     product.status === "out_of_stock"
@@ -64,8 +81,33 @@ export default async function ProductPage({ params }: Props) {
         ? "نفدت الكمية"
         : "متوفر";
 
+  const siteUrl = getSiteUrl();
+  // بيانات Product/Offer الحقيقية فقط (السعر والتوفر الفعليان من قاعدة
+  // البيانات نفسها) — بدون أي Reviews أو Ratings وهمية.
+  const productJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: product.name_ar,
+    sku: product.sku,
+    ...(mainImage ? { image: [resolveImageUrl(mainImage.storage_path)] } : {}),
+    ...(product.description_ar ? { description: product.description_ar } : {}),
+    offers: {
+      "@type": "Offer",
+      priceCurrency: "MAD",
+      price: product.sale_price,
+      availability: isUnavailable
+        ? "https://schema.org/OutOfStock"
+        : "https://schema.org/InStock",
+      ...(siteUrl ? { url: `${siteUrl}/product/${product.slug}` } : {}),
+    },
+  };
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }}
+      />
       <nav className="text-xs text-neutral-500">
         <Link href="/" className="hover:underline">
           الرئيسية
@@ -89,7 +131,6 @@ export default async function ProductPage({ params }: Props) {
                 fill
                 sizes="(max-width: 768px) 100vw, 500px"
                 className="object-contain"
-                unoptimized
                 priority
               />
             ) : (
@@ -111,7 +152,7 @@ export default async function ProductPage({ params }: Props) {
                     fill
                     sizes="120px"
                     className="object-contain"
-                    unoptimized
+                    loading="lazy"
                   />
                 </div>
               ))}
@@ -199,6 +240,17 @@ export default async function ProductPage({ params }: Props) {
           >
             استفسار عبر واتساب
           </a>
+
+          <ul className="mt-4 flex flex-col gap-1.5 rounded-xl bg-neutral-100 p-4 text-xs text-neutral-600">
+            <li>البيع بالجملة فقط</li>
+            <li>أقل طلب إجمالي {formatMad(settings.minOrderAmountMad)}</li>
+            <li>الدفع عند الاستلام بعد معاينة السلعة</li>
+            <li>التوصيل لجميع مدن المغرب</li>
+            <li>
+              التوصيل {formatMad(settings.deliveryFeePerCartonMad)} للكرطونة
+              (يُحدَّد عدد الكرطونات بعد تجهيز الطلب)
+            </li>
+          </ul>
         </div>
       </div>
     </div>

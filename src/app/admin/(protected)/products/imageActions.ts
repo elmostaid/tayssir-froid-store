@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { sql } from "@/lib/db";
-import { getAdminUser } from "@/lib/auth/requireAdmin";
+import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import { productImageAltTextSchema } from "@/lib/validation/product";
 import {
   MAX_IMAGES_PER_PRODUCT,
@@ -24,6 +24,7 @@ export async function uploadProductImage(
 ): Promise<ImageActionState> {
   const admin = await getAdminUser();
   if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+  if (!isOwnerAdmin(admin)) return { error: "هذا الإجراء مقصور على صاحب الحساب (Admin)." };
 
   const file = formData.get("file");
   if (!(file instanceof File)) {
@@ -69,6 +70,7 @@ export async function deleteProductImage(
 ): Promise<{ error: string | null }> {
   const admin = await getAdminUser();
   if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+  if (!isOwnerAdmin(admin)) return { error: "هذا الإجراء مقصور على صاحب الحساب (Admin)." };
 
   const rows = await sql<AdminProductImage[]>`
     select id, product_id, storage_path, alt_text_ar, sort_order, is_primary
@@ -99,6 +101,7 @@ export async function updateImageAltText(
 ): Promise<ImageActionState> {
   const admin = await getAdminUser();
   if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+  if (!isOwnerAdmin(admin)) return { error: "هذا الإجراء مقصور على صاحب الحساب (Admin)." };
 
   const altTextParsed = productImageAltTextSchema.safeParse(formData.get("altText") || undefined);
   if (!altTextParsed.success) {
@@ -120,6 +123,7 @@ export async function setPrimaryImage(
 ): Promise<{ error: string | null }> {
   const admin = await getAdminUser();
   if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+  if (!isOwnerAdmin(admin)) return { error: "هذا الإجراء مقصور على صاحب الحساب (Admin)." };
 
   await sql.begin(async (tx) => {
     await tx`update public.product_images set is_primary = false where product_id = ${productId}`;
@@ -163,6 +167,7 @@ export async function moveImageUp(
 ): Promise<{ error: string | null }> {
   const admin = await getAdminUser();
   if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+  if (!isOwnerAdmin(admin)) return { error: "هذا الإجراء مقصور على صاحب الحساب (Admin)." };
   return swapSortOrder(productId, imageId, "up");
 }
 
@@ -172,5 +177,6 @@ export async function moveImageDown(
 ): Promise<{ error: string | null }> {
   const admin = await getAdminUser();
   if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+  if (!isOwnerAdmin(admin)) return { error: "هذا الإجراء مقصور على صاحب الحساب (Admin)." };
   return swapSortOrder(productId, imageId, "down");
 }
