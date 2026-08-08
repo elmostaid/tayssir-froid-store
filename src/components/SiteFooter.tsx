@@ -2,7 +2,7 @@ import Image from "next/image";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
 import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 import { safeQuery } from "@/lib/safeQuery";
-import { formatMad } from "@/lib/format";
+import { formatMad, formatMinOrderAmount } from "@/lib/format";
 
 export async function SiteFooter() {
   const settings = await safeQuery(
@@ -35,7 +35,7 @@ export async function SiteFooter() {
         </p>
         <p className="mt-1">{settings.storeCity}</p>
         <p className="mt-1">
-          الحد الأدنى للطلبية {formatMad(settings.minOrderAmountMad)} (دون
+          الحد الأدنى للطلبية {formatMinOrderAmount(settings.minOrderAmountMad)} (دون
           احتساب التوصيل). التوصيل {formatMad(settings.deliveryFeePerCartonMad)}{" "}
           لكل كرطونة، يُحدَّد عدد الكرطونات بعد تجهيز الطلب. الدفع عند
           الاستلام فقط.

@@ -12,7 +12,7 @@ import { CategoryIcon } from "@/components/CategoryIcon";
 import { getCategoryImage } from "@/lib/categoryImages";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
 import { safeQuery } from "@/lib/safeQuery";
-import { formatMad } from "@/lib/format";
+import { formatMinOrderAmount } from "@/lib/format";
 
 // تُعرض هذه الصفحة ديناميكياً عند كل طلب (وليس عند البناء) لأن بيانات
 // المنتجات والأسعار تأتي من قاعدة البيانات ويجب أن تكون محدَّثة دائماً.
@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
 
 function buildTrustPoints(minOrderAmountMad: number): string[] {
   return [
-    `أقل طلب ${formatMad(minOrderAmountMad)}`,
+    `أقل طلب ${formatMinOrderAmount(minOrderAmountMad)}`,
     "الدفع عند الاستلام بعد معاينة السلعة",
     "التوصيل لجميع مدن المغرب",
     "كلما زادت الكمية نقص الثمن",

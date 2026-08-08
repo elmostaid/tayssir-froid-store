@@ -9,7 +9,7 @@ import {
 } from "@/lib/queries/catalog";
 import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 import { resolveImageUrl } from "@/lib/images";
-import { formatMad } from "@/lib/format";
+import { formatMad, formatMinOrderAmount } from "@/lib/format";
 import { buildProductWhatsAppLink } from "@/lib/whatsapp";
 import { safeQuery } from "@/lib/safeQuery";
 import { AddToCartForm } from "@/components/AddToCartForm";
@@ -243,7 +243,7 @@ export default async function ProductPage({ params }: Props) {
 
           <ul className="mt-4 flex flex-col gap-1.5 rounded-xl bg-neutral-100 p-4 text-xs text-neutral-600">
             <li>البيع بالجملة فقط</li>
-            <li>أقل طلب إجمالي {formatMad(settings.minOrderAmountMad)}</li>
+            <li>أقل طلب إجمالي {formatMinOrderAmount(settings.minOrderAmountMad)}</li>
             <li>الدفع عند الاستلام بعد معاينة السلعة</li>
             <li>التوصيل لجميع مدن المغرب</li>
             <li>

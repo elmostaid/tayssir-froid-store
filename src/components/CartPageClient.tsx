@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useCart } from "@/components/CartProvider";
 import { cartItemKey, meetsMinimumOrder, snapQuantity } from "@/lib/cart/cartMath";
 import { resolveImageUrl } from "@/lib/images";
-import { formatMad } from "@/lib/format";
+import { formatMad, formatMinOrderAmount } from "@/lib/format";
 
 export function CartPageClient({ minOrderAmountMad }: { minOrderAmountMad: number }) {
   const { items, subtotal, updateQuantity, removeItem, isHydrated } = useCart();
@@ -150,7 +150,7 @@ export function CartPageClient({ minOrderAmountMad }: { minOrderAmountMad: numbe
           <div className="mt-3">
             <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
               باقي لك {formatMad(remaining)} باش توصل لأقل قيمة للطلب (
-              {formatMad(minOrderAmountMad)}).
+              {formatMinOrderAmount(minOrderAmountMad)}).
             </p>
             <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-neutral-200">
               <div

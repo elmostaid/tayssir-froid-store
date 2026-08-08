@@ -3,7 +3,7 @@
 import { useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useCart } from "@/components/CartProvider";
-import { formatMad } from "@/lib/format";
+import { formatMad, formatMinOrderAmount } from "@/lib/format";
 import { cartItemKey } from "@/lib/cart/cartMath";
 import { isValidMoroccanPhone } from "@/lib/phone";
 import { buildOrderWhatsAppMessage, buildWhatsAppLink } from "@/lib/whatsapp";
@@ -163,7 +163,7 @@ export function CheckoutClient({
     }
     if (belowMinimum) {
       setError(
-        `المجموع الحالي (${formatMad(subtotal)}) أقل من الحد الأدنى للطلب (${formatMad(
+        `المجموع الحالي (${formatMad(subtotal)}) أقل من الحد الأدنى للطلب (${formatMinOrderAmount(
           minOrderAmountMad
         )})، دون احتساب التوصيل. أضف منتجات أخرى للوصول إلى الحد الأدنى.`
       );
@@ -271,7 +271,7 @@ export function CheckoutClient({
         <div className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
           <p>
             المجموع الحالي ({formatMad(subtotal)}) أقل من الحد الأدنى للطلب (
-            {formatMad(minOrderAmountMad)}).
+            {formatMinOrderAmount(minOrderAmountMad)}).
           </p>
           <Link href="/cart" className="mt-1 inline-block font-semibold underline">
             العودة للسلة لتعديلها
