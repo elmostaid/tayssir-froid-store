@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import {
   getFilteredCategories,
@@ -8,6 +9,7 @@ import {
 import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 import { ProductCard } from "@/components/ProductCard";
 import { CategoryIcon } from "@/components/CategoryIcon";
+import { getCategoryImage } from "@/lib/categoryImages";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
 import { safeQuery } from "@/lib/safeQuery";
 import { formatMad } from "@/lib/format";
@@ -82,25 +84,42 @@ export default async function HomePage() {
           <h2 className="border-r-4 border-brand-turquoise pr-3 text-lg font-bold text-neutral-800">
             التصنيفات
           </h2>
-          <div className="mt-3 grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {categories.map((category) => {
               const count = productCounts[category.id] ?? 0;
+              const imageSrc = getCategoryImage(category.slug);
               return (
                 <Link
                   key={category.id}
                   href={`/category/${category.slug}`}
-                  className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white p-4 transition-colors hover:border-brand-turquoise"
+                  className="flex flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white transition-colors hover:border-brand-turquoise"
                 >
-                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-brand-turquoise-tint text-brand-turquoise-dark">
-                    <CategoryIcon slug={category.slug} name={category.name_ar} className="h-6 w-6" />
+                  <span className="relative block aspect-[4/5] w-full bg-neutral-50">
+                    {imageSrc ? (
+                      // الصورة نفسها تحتوي على اسم التصنيف مطبوعاً فأسفلها
+                      // (مصمَّمة هكذا مسبقاً) — لا نكرّر الاسم فنص HTML فوقها
+                      // تفادياً للتكرار البصري، ونكتفي بعدد المنتجات تحتها.
+                      <Image
+                        src={imageSrc}
+                        alt={category.name_ar}
+                        fill
+                        sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 300px"
+                        className="object-contain object-center p-2"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <span className="flex h-full w-full flex-col items-center justify-center gap-2 p-4">
+                        <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-brand-turquoise-tint text-brand-turquoise-dark">
+                          <CategoryIcon slug={category.slug} name={category.name_ar} className="h-7 w-7" />
+                        </span>
+                        <span className="line-clamp-2 text-center text-sm font-semibold text-neutral-800">
+                          {category.name_ar}
+                        </span>
+                      </span>
+                    )}
                   </span>
-                  <span className="flex min-w-0 flex-col">
-                    <span className="line-clamp-2 text-sm font-semibold text-neutral-800">
-                      {category.name_ar}
-                    </span>
-                    <span className="mt-0.5 text-xs text-neutral-500">
-                      {count} {count === 1 ? "منتج" : "منتجات"}
-                    </span>
+                  <span className="px-3 py-2 text-center text-xs text-neutral-500">
+                    {count} {count === 1 ? "منتج" : "منتجات"}
                   </span>
                 </Link>
               );
