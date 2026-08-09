@@ -27,14 +27,35 @@ function buildTrustPoints(minOrderAmountMad: number): string[] {
   ];
 }
 
+// ترتيب ثابت مطلوب لقسم التصنيفات فالصفحة الرئيسية: الثلاجات، ثم المكيفات
+// سبليت، ثم الغسالات العادية. أي تصنيف آخر (لو ظهر مستقبلاً) يبقى بعدها
+// بنفس ترتيبه الأصلي من getFilteredCategories.
+const HOME_CATEGORY_ORDER = [
+  "refrigerator-spare-parts",
+  "split-ac-parts",
+  "standard-washing-machine-parts",
+];
+
+function sortHomeCategories<T extends { slug: string }>(categories: T[]): T[] {
+  return categories.slice().sort((a, b) => {
+    const indexA = HOME_CATEGORY_ORDER.indexOf(a.slug);
+    const indexB = HOME_CATEGORY_ORDER.indexOf(b.slug);
+    const rankA = indexA === -1 ? HOME_CATEGORY_ORDER.length : indexA;
+    const rankB = indexB === -1 ? HOME_CATEGORY_ORDER.length : indexB;
+    return rankA - rankB;
+  });
+}
+
 export default async function HomePage() {
-  const [categories, productCounts, products, variantProductIds, settings] = await Promise.all([
+  const [categoriesRaw, productCounts, products, variantProductIds, settings] = await Promise.all([
     getFilteredCategories("home.getCategories"),
     safeQuery(() => getProductCountsByCategory(), {}, "home.getProductCountsByCategory"),
     safeQuery(() => getProducts({ limit: 12 }), [], "home.getProducts"),
     safeQuery(() => getProductIdsWithVariants(), new Set<number>(), "home.getProductIdsWithVariants"),
     safeQuery(() => getSettings(), FALLBACK_SETTINGS, "home.getSettings"),
   ]);
+
+  const categories = sortHomeCategories(categoriesRaw);
 
   const whatsappLink = buildWhatsAppLink(
     settings.whatsappNumber,
@@ -84,7 +105,7 @@ export default async function HomePage() {
           <h2 className="border-r-4 border-brand-turquoise pr-3 text-lg font-bold text-neutral-800">
             التصنيفات
           </h2>
-          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          <div className="mt-3 grid grid-cols-1 gap-3">
             {categories.map((category) => {
               const count = productCounts[category.id] ?? 0;
               const imageSrc = getCategoryImage(category.slug);
@@ -103,9 +124,9 @@ export default async function HomePage() {
                         src={imageSrc}
                         alt={category.name_ar}
                         fill
-                        sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 300px"
+                        sizes="(max-width: 1152px) 100vw, 1120px"
                         className="object-contain object-center p-2"
-                        loading="lazy"
+                        priority
                       />
                     ) : (
                       <span className="flex h-full w-full flex-col items-center justify-center gap-2 p-4">
