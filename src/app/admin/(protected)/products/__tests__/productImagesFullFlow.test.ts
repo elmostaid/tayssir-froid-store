@@ -229,4 +229,43 @@ describe("لوحة صور المنتج الكاملة — إضافة/تحويل 
 
     await assertProductFieldsUnchanged();
   });
+
+  // يُحاكي عطل الإنتاج الحقيقي بعد commit 3f4c00c: على Vercel بلا Supabase
+  // Storage مُهيَّأ، uploadProductImage كانت تحاول الكتابة على نظام ملفات
+  // للقراءة فقط. الآن يجب أن تفشل برسالة واضحة فوراً، بلا أي تغيير فالقاعدة
+  // أو الملفات، وبلا استثناء غير مُعالَج قد يُسقط الصفحة لاحقاً.
+  test("Admin: على Vercel بلا تخزين سحابي مُهيَّأ، uploadProductImage تفشل برسالة واضحة بلا أي تغيير", async () => {
+    getAdminUserMock.mockResolvedValue(ADMIN_USER);
+    const originalVercel = process.env.VERCEL;
+    const originalSupabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const originalSupabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    const originalServiceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    process.env.VERCEL = "1";
+    delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    try {
+      const before = await currentImages();
+
+      const fd = new FormData();
+      fd.set("file", pngFile("wont-be-saved.png"));
+      const result = await uploadProductImage(productId, { error: null }, fd);
+
+      expect(result.success).toBeFalsy();
+      expect(result.error).toBeTruthy();
+      expect(result.error).not.toBe("تعذّر حفظ الصورة. حاول مرة أخرى.");
+
+      const after = await currentImages();
+      expect(after).toEqual(before);
+      await assertProductFieldsUnchanged();
+    } finally {
+      if (originalVercel === undefined) delete process.env.VERCEL;
+      else process.env.VERCEL = originalVercel;
+      if (originalSupabaseUrl !== undefined) process.env.NEXT_PUBLIC_SUPABASE_URL = originalSupabaseUrl;
+      if (originalSupabaseAnon !== undefined)
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = originalSupabaseAnon;
+      if (originalServiceRole !== undefined) process.env.SUPABASE_SERVICE_ROLE_KEY = originalServiceRole;
+    }
+  });
 });

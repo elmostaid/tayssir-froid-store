@@ -9,6 +9,7 @@ import {
   saveProductImageFile,
   deleteProductImageFile,
   validateImageFile,
+  StorageNotConfiguredError,
 } from "@/lib/storage/productImages";
 import { getProductImagesAdmin, type AdminProductImage } from "@/lib/queries/adminProducts";
 
@@ -16,6 +17,16 @@ export type ImageActionState = {
   error: string | null;
   success?: boolean;
 };
+
+// رسالة واضحة وصادقة عند عدم تهيئة تخزين الصور السحابي (Supabase Storage)
+// بدل رسالة "حاول مرة أخرى" المضلِّلة — إعادة المحاولة لن تنجح أبداً فهذه
+// الحالة، لأن Vercel لا يسمح بالكتابة على نظام الملفات المحلي.
+function saveFailureMessage(err: unknown): string {
+  if (err instanceof StorageNotConfiguredError) {
+    return "رفع الصور غير مُفعَّل حالياً على الإنتاج (تخزين Supabase غير مُهيَّأ). تواصل مع المطوّر لإكمال الإعداد.";
+  }
+  return "تعذّر حفظ الصورة. حاول مرة أخرى.";
+}
 
 export async function uploadProductImage(
   productId: number,
@@ -50,8 +61,8 @@ export async function uploadProductImage(
   let storagePath: string;
   try {
     storagePath = await saveProductImageFile(productId, file);
-  } catch {
-    return { error: "تعذّر حفظ الصورة. حاول مرة أخرى." };
+  } catch (err) {
+    return { error: saveFailureMessage(err) };
   }
 
   const nextSortOrder = existing.reduce((max, img) => Math.max(max, img.sort_order), 0) + 1;
@@ -115,8 +126,8 @@ export async function replacePrimaryImage(
   let newStoragePath: string;
   try {
     newStoragePath = await saveProductImageFile(productId, file);
-  } catch {
-    return { error: "تعذّر حفظ الصورة. حاول مرة أخرى." };
+  } catch (err) {
+    return { error: saveFailureMessage(err) };
   }
 
   // 2) تحديث قاعدة البيانات — عند الفشل، نحذف الملف الجديد فوراً (تنظيف)
@@ -171,7 +182,10 @@ export async function deleteProductImage(
   if (!image) return { error: null };
 
   await sql`delete from public.product_images where id = ${imageId} and product_id = ${productId}`;
-  await deleteProductImageFile(image.storage_path);
+  // السجل حُذف فعلياً من القاعدة بنجاح — فشل حذف الملف نفسه (تخزين غير
+  // مُهيَّأ، أو أي خطأ تخزين آخر) يبقى ملفاً يتيماً غير ضار، ولا يجب أبداً
+  // أن يُفشل الإجراء بعد نجاح الحذف الفعلي من القاعدة.
+  await deleteProductImageFile(image.storage_path).catch(() => {});
 
   if (image.is_primary) {
     const remaining = await getProductImagesAdmin(productId);

@@ -25,12 +25,17 @@ type ImageWithActions = {
 export function ProductImagesPanel({
   productNameAr,
   images,
+  canUploadImages,
   replacePrimaryAction,
   addImageAction,
   imagesWithActions,
 }: {
   productNameAr: string;
   images: AdminProductImage[];
+  // false عندما يتعذّر رفع/حذف أي ملف فعلياً فهذه البيئة (Vercel بلا
+  // Supabase Storage مُهيَّأ) — نُعطّل أزرار الرفع ونعرض رسالة واضحة بدل
+  // إتاحة محاولة ستفشل حتماً بخطأ غير مفهوم للمستخدم.
+  canUploadImages: boolean;
   replacePrimaryAction: (
     prevState: ImageActionState,
     formData: FormData
@@ -154,17 +159,29 @@ export function ProductImagesPanel({
         ))}
       </div>
 
+      {!canUploadImages && (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          رفع الصور غير مُفعَّل حالياً على هذه البيئة (تخزين Supabase غير مُهيَّأ). عرض الصور
+          الحالية وحذفها وتحديد الرئيسية منها لا يزال يعمل بشكل طبيعي.
+        </p>
+      )}
+
       {/* تغيير الصورة الرئيسية: اختيار → معاينة → حفظ */}
       <div className="flex flex-col gap-2 border-t border-neutral-200 pt-3">
         <span className="text-xs font-semibold text-neutral-700">تغيير الصورة الرئيسية</span>
         <div className="flex flex-wrap items-center gap-2">
-          <label className="min-h-11 cursor-pointer rounded-full border border-neutral-300 bg-white px-4 py-2 text-center text-xs font-semibold text-neutral-700">
+          <label
+            className={`min-h-11 rounded-full border border-neutral-300 bg-white px-4 py-2 text-center text-xs font-semibold text-neutral-700 ${
+              canUploadImages ? "cursor-pointer" : "cursor-not-allowed opacity-50"
+            }`}
+          >
             اختيار صورة
             <input
               ref={replaceInputRef}
               type="file"
               accept="image/*"
               onChange={handleReplaceFileChange}
+              disabled={!canUploadImages}
               className="sr-only"
             />
           </label>
@@ -205,14 +222,18 @@ export function ProductImagesPanel({
       {/* إضافة صورة: اختيار → رفع فوري كصورة إضافية */}
       <div className="flex flex-col gap-2 border-t border-neutral-200 pt-3">
         <div className="flex flex-wrap items-center gap-2">
-          <label className="min-h-11 cursor-pointer rounded-full border border-neutral-300 bg-white px-4 py-2 text-center text-xs font-semibold text-neutral-700">
+          <label
+            className={`min-h-11 rounded-full border border-neutral-300 bg-white px-4 py-2 text-center text-xs font-semibold text-neutral-700 ${
+              canUploadImages && !isAddPending ? "cursor-pointer" : "cursor-not-allowed opacity-50"
+            }`}
+          >
             {isAddPending ? "جارٍ الرفع…" : "إضافة صورة"}
             <input
               ref={addInputRef}
               type="file"
               accept="image/*"
               onChange={handleAddFileChange}
-              disabled={isAddPending}
+              disabled={!canUploadImages || isAddPending}
               className="sr-only"
             />
           </label>

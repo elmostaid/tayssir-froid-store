@@ -35,7 +35,7 @@ const SECONDARY: AdminProductImage = {
   is_primary: false,
 };
 
-function renderPanel(images: AdminProductImage[]) {
+function renderPanel(images: AdminProductImage[], canUploadImages = true) {
   // التوقيع الكامل (ImageActionState, FormData) مطلوب هنا فقط ليلتقط vi.fn
   // نوع args الصحيح لاحقاً فـmock.calls (وليس لأن الاختبار يقرأ المعاملين).
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -55,6 +55,7 @@ function renderPanel(images: AdminProductImage[]) {
     <ProductImagesPanel
       productNameAr="منتج اختبار"
       images={images}
+      canUploadImages={canUploadImages}
       replacePrimaryAction={replacePrimaryAction}
       addImageAction={addImageAction}
       imagesWithActions={images
@@ -140,5 +141,18 @@ describe("ProductImagesPanel — كارت صور المنتج فـ/admin/product
     await vi.waitFor(() => expect(addImageAction).toHaveBeenCalledTimes(1));
     const [, formData] = addImageAction.mock.calls[0];
     expect((formData.get("file") as File).name).toBe("extra.png");
+  });
+
+  test("canUploadImages=false: تعطيل حقول اختيار الملف وعرض رسالة واضحة بدل السماح برفع سيفشل", () => {
+    renderPanel([PRIMARY], false);
+    expect(
+      screen.getByText(/رفع الصور غير مُفعَّل حالياً على هذه البيئة/)
+    ).toBeTruthy();
+
+    const fileInputs = document.querySelectorAll('input[type="file"]');
+    expect(fileInputs.length).toBe(2);
+    fileInputs.forEach((input) => {
+      expect((input as HTMLInputElement).disabled).toBe(true);
+    });
   });
 });

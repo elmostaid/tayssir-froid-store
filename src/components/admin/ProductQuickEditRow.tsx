@@ -24,6 +24,7 @@ export function ProductQuickEditRow({
   product,
   action,
   images,
+  canUploadImages,
   replacePrimaryAction,
   addImageAction,
   imagesWithActions,
@@ -31,6 +32,7 @@ export function ProductQuickEditRow({
   product: AdminProduct;
   action: (prevState: ProductFormState, formData: FormData) => Promise<ProductFormState>;
   images: AdminProductImage[];
+  canUploadImages: boolean;
   replacePrimaryAction: (prevState: ImageActionState, formData: FormData) => Promise<ImageActionState>;
   addImageAction: (prevState: ImageActionState, formData: FormData) => Promise<ImageActionState>;
   imagesWithActions: {
@@ -48,6 +50,7 @@ export function ProductQuickEditRow({
         <ProductImagesPanel
           productNameAr={product.name_ar}
           images={images}
+          canUploadImages={canUploadImages}
           replacePrimaryAction={replacePrimaryAction}
           addImageAction={addImageAction}
           imagesWithActions={imagesWithActions}

@@ -29,11 +29,38 @@ export function validateImageFile(file: File): string | null {
   return null;
 }
 
-// يتفعّل تلقائياً فقط إذا أُضيفت مفاتيح Supabase الحقيقية لاحقاً في .env
-// (NEXT_PUBLIC_SUPABASE_URL/ANON_KEY وSUPABASE_SERVICE_ROLE_KEY). لا حساب
-// مفعّل الآن، فيبقى هذا المسار غير مستعمل والتخزين المحلي هو الفعلي.
-function isRemoteStorageConfigured(): boolean {
+// يتفعّل تلقائياً فقط إذا أُضيفت مفاتيح Supabase الحقيقية فـ.env
+// (NEXT_PUBLIC_SUPABASE_URL/ANON_KEY وSUPABASE_SERVICE_ROLE_KEY). مُصدَّرة
+// لأن الواجهة (صفحة /admin/products) تحتاج معرفة هذه الحالة مسبقاً لتعطيل
+// أزرار الرفع وعرض رسالة واضحة بدل محاولة رفع سيفشل حتماً.
+export function isRemoteStorageConfigured(): boolean {
   return isSupabaseConfigured() && !!process.env.SUPABASE_SERVICE_ROLE_KEY;
+}
+
+// Vercel (والبيئات الخادمية المشابهة) توفّر نظام ملفات للقراءة فقط خارج
+// /tmp — أي محاولة fs.writeFile/fs.unlink داخل public/ هناك تفشل حتماً
+// (EROFS). متغيّر VERCEL مضبوط تلقائياً من المنصة نفسها فكل بيئاتها
+// (Production/Preview/Development)، فهو الإشارة الموثوقة لمنع أي كتابة/حذف
+// محلي بدل الاعتماد على NODE_ENV وحدها.
+function isRunningOnVercel(): boolean {
+  return !!process.env.VERCEL;
+}
+
+/**
+ * true فقط عندما يكون رفع/حذف صور فعلي ممكناً فعلاً فهذه البيئة: إما تخزين
+ * Supabase Storage الحقيقي مُهيَّأ، أو نظام ملفات محلي قابل للكتابة (تطوير
+ * محلي، وليس Vercel). تستعملها الواجهة (صفحة /admin/products) لتعطيل أزرار
+ * الرفع وعرض رسالة واضحة عند عدم التهيئة، بدل محاولة رفع ستفشل حتماً.
+ */
+export function canWriteProductImages(): boolean {
+  return isRemoteStorageConfigured() || !isRunningOnVercel();
+}
+
+export class StorageNotConfiguredError extends Error {
+  constructor() {
+    super("STORAGE_NOT_CONFIGURED");
+    this.name = "StorageNotConfiguredError";
+  }
 }
 
 /**
@@ -63,6 +90,12 @@ export async function saveProductImageFile(productId: number, file: File): Promi
     return storagePath;
   }
 
+  if (isRunningOnVercel()) {
+    // ممنوع استعمال نظام الملفات المحلي كحل للصور على Vercel — فشل واضح
+    // فوراً بدل محاولة كتابة ستفشل حتماً (وقد تُخلّف حالة غير متوقَّعة).
+    throw new StorageNotConfiguredError();
+  }
+
   const dir = path.join(LOCAL_IMAGES_ROOT, String(productId));
   await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(path.join(dir, filename), buffer);
@@ -77,6 +110,10 @@ export async function deleteProductImageFile(storagePath: string): Promise<void>
       await client.storage.from("product-images").remove([objectKey]);
     }
     return;
+  }
+
+  if (isRunningOnVercel()) {
+    throw new StorageNotConfiguredError();
   }
 
   const resolvedRoot = path.resolve(LOCAL_IMAGES_ROOT);

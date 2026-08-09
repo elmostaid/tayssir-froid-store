@@ -1,8 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
-import { listProductsAdmin, getImagesForProductsAdmin } from "@/lib/queries/adminProducts";
+import {
+  listProductsAdmin,
+  getImagesForProductsAdmin,
+  type AdminProductImage,
+} from "@/lib/queries/adminProducts";
 import { getAllCategoriesAdmin } from "@/lib/queries/adminCategories";
+import { canWriteProductImages } from "@/lib/storage/productImages";
 import { quickUpdateProduct } from "@/app/admin/(protected)/products/actions";
 import {
   replacePrimaryImage,
@@ -61,13 +66,23 @@ export default async function AdminProductsPage({ searchParams }: Props) {
     getAllCategoriesAdmin(),
   ]);
 
-  const allImages = await getImagesForProductsAdmin(products.map((p) => p.id));
-  const imagesByProductId = new Map<number, typeof allImages>();
+  // جلب دفعة واحدة لصور كل المنتجات المعروضة — مُغلَّف بـtry/catch عمداً: أي
+  // خطأ هنا (اتصال قاعدة بيانات، عمود مفقود...) يجب ألا يُسقط صفحة
+  // /admin/products بأكملها؛ يكفي أن تظهر بطاقات المنتجات بلا صور مؤقتاً.
+  let allImages: AdminProductImage[] = [];
+  try {
+    allImages = await getImagesForProductsAdmin(products.map((p) => p.id));
+  } catch (err) {
+    console.error("getImagesForProductsAdmin failed — rendering /admin/products without images", err);
+  }
+  const imagesByProductId = new Map<number, AdminProductImage[]>();
   for (const img of allImages) {
     const list = imagesByProductId.get(img.product_id);
     if (list) list.push(img);
     else imagesByProductId.set(img.product_id, [img]);
   }
+
+  const canUpload = canWriteProductImages();
 
   return (
     <div>
@@ -142,6 +157,7 @@ export default async function AdminProductsPage({ searchParams }: Props) {
                 product={product}
                 action={quickUpdateProduct.bind(null, product.id)}
                 images={productImages}
+                canUploadImages={canUpload}
                 replacePrimaryAction={replacePrimaryImage.bind(null, product.id)}
                 addImageAction={uploadProductImage.bind(null, product.id)}
                 imagesWithActions={productImages.map((image) => ({
