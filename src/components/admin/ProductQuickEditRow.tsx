@@ -24,6 +24,7 @@ export function ProductQuickEditRow({
   product,
   action,
   images,
+  imageUrlByPath,
   canUploadImages,
   replacePrimaryAction,
   addImageAction,
@@ -32,6 +33,9 @@ export function ProductQuickEditRow({
   product: AdminProduct;
   action: (prevState: ProductFormState, formData: FormData) => Promise<ProductFormState>;
   images: AdminProductImage[];
+  // storage_path → رابط جاهز للعرض، مُحلَّل من جهة الخادم (محلي أو Supabase
+  // Storage الحقيقي حسب مكان وجود الملف فعلياً). راجع resolveProductImageUrl.
+  imageUrlByPath: Record<string, string>;
   canUploadImages: boolean;
   replacePrimaryAction: (prevState: ImageActionState, formData: FormData) => Promise<ImageActionState>;
   addImageAction: (prevState: ImageActionState, formData: FormData) => Promise<ImageActionState>;
@@ -50,6 +54,7 @@ export function ProductQuickEditRow({
         <ProductImagesPanel
           productNameAr={product.name_ar}
           images={images}
+          imageUrlByPath={imageUrlByPath}
           canUploadImages={canUploadImages}
           replacePrimaryAction={replacePrimaryAction}
           addImageAction={addImageAction}

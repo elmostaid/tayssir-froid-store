@@ -24,6 +24,7 @@ import {
   moveImageDown,
 } from "@/app/admin/(protected)/products/imageActions";
 import { MAX_IMAGES_PER_PRODUCT } from "@/lib/storage/productImages";
+import { resolveProductImageUrls } from "@/lib/storage/resolveProductImageUrl";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +65,11 @@ export default async function EditProductPage({ params }: Props) {
   if (!product) {
     notFound();
   }
+
+  // نفس الحل المستعمل فـ/admin/products: نحل رابط كل صورة من جهة الخادم
+  // (محلي للصور القديمة، أو Supabase Storage الحقيقي للصور المرفوعة حديثاً)
+  // بدل ترك المكوّن يخمّن — resolveProductImageUrls لا ترمي أي استثناء أبداً.
+  const imageUrlByPath = await resolveProductImageUrls(images.map((img) => img.storage_path));
 
   const boundUpdateProduct = updateProduct.bind(null, productId);
   const boundCreateVariant = createVariant.bind(null, productId);
@@ -112,6 +118,7 @@ export default async function EditProductPage({ params }: Props) {
         <div className="mt-4">
           <ImageManager
             images={images}
+            imageUrlByPath={imageUrlByPath}
             uploadAction={boundUploadImage}
             imagesWithActions={imagesWithActions}
             maxImages={MAX_IMAGES_PER_PRODUCT}

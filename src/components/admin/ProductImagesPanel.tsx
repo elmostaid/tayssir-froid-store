@@ -25,6 +25,7 @@ type ImageWithActions = {
 export function ProductImagesPanel({
   productNameAr,
   images,
+  imageUrlByPath = {},
   canUploadImages,
   replacePrimaryAction,
   addImageAction,
@@ -32,6 +33,11 @@ export function ProductImagesPanel({
 }: {
   productNameAr: string;
   images: AdminProductImage[];
+  // storage_path → رابط جاهز للعرض، مُحلَّل من جهة الخادم (محلي للصور
+  // القديمة، أو Supabase Storage الحقيقي getPublicUrl للصور المرفوعة حديثاً
+  // — راجع resolveProductImageUrl). عند غياب مسار فـهذا الكائن (نادر)، نرجع
+  // لـresolveImageUrl التركيبي القديم كملاذ أخير بدل عدم عرض شيء إطلاقاً.
+  imageUrlByPath?: Record<string, string>;
   // false عندما يتعذّر رفع/حذف أي ملف فعلياً فهذه البيئة (Vercel بلا
   // Supabase Storage مُهيَّأ) — نُعطّل أزرار الرفع ونعرض رسالة واضحة بدل
   // إتاحة محاولة ستفشل حتماً بخطأ غير مفهوم للمستخدم.
@@ -46,6 +52,8 @@ export function ProductImagesPanel({
   ) => Promise<ImageActionState>;
   imagesWithActions: ImageWithActions[];
 }) {
+  const imageSrc = (storagePath: string) => imageUrlByPath[storagePath] ?? resolveImageUrl(storagePath);
+
   const ordered = [...images].sort((a, b) => {
     if (a.is_primary !== b.is_primary) return a.is_primary ? -1 : 1;
     return a.sort_order - b.sort_order;
@@ -144,7 +152,7 @@ export function ProductImagesPanel({
             className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg border border-neutral-200 bg-white"
           >
             <Image
-              src={resolveImageUrl(img.storage_path)}
+              src={imageSrc(img.storage_path)}
               alt={img.alt_text_ar ?? productNameAr}
               fill
               sizes="80px"
@@ -258,7 +266,7 @@ export function ProductImagesPanel({
                   >
                     <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded bg-neutral-100">
                       <Image
-                        src={resolveImageUrl(image.storage_path)}
+                        src={imageSrc(image.storage_path)}
                         alt={image.alt_text_ar ?? productNameAr}
                         fill
                         sizes="48px"

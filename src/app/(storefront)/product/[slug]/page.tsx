@@ -9,6 +9,7 @@ import {
 } from "@/lib/queries/catalog";
 import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 import { resolveImageUrl } from "@/lib/images";
+import { resolveProductImageUrl, resolveProductImageUrls } from "@/lib/storage/resolveProductImageUrl";
 import { formatMad, formatMinOrderAmount } from "@/lib/format";
 import { buildProductWhatsAppLink } from "@/lib/whatsapp";
 import { safeQuery } from "@/lib/safeQuery";
@@ -35,7 +36,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const description = product.meta_description ?? product.description_ar ?? undefined;
   const siteUrl = getSiteUrl();
   const path = `/product/${product.slug}`;
-  const imageUrl = product.primary_image_path ? resolveImageUrl(product.primary_image_path) : undefined;
+  const imageUrl = product.primary_image_path
+    ? await resolveProductImageUrl(product.primary_image_path)
+    : undefined;
 
   return {
     title,
@@ -72,6 +75,12 @@ export default async function ProductPage({ params }: Props) {
   ]);
 
   const mainImage = images[0];
+  // نفس الحل المستعمل فـ/admin/products: نحل رابط كل صورة من جهة الخادم
+  // (محلي للصور القديمة، أو Supabase Storage الحقيقي للصور المرفوعة حديثاً
+  // — بما فيها صورة أصبحت رئيسية للتو من لوحة الإدارة). لا ترمي أي استثناء.
+  const imageUrlByPath = await resolveProductImageUrls(images.map((img) => img.storage_path));
+  const resolveGalleryUrl = (storagePath: string) => imageUrlByPath[storagePath] ?? resolveImageUrl(storagePath);
+  const mainImageUrl = mainImage ? resolveGalleryUrl(mainImage.storage_path) : null;
   const whatsappLink = buildProductWhatsAppLink(settings.whatsappNumber, product.name_ar, product.sku);
   const isUnavailable = product.status === "out_of_stock" || product.stock_quantity <= 0;
   const statusLabel =
@@ -89,7 +98,7 @@ export default async function ProductPage({ params }: Props) {
     "@type": "Product",
     name: product.name_ar,
     sku: product.sku,
-    ...(mainImage ? { image: [resolveImageUrl(mainImage.storage_path)] } : {}),
+    ...(mainImageUrl ? { image: [mainImageUrl] } : {}),
     ...(product.description_ar ? { description: product.description_ar } : {}),
     offers: {
       "@type": "Offer",
@@ -124,9 +133,9 @@ export default async function ProductPage({ params }: Props) {
       <div className="mt-4 grid gap-6 md:grid-cols-2">
         <div>
           <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-neutral-200 bg-neutral-100">
-            {mainImage ? (
+            {mainImage && mainImageUrl ? (
               <Image
-                src={resolveImageUrl(mainImage.storage_path)}
+                src={mainImageUrl}
                 alt={mainImage.alt_text_ar ?? product.name_ar}
                 fill
                 sizes="(max-width: 768px) 100vw, 500px"
@@ -147,7 +156,7 @@ export default async function ProductPage({ params }: Props) {
                   className="relative aspect-square overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100"
                 >
                   <Image
-                    src={resolveImageUrl(image.storage_path)}
+                    src={resolveGalleryUrl(image.storage_path)}
                     alt={image.alt_text_ar ?? product.name_ar}
                     fill
                     sizes="120px"

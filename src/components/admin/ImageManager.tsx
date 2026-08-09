@@ -11,6 +11,7 @@ const initialState: ImageActionState = { error: null };
 
 function ImageRow({
   image,
+  imageUrl,
   isFirst,
   isLast,
   updateAltAction,
@@ -20,6 +21,7 @@ function ImageRow({
   moveDownAction,
 }: {
   image: AdminProductImage;
+  imageUrl: string;
   isFirst: boolean;
   isLast: boolean;
   updateAltAction: (
@@ -48,7 +50,7 @@ function ImageRow({
     <div className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-3 sm:flex-row sm:items-start">
       <div className="relative h-28 w-28 shrink-0 overflow-hidden rounded-lg bg-neutral-100">
         <Image
-          src={resolveImageUrl(image.storage_path)}
+          src={imageUrl}
           alt={image.alt_text_ar ?? ""}
           fill
           sizes="112px"
@@ -176,11 +178,16 @@ function UploadForm({
 
 export function ImageManager({
   images,
+  imageUrlByPath = {},
   uploadAction,
   imagesWithActions,
   maxImages,
 }: {
   images: AdminProductImage[];
+  // storage_path → رابط جاهز للعرض، مُحلَّل من جهة الخادم — راجع
+  // resolveProductImageUrl. عند غياب مسار (نادر) نرجع لـresolveImageUrl
+  // التركيبي القديم كملاذ أخير.
+  imageUrlByPath?: Record<string, string>;
   uploadAction: (prevState: ImageActionState, formData: FormData) => Promise<ImageActionState>;
   imagesWithActions: {
     image: AdminProductImage;
@@ -206,6 +213,7 @@ export function ImageManager({
         <ImageRow
           key={entry.image.id}
           image={entry.image}
+          imageUrl={imageUrlByPath[entry.image.storage_path] ?? resolveImageUrl(entry.image.storage_path)}
           isFirst={index === 0}
           isLast={index === ordered.length - 1}
           updateAltAction={entry.updateAltAction}

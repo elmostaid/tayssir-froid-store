@@ -8,6 +8,7 @@ import {
 } from "@/lib/queries/adminProducts";
 import { getAllCategoriesAdmin } from "@/lib/queries/adminCategories";
 import { canWriteProductImages } from "@/lib/storage/productImages";
+import { resolveProductImageUrls } from "@/lib/storage/resolveProductImageUrl";
 import { quickUpdateProduct } from "@/app/admin/(protected)/products/actions";
 import {
   replacePrimaryImage,
@@ -81,6 +82,11 @@ export default async function AdminProductsPage({ searchParams }: Props) {
     if (list) list.push(img);
     else imagesByProductId.set(img.product_id, [img]);
   }
+
+  // نفس الحل الآمن ضد صورة معطوبة (broken image): نحل رابط كل صورة من جهة
+  // الخادم (fs.access محلياً، وإلا getPublicUrl من Supabase Storage الحقيقي)
+  // ونمرّره جاهزاً للمكوّن — resolveProductImageUrls لا ترمي أي استثناء أبداً.
+  const imageUrlByPath = await resolveProductImageUrls(allImages.map((img) => img.storage_path));
 
   const canUpload = canWriteProductImages();
 
@@ -157,6 +163,7 @@ export default async function AdminProductsPage({ searchParams }: Props) {
                 product={product}
                 action={quickUpdateProduct.bind(null, product.id)}
                 images={productImages}
+                imageUrlByPath={imageUrlByPath}
                 canUploadImages={canUpload}
                 replacePrimaryAction={replacePrimaryImage.bind(null, product.id)}
                 addImageAction={uploadProductImage.bind(null, product.id)}
