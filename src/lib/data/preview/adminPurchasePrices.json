@@ -498,5 +498,77 @@
     {
         "sku": "TF-AC-044",
         "purchase_price": "280.00"
+    },
+    {
+        "sku": "TF-CK-001",
+        "purchase_price": "6.50"
+    },
+    {
+        "sku": "TF-CK-002",
+        "purchase_price": "12.00"
+    },
+    {
+        "sku": "TF-CK-003",
+        "purchase_price": "3.50"
+    },
+    {
+        "sku": "TF-CK-004",
+        "purchase_price": "3.50"
+    },
+    {
+        "sku": "TF-CK-005",
+        "purchase_price": "2.70"
+    },
+    {
+        "sku": "TF-CK-006",
+        "purchase_price": "2.70"
+    },
+    {
+        "sku": "TF-CK-007",
+        "purchase_price": "3.00"
+    },
+    {
+        "sku": "TF-CK-008",
+        "purchase_price": "3.50"
+    },
+    {
+        "sku": "TF-CK-009",
+        "purchase_price": "1.90"
+    },
+    {
+        "sku": "TF-CK-010",
+        "purchase_price": "2.50"
+    },
+    {
+        "sku": "TF-CK-011",
+        "purchase_price": "2.50"
+    },
+    {
+        "sku": "TF-CK-012",
+        "purchase_price": "1.90"
+    },
+    {
+        "sku": "TF-CK-013",
+        "purchase_price": "1.90"
+    },
+    {
+        "sku": "TF-CK-014",
+        "purchase_price": "2.50"
+    },
+    {
+        "sku": "TF-CK-015",
+        "purchase_price": "2.50"
+    },
+    {
+        "sku": "TF-CK-016",
+        "purchase_price": "4.30"
+    },
+    {
+        "sku": "TF-CK-017",
+        "purchase_price": "3.80"
+    },
+    {
+        "sku": "TF-CK-018",
+        "purchase_price": "4.50"
     }
 ]

@@ -1366,5 +1366,149 @@
   "alt_text_ar": "صورة غاز R22 وزن 800 غرام ألفا كول",
   "sort_order": 1,
   "is_primary": true
+ },
+ {
+  "id": 184,
+  "product_id": 169,
+  "storage_path": "product-images/TF-CK-001/01__%D9%84%D8%A7%D9%83%D8%B3%20%D9%83%D9%88%D9%83%D9%88%D8%A9%20%D8%B4%D9%86%D9%88%D8%A9.png",
+  "alt_text_ar": "صورة لاكس كوكوة شنوة",
+  "sort_order": 1,
+  "is_primary": true
+ },
+ {
+  "id": 185,
+  "product_id": 170,
+  "storage_path": "product-images/TF-CK-002/02__%D9%84%D8%A7%D9%83%D8%B3%20%D9%83%D9%88%D9%83%D9%88%D8%A9%20%D8%B7%D8%A7%D9%84%D9%8A%D8%A7%D9%86.png",
+  "alt_text_ar": "صورة لاكس كوكوة طاليان",
+  "sort_order": 1,
+  "is_primary": true
+ },
+ {
+  "id": 186,
+  "product_id": 171,
+  "storage_path": "product-images/TF-CK-003/03__%D8%B5%D9%81%D8%A7%D8%B1%D8%A9%20%D9%83%D9%88%D9%83%D9%88%D8%A9%20%D9%85%D9%88%D8%AF%D9%8A%D9%84%201.png",
+  "alt_text_ar": "صورة صفارة كوكوة موديل 1",
+  "sort_order": 1,
+  "is_primary": true
+ },
+ {
+  "id": 187,
+  "product_id": 172,
+  "storage_path": "product-images/TF-CK-004/04__%D8%B5%D9%81%D8%A7%D8%B1%D8%A9%20%D9%83%D9%88%D9%83%D9%88%D8%A9%20%D9%85%D9%88%D8%AF%D9%8A%D9%84%202.png",
+  "alt_text_ar": "صورة صفارة كوكوة موديل 2",
+  "sort_order": 1,
+  "is_primary": true
+ },
+ {
+  "id": 188,
+  "product_id": 173,
+  "storage_path": "product-images/TF-CK-005/05__%D8%B5%D9%81%D8%A7%D8%B1%D8%A9%20%D9%83%D9%88%D9%83%D9%88%D8%A9%20%D9%85%D9%88%D8%AF%D9%8A%D9%84%203.png",
+  "alt_text_ar": "صورة صفارة كوكوة موديل 3",
+  "sort_order": 1,
+  "is_primary": true
+ },
+ {
+  "id": 189,
+  "product_id": 174,
+  "storage_path": "product-images/TF-CK-006/06__%D8%B5%D9%81%D8%A7%D8%B1%D8%A9%20%D9%83%D9%88%D9%83%D9%88%D8%A9%20%D9%85%D9%88%D8%AF%D9%8A%D9%84%204.png",
+  "alt_text_ar": "صورة صفارة كوكوة موديل 4",
+  "sort_order": 1,
+  "is_primary": true
+ },
+ {
+  "id": 190,
+  "product_id": 175,
+  "storage_path": "product-images/TF-CK-007/07__%D8%A8%D9%88%D8%A7%D9%86%D9%8A%20%D9%81%D9%84%D8%A7%D8%B4%20%D9%84%D8%A7%D9%83%D8%B3%20%D8%B7%D8%A7%D9%84%D9%8A%D8%A7%D9%86.png",
+  "alt_text_ar": "صورة بواني فلاش لاكس طاليان",
+  "sort_order": 1,
+  "is_primary": true
+ },
+ {
+  "id": 191,
+  "product_id": 176,
+  "storage_path": "product-images/TF-CK-008/08__%D8%A8%D9%88%D8%A7%D9%86%D9%8A%20%D9%83%D8%A7%D8%B1%D9%8A%D8%A9%20%D9%84%D8%A7%D9%83%D8%B3%20%D8%A8%D8%B1%D8%AA%D8%BA%D8%A7%D9%84.png",
+  "alt_text_ar": "صورة بواني كارية لاكس برتغال",
+  "sort_order": 1,
+  "is_primary": true
+ },
+ {
+  "id": 192,
+  "product_id": 177,
+  "storage_path": "product-images/TF-CK-009/09__%D9%8A%D8%AF%20%D9%83%D9%88%D9%83%D9%88%D8%A9%20%D8%B4%D9%86%D9%88%D8%A9%202%20%D8%AA%D9%82%D8%A7%D8%A8%20%D8%B5%D8%BA%D9%8A%D8%B1%D8%A9.png",
+  "alt_text_ar": "صورة يد كوكوة شنوة 2 تقاب صغيرة",
+  "sort_order": 1,
+  "is_primary": true
+ },
+ {
+  "id": 193,
+  "product_id": 178,
+  "storage_path": "product-images/TF-CK-010/10__%D9%8A%D8%AF%20%D9%83%D9%88%D9%83%D9%88%D8%A9%20%D8%B4%D9%86%D9%88%D8%A9%202%20%D8%AA%D9%82%D8%A7%D8%A8%20%D9%83%D8%A8%D9%8A%D8%B1%D8%A9.png",
+  "alt_text_ar": "صورة يد كوكوة شنوة 2 تقاب كبيرة",
+  "sort_order": 1,
+  "is_primary": true
+ },
+ {
+  "id": 194,
+  "product_id": 179,
+  "storage_path": "product-images/TF-CK-011/11__%D9%8A%D8%AF%20%D9%83%D9%88%D9%83%D9%88%D8%A9%20%D9%85%D8%A7%D8%AC%D9%8A.png",
+  "alt_text_ar": "صورة يد كوكوة ماجي",
+  "sort_order": 1,
+  "is_primary": true
+ },
+ {
+  "id": 195,
+  "product_id": 180,
+  "storage_path": "product-images/TF-CK-012/12__%D9%8A%D8%AF%20%D9%83%D9%88%D9%83%D9%88%D8%A9%20%D8%B3%D9%8A%D8%A8.png",
+  "alt_text_ar": "صورة يد كوكوة سيب",
+  "sort_order": 1,
+  "is_primary": true
+ },
+ {
+  "id": 196,
+  "product_id": 181,
+  "storage_path": "product-images/TF-CK-013/13__%D8%A8%D9%88%D8%A7%D9%86%D9%8A%20%D9%84%D8%A7%D9%83%D8%B3%20%D8%B4%D9%86%D9%88%D8%A9.png",
+  "alt_text_ar": "صورة بواني لاكس شنوة",
+  "sort_order": 1,
+  "is_primary": true
+ },
+ {
+  "id": 197,
+  "product_id": 182,
+  "storage_path": "product-images/TF-CK-014/14__%D8%B1%D8%A7%D8%B3%20%D8%B5%D9%81%D8%A7%D8%B1%D8%A9%20%D8%B1%D9%82%D9%8A%D9%82.png",
+  "alt_text_ar": "صورة راس صفارة رقيق",
+  "sort_order": 1,
+  "is_primary": true
+ },
+ {
+  "id": 198,
+  "product_id": 183,
+  "storage_path": "product-images/TF-CK-015/15__%D8%B1%D8%A7%D8%B3%20%D8%B5%D9%81%D8%A7%D8%B1%D8%A9%20%D9%86%D8%AD%D8%A7%D8%B3.png",
+  "alt_text_ar": "صورة راس صفارة نحاس",
+  "sort_order": 1,
+  "is_primary": true
+ },
+ {
+  "id": 199,
+  "product_id": 184,
+  "storage_path": "product-images/TF-CK-016/16__%D8%B3%D9%88%D8%A8%D8%A7%D8%A8%20%D8%B3%D9%8A%D9%83%D9%8A%D8%B1%D9%8A%D8%AA%D9%8A%20%D9%83%D9%88%D9%83%D9%88%D8%A9.png",
+  "alt_text_ar": "صورة سوباب سيكيريتي كوكوة",
+  "sort_order": 1,
+  "is_primary": true
+ },
+ {
+  "id": 200,
+  "product_id": 185,
+  "storage_path": "product-images/TF-CK-017/17__%D8%B3%D9%88%D8%A8%D8%A7%D8%A8%20%D8%B3%D9%8A%D9%83%D9%8A%D8%B1%D9%8A%D8%AA%D9%8A%20%D9%83%D9%88%D9%83%D9%88%D8%A9%20%D8%B4%D9%86%D9%88%D8%A9.png",
+  "alt_text_ar": "صورة سوباب سيكيريتي كوكوة شنوة",
+  "sort_order": 1,
+  "is_primary": true
+ },
+ {
+  "id": 201,
+  "product_id": 186,
+  "storage_path": "product-images/TF-CK-018/18__%D8%B3%D9%88%D8%A8%D8%A7%D8%A8%20%D8%B3%D9%8A%D9%83%D9%8A%D8%B1%D9%8A%D8%AA%D9%8A%20%D9%83%D9%88%D9%83%D9%88%D8%A9%20%D8%B3%D9%8A%D8%A8.png",
+  "alt_text_ar": "صورة سوباب سيكيريتي كوكوة سيب",
+  "sort_order": 1,
+  "is_primary": true
  }
 ]
