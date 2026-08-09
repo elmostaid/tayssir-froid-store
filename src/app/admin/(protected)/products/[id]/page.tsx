@@ -9,6 +9,7 @@ import {
 import { ProductForm } from "@/components/admin/ProductForm";
 import { VariantManager } from "@/components/admin/VariantManager";
 import { ImageManager } from "@/components/admin/ImageManager";
+import { ChangePrimaryImageForm } from "@/components/admin/ChangePrimaryImageForm";
 import {
   updateProduct,
   createVariant,
@@ -22,6 +23,7 @@ import {
   setPrimaryImage,
   moveImageUp,
   moveImageDown,
+  replacePrimaryImage,
 } from "@/app/admin/(protected)/products/imageActions";
 import { MAX_IMAGES_PER_PRODUCT } from "@/lib/storage/productImages";
 
@@ -73,6 +75,9 @@ export default async function EditProductPage({ params }: Props) {
     deleteAction: deleteVariant.bind(null, variant.id, productId),
   }));
 
+  const boundReplacePrimaryImage = replacePrimaryImage.bind(null, productId);
+  const currentPrimaryImage = images.find((image) => image.is_primary) ?? null;
+
   const boundUploadImage = uploadProductImage.bind(null, productId);
   const imagesWithActions = images.map((image) => ({
     image,
@@ -108,7 +113,18 @@ export default async function EditProductPage({ params }: Props) {
       </div>
 
       <div>
-        <h2 className="text-lg font-bold text-neutral-800">الصور (حتى {MAX_IMAGES_PER_PRODUCT})</h2>
+        <h2 className="text-lg font-bold text-neutral-800">تغيير الصورة</h2>
+        <div className="mt-4">
+          <ChangePrimaryImageForm
+            action={boundReplacePrimaryImage}
+            currentImagePath={currentPrimaryImage?.storage_path ?? null}
+            currentImageAlt={currentPrimaryImage?.alt_text_ar ?? product.name_ar}
+          />
+        </div>
+      </div>
+
+      <div>
+        <h2 className="text-lg font-bold text-neutral-800">كل الصور (حتى {MAX_IMAGES_PER_PRODUCT})</h2>
         <div className="mt-4">
           <ImageManager
             images={images}

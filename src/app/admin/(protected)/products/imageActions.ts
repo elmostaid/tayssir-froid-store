@@ -64,6 +64,64 @@ export async function uploadProductImage(
   return { error: null, success: true };
 }
 
+/**
+ * تغيير الصورة الرئيسية للمنتج بخطوة واحدة (زر "تغيير الصورة" فصفحة تعديل
+ * المنتج): يحفظ الملف الجديد بنفس نظام storage الحالي (saveProductImageFile
+ * — محلي أو Supabase Storage حسب الإعداد)، ثم يحدّث سجل الصورة الرئيسية
+ * الموجودة فمكانه (نفس id، يبقى is_primary = true) بدل إنشاء سجل جديد، فلا
+ * يمكن أبداً أن ينتج عن هذا سجل "رئيسية" مكرر. إن لم يكن للمنتج أي صورة بعد
+ * (حالة نادرة)، يُنشأ سجل واحد جديد كرئيسية. لا يُلمس أي حقل آخر فالمنتج ولا
+ * أي منتج آخر.
+ */
+export async function replacePrimaryImage(
+  productId: number,
+  _prevState: ImageActionState,
+  formData: FormData
+): Promise<ImageActionState> {
+  const admin = await getAdminUser();
+  if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+  if (!isOwnerAdmin(admin)) return { error: "هذا الإجراء مقصور على صاحب الحساب (Admin)." };
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { error: "اختر صورة أولاً." };
+  }
+
+  const fileError = validateImageFile(file);
+  if (fileError) return { error: fileError };
+
+  const existing = await getProductImagesAdmin(productId);
+  const currentPrimary = existing.find((img) => img.is_primary) ?? null;
+
+  let storagePath: string;
+  try {
+    storagePath = await saveProductImageFile(productId, file);
+  } catch {
+    return { error: "تعذّر حفظ الصورة. حاول مرة أخرى." };
+  }
+
+  if (currentPrimary) {
+    // تحديث السجل الموجود فمكانه (نفس id) — لا سجل جديد، ولا سجل رئيسية
+    // مكرر بأي شكل. الملف القديم يُحذف من التخزين فقط بعد نجاح التحديث فـ
+    // قاعدة البيانات، تفادياً لفقدان الرابط الصالح لو فشل الحذف بمنتصف
+    // العملية.
+    await sql`
+      update public.product_images
+      set storage_path = ${storagePath}
+      where id = ${currentPrimary.id} and product_id = ${productId}
+    `;
+    await deleteProductImageFile(currentPrimary.storage_path);
+  } else {
+    await sql`
+      insert into public.product_images (product_id, storage_path, alt_text_ar, sort_order, is_primary)
+      values (${productId}, ${storagePath}, null, 1, true)
+    `;
+  }
+
+  revalidatePath(`/admin/products/${productId}`);
+  return { error: null, success: true };
+}
+
 export async function deleteProductImage(
   imageId: number,
   productId: number
