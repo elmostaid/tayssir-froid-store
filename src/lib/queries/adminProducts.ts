@@ -170,18 +170,17 @@ export async function getProductImagesAdmin(productId: number): Promise<AdminPro
   `;
 }
 
-export type AdminPrimaryImage = { product_id: number; image_id: number; storage_path: string };
-
-// صورة رئيسية واحدة فقط لكل منتج فقائمة products.page — لعرض مصغَّر (thumbnail)
-// بجانب زر "تغيير الصورة" فكل كارت، بدون تحميل كل صور كل منتج (ImageManager
-// الكامل يبقى فصفحة تعديل المنتج المفرد فقط).
-export async function getPrimaryImagesForProductsAdmin(
+// كل صور كل المنتجات المعروضة فقائمة /admin/products دفعة واحدة (بدل استعلام
+// منفصل لكل كارت) — تُستعمل لبناء لوحة صور كاملة (كل الصور + شارة "الصورة
+// الرئيسية" + التحكم فيها) داخل كل كارت منتج مباشرة فالقائمة.
+export async function getImagesForProductsAdmin(
   productIds: number[]
-): Promise<AdminPrimaryImage[]> {
+): Promise<AdminProductImage[]> {
   if (productIds.length === 0) return [];
-  return sql<AdminPrimaryImage[]>`
-    select product_id, id as image_id, storage_path
+  return sql<AdminProductImage[]>`
+    select id, product_id, storage_path, alt_text_ar, sort_order, is_primary
     from public.product_images
-    where product_id = any(${productIds}) and is_primary = true
+    where product_id = any(${productIds})
+    order by product_id, is_primary desc, sort_order asc
   `;
 }

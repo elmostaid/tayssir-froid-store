@@ -1,10 +1,15 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
-import { listProductsAdmin, getPrimaryImagesForProductsAdmin } from "@/lib/queries/adminProducts";
+import { listProductsAdmin, getImagesForProductsAdmin } from "@/lib/queries/adminProducts";
 import { getAllCategoriesAdmin } from "@/lib/queries/adminCategories";
 import { quickUpdateProduct } from "@/app/admin/(protected)/products/actions";
-import { replacePrimaryImage } from "@/app/admin/(protected)/products/imageActions";
+import {
+  replacePrimaryImage,
+  uploadProductImage,
+  setPrimaryImage,
+  deleteProductImage,
+} from "@/app/admin/(protected)/products/imageActions";
 import { ProductQuickEditRow } from "@/components/admin/ProductQuickEditRow";
 
 export const dynamic = "force-dynamic";
@@ -56,8 +61,13 @@ export default async function AdminProductsPage({ searchParams }: Props) {
     getAllCategoriesAdmin(),
   ]);
 
-  const primaryImages = await getPrimaryImagesForProductsAdmin(products.map((p) => p.id));
-  const primaryImageByProductId = new Map(primaryImages.map((img) => [img.product_id, img]));
+  const allImages = await getImagesForProductsAdmin(products.map((p) => p.id));
+  const imagesByProductId = new Map<number, typeof allImages>();
+  for (const img of allImages) {
+    const list = imagesByProductId.get(img.product_id);
+    if (list) list.push(img);
+    else imagesByProductId.set(img.product_id, [img]);
+  }
 
   return (
     <div>
@@ -124,15 +134,24 @@ export default async function AdminProductsPage({ searchParams }: Props) {
         <p className="mt-6 text-sm text-neutral-500">لا توجد منتجات مطابقة.</p>
       ) : (
         <div className="mt-4 flex flex-col gap-3">
-          {products.map((product) => (
-            <ProductQuickEditRow
-              key={product.id}
-              product={product}
-              action={quickUpdateProduct.bind(null, product.id)}
-              changeImageAction={replacePrimaryImage.bind(null, product.id)}
-              currentImagePath={primaryImageByProductId.get(product.id)?.storage_path ?? null}
-            />
-          ))}
+          {products.map((product) => {
+            const productImages = imagesByProductId.get(product.id) ?? [];
+            return (
+              <ProductQuickEditRow
+                key={product.id}
+                product={product}
+                action={quickUpdateProduct.bind(null, product.id)}
+                images={productImages}
+                replacePrimaryAction={replacePrimaryImage.bind(null, product.id)}
+                addImageAction={uploadProductImage.bind(null, product.id)}
+                imagesWithActions={productImages.map((image) => ({
+                  image,
+                  setPrimaryAction: setPrimaryImage.bind(null, image.id, product.id),
+                  deleteAction: deleteProductImage.bind(null, image.id, product.id),
+                }))}
+              />
+            );
+          })}
         </div>
       )}
     </div>

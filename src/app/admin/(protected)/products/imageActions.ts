@@ -45,6 +45,8 @@ export async function uploadProductImage(
     return { error: `الحد الأقصى ${MAX_IMAGES_PER_PRODUCT} صور لكل منتج.` };
   }
 
+  // نفس الترتيب الآمن المعتمد فـreplacePrimaryImage: رفع الملف أولاً، وعند
+  // فشل تحديث قاعدة البيانات نحذف الملف المرفوع تواً فوراً (لا صور يتيمة).
   let storagePath: string;
   try {
     storagePath = await saveProductImageFile(productId, file);
@@ -55,12 +57,19 @@ export async function uploadProductImage(
   const nextSortOrder = existing.reduce((max, img) => Math.max(max, img.sort_order), 0) + 1;
   const isPrimary = existing.length === 0;
 
-  await sql`
-    insert into public.product_images (product_id, storage_path, alt_text_ar, sort_order, is_primary)
-    values (${productId}, ${storagePath}, ${altTextParsed.data || null}, ${nextSortOrder}, ${isPrimary})
-  `;
+  try {
+    await sql`
+      insert into public.product_images (product_id, storage_path, alt_text_ar, sort_order, is_primary)
+      values (${productId}, ${storagePath}, ${altTextParsed.data || null}, ${nextSortOrder}, ${isPrimary})
+    `;
+  } catch {
+    await deleteProductImageFile(storagePath).catch(() => {});
+    return { error: "تعذّر حفظ الصورة فقاعدة البيانات. لم يتغيّر شيء." };
+  }
 
   revalidatePath(`/admin/products/${productId}`);
+  revalidatePath("/admin/products");
+  revalidatePath("/", "layout");
   return { error: null, success: true };
 }
 
@@ -172,6 +181,8 @@ export async function deleteProductImage(
   }
 
   revalidatePath(`/admin/products/${productId}`);
+  revalidatePath("/admin/products");
+  revalidatePath("/", "layout");
   return { error: null };
 }
 
@@ -213,6 +224,8 @@ export async function setPrimaryImage(
   });
 
   revalidatePath(`/admin/products/${productId}`);
+  revalidatePath("/admin/products");
+  revalidatePath("/", "layout");
   return { error: null };
 }
 

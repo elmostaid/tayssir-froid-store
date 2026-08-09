@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useActionState } from "react";
 import type { ProductFormState } from "@/app/admin/(protected)/products/actions";
 import type { ImageActionState } from "@/app/admin/(protected)/products/imageActions";
-import type { AdminProduct } from "@/lib/queries/adminProducts";
+import type { AdminProduct, AdminProductImage } from "@/lib/queries/adminProducts";
 import { LOW_STOCK_THRESHOLD } from "@/lib/lowStockThreshold";
-import { ChangeProductImageForm } from "@/components/admin/ChangeProductImageForm";
+import { ProductImagesPanel } from "@/components/admin/ProductImagesPanel";
 
 const initialState: ProductFormState = { error: null };
 
@@ -23,13 +23,21 @@ const STATUS_OPTIONS: { value: string; label: string }[] = [
 export function ProductQuickEditRow({
   product,
   action,
-  changeImageAction,
-  currentImagePath,
+  images,
+  replacePrimaryAction,
+  addImageAction,
+  imagesWithActions,
 }: {
   product: AdminProduct;
   action: (prevState: ProductFormState, formData: FormData) => Promise<ProductFormState>;
-  changeImageAction: (prevState: ImageActionState, formData: FormData) => Promise<ImageActionState>;
-  currentImagePath: string | null;
+  images: AdminProductImage[];
+  replacePrimaryAction: (prevState: ImageActionState, formData: FormData) => Promise<ImageActionState>;
+  addImageAction: (prevState: ImageActionState, formData: FormData) => Promise<ImageActionState>;
+  imagesWithActions: {
+    image: AdminProductImage;
+    setPrimaryAction: () => Promise<{ error: string | null }>;
+    deleteAction: () => Promise<{ error: string | null }>;
+  }[];
 }) {
   const [state, formAction, isPending] = useActionState(action, initialState);
   const fieldError = (field: string) => state.fieldErrors?.[field];
@@ -37,10 +45,12 @@ export function ProductQuickEditRow({
   return (
     <div className="rounded-xl border border-neutral-200 bg-white p-4">
       <div className="mb-3">
-        <ChangeProductImageForm
-          action={changeImageAction}
-          currentImagePath={currentImagePath}
-          currentImageAlt={product.name_ar}
+        <ProductImagesPanel
+          productNameAr={product.name_ar}
+          images={images}
+          replacePrimaryAction={replacePrimaryAction}
+          addImageAction={addImageAction}
+          imagesWithActions={imagesWithActions}
         />
       </div>
 
