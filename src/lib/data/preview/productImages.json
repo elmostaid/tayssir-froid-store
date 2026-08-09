@@ -2,7 +2,7 @@
  {
   "id": 1,
   "product_id": 1,
-  "storage_path": "product-images-v2/TF-WM-001/white-round-knob.webp",
+  "storage_path": "product-images-v3/TF-WM-001/TF-WM-001__%D8%A8%D9%88%D8%B7%D9%88%D9%86%20%D9%85%D9%86%D8%AA%D8%B1%D9%8A%20%D8%B3%D8%AA%D8%A7%D9%86%D8%AF%D8%A7%D8%B1.png",
   "alt_text_ar": "صورة بوطون منتري ستاندار",
   "sort_order": 1,
   "is_primary": true
@@ -10,7 +10,7 @@
  {
   "id": 3,
   "product_id": 3,
-  "storage_path": "product-images-v2/TF-WM-003/black-timer-multicolor-wires.webp",
+  "storage_path": "product-images-v3/TF-WM-003/TF-WM-003__%D9%85%D9%86%D8%AA%D8%B1%D9%8A%20%D8%B5%D8%A7%D8%A8%D9%88%D9%86%206%20%D8%AE%D9%8A%D9%88%D8%B7.png",
   "alt_text_ar": "صورة منتري صابون 6 خيوط",
   "sort_order": 1,
   "is_primary": true
@@ -18,7 +18,7 @@
  {
   "id": 4,
   "product_id": 4,
-  "storage_path": "product-images-v2/TF-WM-004/black-rubber-bellows.webp",
+  "storage_path": "product-images-v3/TF-WM-004/TF-WM-004__%D8%AC%D9%84%D8%AF%D8%A9%20%D8%A7%D9%84%D9%85%D8%A7%D8%A1%20(%D9%85%D8%A7%D9%86%D8%B9%20%D8%AA%D8%B3%D8%B1%D8%A8%20%D8%A7%D9%84%D9%85%D9%8A%D8%A7%D9%87)%20%D8%AC%D9%85%D9%8A%D8%B9%20%D8%A7%D9%84%D9%85%D9%82%D8%A7%D8%B3%D8%A7%D8%AA.png",
   "alt_text_ar": "صورة جلدة نشاف بريسيستوب",
   "sort_order": 1,
   "is_primary": true
@@ -34,7 +34,7 @@
  {
   "id": 6,
   "product_id": 5,
-  "storage_path": "product-images-v2/TF-WM-005/motor-type-a-label.webp",
+  "storage_path": "product-images-v3/TF-WM-005/TF-WM-005__%D9%85%D9%88%D8%B7%D9%88%D8%B1%20%D8%B5%D8%A7%D8%A8%D9%88%D9%86%20150%20%D9%88%D8%A7%D8%B7.png",
   "alt_text_ar": "صورة موطور صابون 150 واط",
   "sort_order": 1,
   "is_primary": true
@@ -42,7 +42,7 @@
  {
   "id": 7,
   "product_id": 6,
-  "storage_path": "product-images-v2/TF-WM-006/v-belts.webp",
+  "storage_path": "product-images-v3/TF-WM-006/TF-WM-006__%D9%83%D8%B1%D9%88%D8%A9%20%D8%A7%D9%84%D8%BA%D8%B3%D8%A7%D9%84%D8%A9.png",
   "alt_text_ar": "صورة كروة الغسالة",
   "sort_order": 1,
   "is_primary": true
@@ -50,7 +50,7 @@
  {
   "id": 8,
   "product_id": 7,
-  "storage_path": "product-images-v2/TF-WM-007/black-timer-three-wires.webp",
+  "storage_path": "product-images-v3/TF-WM-007/TF-WM-007__%D9%85%D9%86%D8%AA%D8%B1%D9%8A%20%D8%B5%D8%A7%D8%A8%D9%88%D9%86%203%20%D8%AE%D9%8A%D9%88%D8%B7.png",
   "alt_text_ar": "صورة منتري صابون 3 خيوط",
   "sort_order": 1,
   "is_primary": true
@@ -58,7 +58,7 @@
  {
   "id": 9,
   "product_id": 8,
-  "storage_path": "product-images-v2/TF-WM-008/white-corrugated-hoses.webp",
+  "storage_path": "product-images-v3/TF-WM-008/TF-WM-008__%D8%AA%D9%8A%D9%88%20%D8%A7%D9%84%D9%85%D8%A7%D8%A1.png",
   "alt_text_ar": "صورة تيو الماء",
   "sort_order": 1,
   "is_primary": true
@@ -66,7 +66,7 @@
  {
   "id": 10,
   "product_id": 9,
-  "storage_path": "product-images-v2/TF-WM-009/motor-type-b-round-gold.webp",
+  "storage_path": "product-images-v3/TF-WM-009/TF-WM-009__%D9%85%D9%88%D8%B7%D9%88%D8%B1%20%D9%86%D8%B4%D8%A7%D9%81%2070%20%D9%88%D8%A7%D8%B7.png",
   "alt_text_ar": "صورة موطور نشاف 70 واط",
   "sort_order": 1,
   "is_primary": true
@@ -74,7 +74,7 @@
  {
   "id": 11,
   "product_id": 10,
-  "storage_path": "product-images-v2/TF-WM-010/metal-bearing-hub.webp",
+  "storage_path": "product-images-v3/TF-WM-010/TF-WM-010__%D8%A8%D9%88%D9%84%D9%8A%20%D9%85%D9%88%D8%B7%D9%88%D8%B1%20%D9%86%D8%B4%D8%A7%D9%81.png",
   "alt_text_ar": "صورة بولي موطور نشاف",
   "sort_order": 1,
   "is_primary": true
@@ -82,7 +82,7 @@
  {
   "id": 12,
   "product_id": 11,
-  "storage_path": "product-images-v2/TF-WM-011/countersunk-screws.webp",
+  "storage_path": "product-images-v3/TF-WM-011/TF-WM-011__%D9%81%D9%8A%D8%B3%20%D9%81%D8%B1%D8%A7%D9%83%D8%A9.png",
   "alt_text_ar": "صورة فيس فراكة",
   "sort_order": 1,
   "is_primary": true
@@ -90,7 +90,7 @@
  {
   "id": 14,
   "product_id": 13,
-  "storage_path": "product-images-v2/TF-WM-013.jpg",
+  "storage_path": "product-images-v3/TF-WM-013/TF-WM-013__%D9%85%D9%86%D8%AA%D8%B1%D9%8A%20%D8%A7%D9%84%D9%85%D8%A7%D8%A1%20%D8%B3%D9%84%D9%83%D8%AA%D9%88%D8%B1.png",
   "alt_text_ar": "صورة منتري الماء سلكتور",
   "sort_order": 1,
   "is_primary": true
@@ -98,7 +98,7 @@
  {
   "id": 15,
   "product_id": 14,
-  "storage_path": "product-images-v2/TF-WM-014/long-coil-spring.webp",
+  "storage_path": "product-images-v3/TF-WM-014/TF-WM-014__%D8%B1%D9%88%D8%B3%D9%88%D9%84%20%D8%AC%D9%84%D8%AF%D8%A9%20%D8%A7%D9%84%D9%85%D8%A7%D8%A1.png",
   "alt_text_ar": "صورة روسول جلدة الماء",
   "sort_order": 1,
   "is_primary": true
@@ -106,7 +106,7 @@
  {
   "id": 16,
   "product_id": 15,
-  "storage_path": "product-images-v2/TF-WM-015/small-white-timer-two-wires.webp",
+  "storage_path": "product-images-v3/TF-WM-015/TF-WM-015__%D9%85%D9%86%D8%AA%D8%B1%D9%8A%20%D9%86%D8%B4%D8%A7%D9%81%20%D8%A8%D8%AE%D9%8A%D8%B7%D9%8A%D9%86.png",
   "alt_text_ar": "صورة منتري نشاف بخيطين",
   "sort_order": 1,
   "is_primary": true
@@ -114,7 +114,7 @@
  {
   "id": 17,
   "product_id": 16,
-  "storage_path": "product-images-v2/TF-WM-016/large-grey-pulley.webp",
+  "storage_path": "product-images-v3/TF-WM-016/TF-WM-016__%D8%A8%D9%88%D9%84%D9%8A%20%D9%85%D9%88%D8%B7%D9%88%D8%B1%20%D8%A7%D9%84%D8%B5%D8%A7%D8%A8%D9%88%D9%86.png",
   "alt_text_ar": "صورة بولي موطور الصابون",
   "sort_order": 1,
   "is_primary": true
@@ -122,7 +122,7 @@
  {
   "id": 18,
   "product_id": 17,
-  "storage_path": "product-images-v2/TF-WM-017/capacitor-12-5uf.webp",
+  "storage_path": "product-images-v3/TF-WM-017/TF-WM-017__%D9%83%D9%88%D9%86%D8%AF%D9%86%D8%B3%D8%A7%D8%AA%D9%88%D8%B1%2012-5%20%C2%B5F.png",
   "alt_text_ar": "صورة كوندنساتور 12/5 µF",
   "sort_order": 1,
   "is_primary": true
@@ -130,7 +130,7 @@
  {
   "id": 19,
   "product_id": 18,
-  "storage_path": "product-images-v2/TF-WM-018/TF-WM-018-lg-double-timer.webp",
+  "storage_path": "product-images-v3/TF-WM-018/TF-WM-018__%D9%85%D9%86%D8%AA%D8%B1%D9%8A%20LG%20%D8%AF%D9%88%D8%A8%D9%84.png",
   "alt_text_ar": "صورة منتري LG دوبل",
   "sort_order": 1,
   "is_primary": true
@@ -138,7 +138,7 @@
  {
   "id": 20,
   "product_id": 19,
-  "storage_path": "product-images-v2/TF-RF-001/TF-RF-001-copper-brazing-flux.webp",
+  "storage_path": "product-images-v3/TF-RF-001/TF-RF-001__%D8%A8%D9%88%D8%AF%D8%B1%20%D9%86%D8%AD%D8%A7%D8%B3%20%D8%A3%D8%B2%D8%B1%D9%82%20FLUX-4.png",
   "alt_text_ar": "صورة بودر نحاس أزرق FLUX-4",
   "sort_order": 1,
   "is_primary": true
@@ -146,7 +146,7 @@
  {
   "id": 23,
   "product_id": 22,
-  "storage_path": "product-images-v2/TF-RF-004/TF-RF-004-aluminium-flux-powder.webp",
+  "storage_path": "product-images-v3/TF-RF-004/TF-RF-004__%D8%A8%D9%88%D8%AF%D8%B1%20%D8%A3%D9%84%D9%85%D9%86%D9%8A%D9%88%D9%85%20F407.png",
   "alt_text_ar": "صورة بودر ألمنيوم F407",
   "sort_order": 1,
   "is_primary": true
@@ -154,7 +154,7 @@
  {
   "id": 24,
   "product_id": 23,
-  "storage_path": "product-images-v2/TF-RF-005/TF-RF-005-single-gas-manometer.webp",
+  "storage_path": "product-images-v3/TF-RF-005/TF-RF-005__%D9%85%D8%A7%D9%86%D9%88%20%D8%BA%D8%A7%D8%B2%20%D8%A8%D8%B1%D9%88%20CT-467.png",
   "alt_text_ar": "صورة مانو غاز برو CT-467",
   "sort_order": 1,
   "is_primary": true
@@ -170,7 +170,7 @@
  {
   "id": 26,
   "product_id": 25,
-  "storage_path": "product-images-v2/TF-RF-007/TF-RF-007-fridge-fan-12v.webp",
+  "storage_path": "product-images-v3/TF-RF-007/TF-RF-007__%D9%81%D8%B1%D9%81%D8%A7%D8%B1%D8%A9%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%2012V%20%D8%A8%D8%AB%D9%84%D8%A7%D8%AB%D8%A9%20%D8%AE%D9%8A%D9%88%D8%B7.png",
   "alt_text_ar": "صورة فرفارة ثلاجة 12V بثلاثة خيوط",
   "sort_order": 1,
   "is_primary": true
@@ -234,7 +234,7 @@
  {
   "id": 42,
   "product_id": 41,
-  "storage_path": "product-images-v2/TF-WM-019/poli_10.webp",
+  "storage_path": "product-images-v3/TF-WM-019/TF-WM-019__%D8%A8%D9%88%D9%84%D9%8A%2010.png",
   "alt_text_ar": "صورة بولي 10",
   "sort_order": 1,
   "is_primary": true
@@ -242,7 +242,7 @@
  {
   "id": 43,
   "product_id": 42,
-  "storage_path": "product-images-v2/TF-WM-020/poli_11.webp",
+  "storage_path": "product-images-v3/TF-WM-020/TF-WM-020__%D8%A8%D9%88%D9%84%D9%8A%2011.png",
   "alt_text_ar": "صورة بولي 11",
   "sort_order": 1,
   "is_primary": true
@@ -250,7 +250,7 @@
  {
   "id": 44,
   "product_id": 43,
-  "storage_path": "product-images-v2/TF-WM-021/poli_kari.webp",
+  "storage_path": "product-images-v3/TF-WM-021/TF-WM-021__%D8%A8%D9%88%D9%84%D9%8A%20%D9%83%D8%A7%D8%B1%D9%8A.png",
   "alt_text_ar": "صورة بولي كاري",
   "sort_order": 1,
   "is_primary": true
@@ -298,7 +298,7 @@
  {
   "id": 50,
   "product_id": 46,
-  "storage_path": "product-images-v2/TF-WM-024/lg-pulley-gearbox.jpg",
+  "storage_path": "product-images-v3/TF-WM-024/TF-WM-024__%D8%A8%D9%88%D9%84%D9%8A%20LG.png",
   "alt_text_ar": "صورة بولي LG",
   "sort_order": 1,
   "is_primary": true
@@ -306,7 +306,7 @@
  {
   "id": 51,
   "product_id": 49,
-  "storage_path": "product-images-v2/TF-WM-049/TF-WM-049-1.webp",
+  "storage_path": "product-images-v3/TF-WM-049/TF-WM-049__%D9%85%D9%86%D8%AA%D8%B1%D9%8A%20%D8%B3%D9%8A%D8%B1%D8%A7%20%D8%B1%D8%A3%D8%B3%20%D8%B7%D9%88%D9%8A%D9%84.png",
   "alt_text_ar": "صورة منتري سيرا رأس طويل",
   "sort_order": 1,
   "is_primary": true
@@ -322,7 +322,7 @@
  {
   "id": 53,
   "product_id": 50,
-  "storage_path": "product-images-v2/TF-WM-048/TF-WM-048-1.webp",
+  "storage_path": "product-images-v3/TF-WM-048/TF-WM-048__%D8%A8%D9%84%D8%A7%D8%B3%D8%AA%D9%8A%D9%83%D8%A9%20%D8%A8%D9%88%D9%84%D9%8A%20%D9%85%D9%88%D8%B7%D9%88%D8%B1%20%D8%A7%D9%84%D8%B5%D8%A7%D8%A8%D9%88%D9%86.png",
   "alt_text_ar": "صورة بلاستيكة بولي موطور الصابون",
   "sort_order": 1,
   "is_primary": true
@@ -330,7 +330,7 @@
  {
   "id": 54,
   "product_id": 51,
-  "storage_path": "product-images-v2/TF-WM-047/TF-WM-047-1.webp",
+  "storage_path": "product-images-v3/TF-WM-047/TF-WM-047__%D8%A8%D9%88%D9%84%D9%8A%20LG%20%D9%85%D9%88%D8%AF%D9%8A%D9%84%202.png",
   "alt_text_ar": "صورة بولي LG موديل 2",
   "sort_order": 1,
   "is_primary": true
@@ -338,7 +338,7 @@
  {
   "id": 55,
   "product_id": 52,
-  "storage_path": "product-images-v2/TF-WM-046/TF-WM-046-1.webp",
+  "storage_path": "product-images-v3/TF-WM-046/TF-WM-046__%D9%81%D8%B1%D8%A7%D9%86%20%D9%85%D9%88%D8%B7%D9%88%D8%B1%20%D9%86%D8%B4%D8%A7%D9%81.png",
   "alt_text_ar": "صورة فران موطور نشاف",
   "sort_order": 1,
   "is_primary": true
@@ -346,7 +346,7 @@
  {
   "id": 56,
   "product_id": 53,
-  "storage_path": "product-images-v2/TF-WM-045/TF-WM-045-1.webp",
+  "storage_path": "product-images-v3/TF-WM-045/TF-WM-045__%D9%81%D8%B1%D8%A7%D9%83%D8%A9%20%D8%B3%D8%AA%D9%86%D8%AF%D8%A7%D8%B1%2010-11%20%D9%83%D8%A7%D8%B1%D9%8A.png",
   "alt_text_ar": "صورة فراكة ستندار 10/11 كاري",
   "sort_order": 1,
   "is_primary": true
@@ -354,7 +354,7 @@
  {
   "id": 57,
   "product_id": 54,
-  "storage_path": "product-images-v2/TF-WM-044/TF-WM-044-1.webp",
+  "storage_path": "product-images-v3/TF-WM-044/TF-WM-044__%D8%AC%D9%84%D8%AF%D8%A9%20%D9%85%D9%88%D8%B7%D9%88%D8%B1%20%D9%86%D8%B4%D8%A7%D9%81%20%D9%88%D9%8A%D8%B1%D8%A8%D9%88%D9%84%20%D8%A8%D8%A7%D9%83%20%D8%B5%D8%BA%D9%8A%D8%B1.png",
   "alt_text_ar": "صورة جلدة موطور نشاف ويربول باك صغير",
   "sort_order": 1,
   "is_primary": true
@@ -362,7 +362,7 @@
  {
   "id": 58,
   "product_id": 55,
-  "storage_path": "product-images-v2/TF-WM-043/TF-WM-043-1.webp",
+  "storage_path": "product-images-v3/TF-WM-043/TF-WM-043__%D8%AA%D9%8A%D9%88%20%D9%85%D8%A7%D9%83%D9%8A%D9%86%D8%A9%20%D8%A7%D9%84%D8%B5%D8%A7%D8%A8%D9%88%D9%86%20%D8%B5%D8%BA%D9%8A%D8%B1.png",
   "alt_text_ar": "صورة تيو ماكينة الصابون صغير",
   "sort_order": 1,
   "is_primary": true
@@ -370,7 +370,7 @@
  {
   "id": 59,
   "product_id": 56,
-  "storage_path": "product-images-v2/TF-WM-042/TF-WM-042-1.webp",
+  "storage_path": "product-images-v3/TF-WM-042/TF-WM-042__%D9%85%D9%86%D8%AA%D8%B1%D9%8A%20%D9%84%D8%A7%D8%B5%D9%8A%D8%A7%D9%86.png",
   "alt_text_ar": "صورة منتري لاصيان",
   "sort_order": 1,
   "is_primary": true
@@ -386,7 +386,7 @@
  {
   "id": 61,
   "product_id": 57,
-  "storage_path": "product-images-v2/TF-WM-041/TF-WM-041-1.webp",
+  "storage_path": "product-images-v3/TF-WM-041/TF-WM-041__%D9%85%D9%86%D8%AA%D8%B1%D9%8A%20%D8%B5%D8%A7%D8%A8%D9%88%D9%86%20%D9%88%D8%AF%D9%86%D9%8A%D9%86%20%D8%B9%D9%88%D8%AC%D9%8A%D9%86%206%20%D8%AE%D9%8A%D9%88%D8%B7.png",
   "alt_text_ar": "صورة منتري صابون ودنين عوجين 6 خيوط",
   "sort_order": 1,
   "is_primary": true
@@ -394,7 +394,7 @@
  {
   "id": 62,
   "product_id": 58,
-  "storage_path": "product-images-v2/TF-WM-040/TF-WM-040-1.webp",
+  "storage_path": "product-images-v3/TF-WM-040/TF-WM-040__%D9%85%D9%88%D8%B7%D9%88%D8%B1%20%D9%86%D8%B4%D8%A7%D9%81%20LG%20%D8%B1%D8%A3%D8%B3%20%D8%BA%D9%84%D9%8A%D8%B8.png",
   "alt_text_ar": "صورة موطور نشاف LG رأس غليظ",
   "sort_order": 1,
   "is_primary": true
@@ -402,7 +402,7 @@
  {
   "id": 63,
   "product_id": 59,
-  "storage_path": "product-images-v2/TF-WM-039/TF-WM-039-1.webp",
+  "storage_path": "product-images-v3/TF-WM-039/TF-WM-039__%D8%A8%D9%88%D9%84%D9%8A%20%D8%B3%D9%8A%D8%B1%D8%A7.png",
   "alt_text_ar": "صورة بولي سيرا",
   "sort_order": 1,
   "is_primary": true
@@ -410,7 +410,7 @@
  {
   "id": 64,
   "product_id": 60,
-  "storage_path": "product-images-v2/TF-WM-038/TF-WM-038-1.webp",
+  "storage_path": "product-images-v3/TF-WM-038/TF-WM-038__%D8%A8%D9%88%D9%84%D9%8A%20%D9%88%D8%B1%D8%AF%D8%A9%20%D9%83%D8%A7%D8%B1%D9%8A%20%D8%B1%D8%A3%D8%B3%20%D8%B7%D9%88%D9%8A%D9%84%20%D8%AC%D8%AF%D8%A7%D9%8B%206%20%D8%AB%D9%82%D8%A7%D8%A8.png",
   "alt_text_ar": "صورة بولي وردة كاري رأس طويل جداً 6 ثقاب",
   "sort_order": 1,
   "is_primary": true
@@ -418,7 +418,7 @@
  {
   "id": 65,
   "product_id": 61,
-  "storage_path": "product-images-v2/TF-WM-037/TF-WM-037-1.webp",
+  "storage_path": "product-images-v3/TF-WM-037/TF-WM-037__%D8%A8%D9%88%D9%84%D9%8A%20%D9%83%D8%A7%D8%B1%D9%8A%206%20%D8%AB%D9%82%D8%A7%D8%A8.png",
   "alt_text_ar": "صورة بولي كاري 6 ثقاب",
   "sort_order": 1,
   "is_primary": true
@@ -426,7 +426,7 @@
  {
   "id": 66,
   "product_id": 62,
-  "storage_path": "product-images-v2/TF-WM-036/TF-WM-036-1.webp",
+  "storage_path": "product-images-v3/TF-WM-036/TF-WM-036__%D8%A8%D9%88%D9%84%D9%8A%20%D8%A3%D9%88%D9%86%D9%8A%D9%88%20%D8%AA%D9%8A%D9%83%206%20%D8%AB%D9%82%D8%A7%D8%A8.png",
   "alt_text_ar": "صورة بولي أونيو تيك 6 ثقاب",
   "sort_order": 1,
   "is_primary": true
@@ -442,7 +442,7 @@
  {
   "id": 68,
   "product_id": 63,
-  "storage_path": "product-images-v2/TF-WM-035/TF-WM-035-1.webp",
+  "storage_path": "product-images-v3/TF-WM-035/TF-WM-035__%D8%A8%D9%88%D9%84%D9%8A%20010.png",
   "alt_text_ar": "صورة بولي 010",
   "sort_order": 1,
   "is_primary": true
@@ -458,7 +458,7 @@
  {
   "id": 70,
   "product_id": 64,
-  "storage_path": "product-images-v2/TF-WM-034/TF-WM-034-1.webp",
+  "storage_path": "product-images-v3/TF-WM-034/TF-WM-034__%D8%A8%D9%88%D9%84%D9%8A%20009.png",
   "alt_text_ar": "صورة بولي 009",
   "sort_order": 1,
   "is_primary": true
@@ -474,7 +474,7 @@
  {
   "id": 72,
   "product_id": 65,
-  "storage_path": "product-images-v2/TF-WM-033/TF-WM-033-1.webp",
+  "storage_path": "product-images-v3/TF-WM-033/TF-WM-033__%D8%A8%D9%88%D9%84%D9%8A%20008.png",
   "alt_text_ar": "صورة بولي 008",
   "sort_order": 1,
   "is_primary": true
@@ -490,7 +490,7 @@
  {
   "id": 74,
   "product_id": 66,
-  "storage_path": "product-images-v2/TF-WM-032/TF-WM-032-1.webp",
+  "storage_path": "product-images-v3/TF-WM-032/TF-WM-032__%D8%A8%D9%88%D9%84%D9%8A%20%D9%83%D8%A7%D8%B1%D9%8A%20%D8%B7%D9%88%D9%8A%D9%84.png",
   "alt_text_ar": "صورة بولي كاري طويل",
   "sort_order": 1,
   "is_primary": true
@@ -498,7 +498,7 @@
  {
   "id": 75,
   "product_id": 67,
-  "storage_path": "product-images-v2/TF-WM-031/TF-WM-031-1.webp",
+  "storage_path": "product-images-v3/TF-WM-031/TF-WM-031__%D8%A8%D9%88%D9%84%D9%8A%2010%20%D8%B7%D9%88%D9%8A%D9%84.png",
   "alt_text_ar": "صورة بولي 10 طويل",
   "sort_order": 1,
   "is_primary": true
@@ -506,7 +506,7 @@
  {
   "id": 76,
   "product_id": 68,
-  "storage_path": "product-images-v2/TF-WM-030/TF-WM-030-1.webp",
+  "storage_path": "product-images-v3/TF-WM-030/TF-WM-030__%D8%A8%D9%88%D9%84%D9%8A%2011%20%D8%B7%D9%88%D9%8A%D9%84.png",
   "alt_text_ar": "صورة بولي 11 طويل",
   "sort_order": 1,
   "is_primary": true
@@ -522,7 +522,7 @@
  {
   "id": 78,
   "product_id": 69,
-  "storage_path": "product-images-v2/TF-WM-029/TF-WM-029-1.webp",
+  "storage_path": "product-images-v3/TF-WM-029/TF-WM-029__%D8%A8%D9%88%D9%84%D9%8A%20%D9%88%D9%8A%D8%B1%D8%A8%D9%88%D9%84%20%D9%82%D8%B5%D9%8A%D8%B1.png",
   "alt_text_ar": "صورة بولي ويربول قصير",
   "sort_order": 1,
   "is_primary": true
@@ -538,7 +538,7 @@
  {
   "id": 80,
   "product_id": 70,
-  "storage_path": "product-images-v2/TF-WM-028/TF-WM-028-1.webp",
+  "storage_path": "product-images-v3/TF-WM-028/TF-WM-028__%D8%A8%D9%88%D9%84%D9%8A%20%D9%88%D9%8A%D8%B1%D8%A8%D9%88%D9%84%20%D8%B7%D9%88%D9%8A%D9%84.png",
   "alt_text_ar": "صورة بولي ويربول طويل",
   "sort_order": 1,
   "is_primary": true
@@ -546,7 +546,7 @@
  {
   "id": 81,
   "product_id": 71,
-  "storage_path": "product-images-v2/TF-WM-027/TF-WM-027-1.webp",
+  "storage_path": "product-images-v3/TF-WM-027/TF-WM-027__%D8%A8%D9%88%D9%84%D9%8A%20%D9%88%D8%B1%D8%AF%D8%A9%20%D9%83%D8%A7%D8%B1%D9%8A%20%D8%B7%D9%88%D9%8A%D9%84%206%20%D8%AB%D9%82%D8%A7%D8%A8.png",
   "alt_text_ar": "صورة بولي وردة كاري طويل 6 ثقاب",
   "sort_order": 1,
   "is_primary": true
@@ -554,7 +554,7 @@
  {
   "id": 82,
   "product_id": 72,
-  "storage_path": "product-images-v2/TF-RF-057/TF-RF-057-1.webp",
+  "storage_path": "product-images-v3/TF-RF-057/TF-RF-057__%D8%A8%D9%84%D8%A7%D9%83%D8%A9%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20800%20%D9%84%D8%AA%D8%B1.png",
   "alt_text_ar": "صورة بلاكة ثلاجة 800 لتر",
   "sort_order": 1,
   "is_primary": true
@@ -562,7 +562,7 @@
  {
   "id": 83,
   "product_id": 73,
-  "storage_path": "product-images-v2/TF-RF-056/TF-RF-056-1.webp",
+  "storage_path": "product-images-v3/TF-RF-056/TF-RF-056__%D8%A8%D9%84%D8%A7%D9%83%D8%A9%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20500%20%D9%84%D8%AA%D8%B1.png",
   "alt_text_ar": "صورة بلاكة ثلاجة 500 لتر",
   "sort_order": 1,
   "is_primary": true
@@ -570,7 +570,7 @@
  {
   "id": 84,
   "product_id": 74,
-  "storage_path": "product-images-v2/TF-RF-055/TF-RF-055-1.webp",
+  "storage_path": "product-images-v3/TF-RF-055/TF-RF-055__%D8%A8%D9%84%D8%A7%D9%83%D8%A9%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20290%20%D9%84%D8%AA%D8%B1.png",
   "alt_text_ar": "صورة بلاكة ثلاجة 290 لتر",
   "sort_order": 1,
   "is_primary": true
@@ -578,7 +578,7 @@
  {
   "id": 85,
   "product_id": 75,
-  "storage_path": "product-images-v2/TF-RF-054/TF-RF-054-1.webp",
+  "storage_path": "product-images-v3/TF-RF-054/TF-RF-054__%D8%A8%D9%84%D8%A7%D9%83%D8%A9%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20230%20%D9%84%D8%AA%D8%B1.png",
   "alt_text_ar": "صورة بلاكة ثلاجة 230 لتر",
   "sort_order": 1,
   "is_primary": true
@@ -586,7 +586,7 @@
  {
   "id": 86,
   "product_id": 76,
-  "storage_path": "product-images-v2/TF-RF-053/TF-RF-053-1.webp",
+  "storage_path": "product-images-v3/TF-RF-053/TF-RF-053__%D8%A3%D9%88%D8%B1%D9%84%D9%88%D8%AC%20%D8%A8%D8%B1%D9%8A%D8%B2%2024%20%D8%B3%D8%A7%D8%B9%D8%A9.png",
   "alt_text_ar": "صورة أورلوج بريز 24 ساعة",
   "sort_order": 1,
   "is_primary": true
@@ -594,7 +594,7 @@
  {
   "id": 87,
   "product_id": 77,
-  "storage_path": "product-images-v2/TF-RF-052/TF-RF-052-1.webp",
+  "storage_path": "product-images-v3/TF-RF-052/TF-RF-052__%D8%A3%D9%88%D8%B1%D9%84%D9%88%D8%AC%20%D9%83%D9%88%D8%B3%D8%A7%D8%AA%2024%20%D8%B3%D8%A7%D8%B9%D8%A9.png",
   "alt_text_ar": "صورة أورلوج كوسات 24 ساعة",
   "sort_order": 1,
   "is_primary": true
@@ -602,7 +602,7 @@
  {
   "id": 88,
   "product_id": 78,
-  "storage_path": "product-images-v2/TF-RF-051/TF-RF-051-1.webp",
+  "storage_path": "product-images-v3/TF-RF-051/TF-RF-051__%D9%82%D9%81%D9%84%20%D8%A8%D8%A7%D8%A8%20%D8%A7%D9%84%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20%D8%A8%D9%84%D8%A7%D8%B3%D8%AA%D9%8A%D9%83.png",
   "alt_text_ar": "صورة قفل باب الثلاجة بلاستيك",
   "sort_order": 1,
   "is_primary": true
@@ -610,7 +610,7 @@
  {
   "id": 89,
   "product_id": 79,
-  "storage_path": "product-images-v2/TF-RF-050/TF-RF-050-1.webp",
+  "storage_path": "product-images-v3/TF-RF-050/TF-RF-050__%D9%85%D9%86%D8%AA%D8%B1%D9%8A%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20%D8%A8%D8%AE%D8%A7%D8%B1.png",
   "alt_text_ar": "صورة منتري ثلاجة بخار",
   "sort_order": 1,
   "is_primary": true
@@ -618,7 +618,7 @@
  {
   "id": 90,
   "product_id": 80,
-  "storage_path": "product-images-v2/TF-RF-049/TF-RF-049-1.webp",
+  "storage_path": "product-images-v3/TF-RF-049/TF-RF-049__%D9%85%D9%86%D8%AA%D8%B1%D9%8A%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20LG%20%D8%A8%D8%AE%D8%A7%D8%B1.png",
   "alt_text_ar": "صورة منتري ثلاجة LG بخار",
   "sort_order": 1,
   "is_primary": true
@@ -626,7 +626,7 @@
  {
   "id": 91,
   "product_id": 81,
-  "storage_path": "product-images-v2/TF-RF-048/TF-RF-048-1.webp",
+  "storage_path": "product-images-v3/TF-RF-048/TF-RF-048__%D9%85%D9%86%D8%AA%D8%B1%D9%8A%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20Samsung%20%D8%A8%D8%AE%D8%A7%D8%B1.png",
   "alt_text_ar": "صورة منتري ثلاجة Samsung بخار",
   "sort_order": 1,
   "is_primary": true
@@ -634,7 +634,7 @@
  {
   "id": 92,
   "product_id": 82,
-  "storage_path": "product-images-v2/TF-RF-047/TF-RF-047-1.webp",
+  "storage_path": "product-images-v3/TF-RF-047/TF-RF-047__%D9%85%D9%86%D8%AA%D8%B1%D9%8A%20Siera%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20%D8%A8%D8%AE%D8%A7%D8%B1.png",
   "alt_text_ar": "صورة منتري Siera ثلاجة بخار",
   "sort_order": 1,
   "is_primary": true
@@ -642,7 +642,7 @@
  {
   "id": 93,
   "product_id": 83,
-  "storage_path": "product-images-v2/TF-RF-046/TF-RF-046-1.webp",
+  "storage_path": "product-images-v3/TF-RF-046/TF-RF-046__%D9%85%D9%86%D8%AA%D8%B1%D9%8A%20%D8%AA%D9%88%D8%B4%D9%8A%D8%A8%D8%A7%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20%D8%A8%D8%AE%D8%A7%D8%B1.png",
   "alt_text_ar": "صورة منتري توشيبا ثلاجة بخار",
   "sort_order": 1,
   "is_primary": true
@@ -650,7 +650,7 @@
  {
   "id": 94,
   "product_id": 84,
-  "storage_path": "product-images-v2/TF-RF-045/TF-RF-045-1.webp",
+  "storage_path": "product-images-v3/TF-RF-045/TF-RF-045__%D8%B1%D9%8A%D8%B2%D9%8A%D8%B3%D8%AA%D8%A7%D9%86%D8%B3%20%D8%A3%D9%84%D9%85%D9%86%D9%8A%D9%88%D9%85%20%D9%84%D9%84%D8%AB%D9%84%D8%A7%D8%AC%D8%A9.png",
   "alt_text_ar": "صورة ريزيستانس ألمنيوم للثلاجة",
   "sort_order": 1,
   "is_primary": true
@@ -658,7 +658,7 @@
  {
   "id": 95,
   "product_id": 85,
-  "storage_path": "product-images-v2/TF-RF-044/TF-RF-044-1.webp",
+  "storage_path": "product-images-v3/TF-RF-044/TF-RF-044__%D8%B1%D9%8A%D8%B2%D9%8A%D8%B3%D8%AA%D8%A7%D9%86%D8%B3%20%D8%B2%D8%AC%D8%A7%D8%AC%20%D9%84%D9%84%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20-%20%D8%AC%D9%85%D9%8A%D8%B9%20%D8%A7%D9%84%D9%85%D9%82%D8%A7%D8%B3%D8%A7%D8%AA.png",
   "alt_text_ar": "صورة ريزيستانس زجاج للثلاجة - جميع المقاسات",
   "sort_order": 1,
   "is_primary": true
@@ -666,7 +666,7 @@
  {
   "id": 96,
   "product_id": 86,
-  "storage_path": "product-images-v2/TF-RF-043/TF-RF-043-1.webp",
+  "storage_path": "product-images-v3/TF-RF-043/TF-RF-043__%D9%81%D8%B1%D9%81%D8%A7%D8%B1%D8%A9%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%2034W.png",
   "alt_text_ar": "صورة فرفارة ثلاجة 34W",
   "sort_order": 1,
   "is_primary": true
@@ -674,7 +674,7 @@
  {
   "id": 97,
   "product_id": 87,
-  "storage_path": "product-images-v2/TF-RF-042/TF-RF-042-1.webp",
+  "storage_path": "product-images-v3/TF-RF-042/TF-RF-042__%D9%81%D8%B1%D9%81%D8%A7%D8%B1%D8%A9%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%2010W%20%D9%83%D9%88%D9%85%D8%A8%D9%84%D9%8A.png",
   "alt_text_ar": "صورة فرفارة ثلاجة 10W كومبلي",
   "sort_order": 1,
   "is_primary": true
@@ -698,7 +698,7 @@
  {
   "id": 100,
   "product_id": 89,
-  "storage_path": "product-images-v2/TF-RF-040/TF-RF-040-1.webp",
+  "storage_path": "product-images-v3/TF-RF-040/TF-RF-040__%D9%83%D9%84%D9%8A%D9%83%D8%B3%D9%88%D9%86%20%2B%20%D8%B1%D9%88%D9%84%D9%8A%20%D9%83%D9%88%D9%85%D8%A8%D9%84%D9%8A%20%D8%AC%D8%AF%D9%8A%D8%AF%20%D8%AA%D8%B1%D9%83%D9%8A.png",
   "alt_text_ar": "صورة كليكسون + رولي كومبلي جديد تركي",
   "sort_order": 1,
   "is_primary": true
@@ -714,7 +714,7 @@
  {
   "id": 102,
   "product_id": 90,
-  "storage_path": "product-images-v2/TF-RF-039/TF-RF-039-1.webp",
+  "storage_path": "product-images-v3/TF-RF-039/TF-RF-039__%D9%83%D9%84%D9%8A%D9%83%D8%B3%D9%88%D9%86%20%2B%20%D8%B1%D9%88%D9%84%D9%8A%20%D8%B3%D8%AA%D8%A7%D9%86%D8%AF%D8%A7%D8%B1.png",
   "alt_text_ar": "صورة كليكسون + رولي ستاندار",
   "sort_order": 1,
   "is_primary": true
@@ -730,7 +730,7 @@
  {
   "id": 104,
   "product_id": 91,
-  "storage_path": "product-images-v2/TF-RF-038/TF-RF-038-1.webp",
+  "storage_path": "product-images-v3/TF-RF-038/TF-RF-038__%D8%AA%D8%B1%D9%85%D9%88%D8%B3%D8%AA%D8%A7%D8%AA%20K50%20%D9%81%D8%A7%D9%84%D9%81%20%D9%82%D8%B5%D9%8A%D8%B1%2070%20%D8%B3%D9%85.png",
   "alt_text_ar": "صورة ترموستات K50 فالف قصير 70 سم",
   "sort_order": 1,
   "is_primary": true
@@ -738,7 +738,7 @@
  {
   "id": 105,
   "product_id": 92,
-  "storage_path": "product-images-v2/TF-RF-037/TF-RF-037-1.webp",
+  "storage_path": "product-images-v3/TF-RF-037/TF-RF-037__%D8%AA%D8%B1%D9%85%D9%88%D8%B3%D8%AA%D8%A7%D8%AA%20K50%20Ranco%20%D8%A3%D8%B5%D9%84%D9%8A.png",
   "alt_text_ar": "صورة ترموستات K50 Ranco أصلي",
   "sort_order": 1,
   "is_primary": true
@@ -746,7 +746,7 @@
  {
   "id": 106,
   "product_id": 93,
-  "storage_path": "product-images-v2/TF-RF-036/TF-RF-036-1.webp",
+  "storage_path": "product-images-v3/TF-RF-036/TF-RF-036__%D9%81%D8%B1%D9%81%D8%A7%D8%B1%D8%A9%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20%D8%A8%D8%AE%D8%A7%D8%B1.png",
   "alt_text_ar": "صورة فرفارة ثلاجة بخار",
   "sort_order": 1,
   "is_primary": true
@@ -754,7 +754,7 @@
  {
   "id": 107,
   "product_id": 94,
-  "storage_path": "product-images-v2/TF-RF-035/TF-RF-035-1.webp",
+  "storage_path": "product-images-v3/TF-RF-035/TF-RF-035__%D8%B3%D9%88%D9%86%D8%AF%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20%D8%A8%D8%AE%D8%A7%D8%B1%20%D8%A8%D9%81%D9%8A%D8%B4%D8%A9%20%D8%B2%D8%B1%D9%82%D8%A7%D8%A1.png",
   "alt_text_ar": "صورة سوند ثلاجة بخار بفيشة زرقاء",
   "sort_order": 1,
   "is_primary": true
@@ -762,7 +762,7 @@
  {
   "id": 108,
   "product_id": 95,
-  "storage_path": "product-images-v2/TF-RF-034/TF-RF-034-1.webp",
+  "storage_path": "product-images-v3/TF-RF-034/TF-RF-034__%D8%B3%D9%88%D9%86%D8%AF%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20%D8%A8%D8%AE%D8%A7%D8%B1.png",
   "alt_text_ar": "صورة سوند ثلاجة بخار",
   "sort_order": 1,
   "is_primary": true
@@ -770,7 +770,7 @@
  {
   "id": 109,
   "product_id": 96,
-  "storage_path": "product-images-v2/TF-RF-033/TF-RF-033-1.webp",
+  "storage_path": "product-images-v3/TF-RF-033/TF-RF-033__%D9%83%D9%84%D9%8A%D9%83%D8%B3%D9%88%D9%86%20%D8%AF%D9%8A%D8%AC%D9%81%D8%B1%D8%A7%D8%AC%20%D8%A3%D9%85%D8%B1%D9%8A%D9%83%D9%8A%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20%D8%A8%D8%AE%D8%A7%D8%B1.png",
   "alt_text_ar": "صورة كليكسون ديجفراج أمريكي ثلاجة بخار",
   "sort_order": 1,
   "is_primary": true
@@ -778,7 +778,7 @@
  {
   "id": 110,
   "product_id": 97,
-  "storage_path": "product-images-v2/TF-RF-032/TF-RF-032-1.webp",
+  "storage_path": "product-images-v3/TF-RF-032/TF-RF-032__%D9%83%D9%84%D9%8A%D9%83%D8%B3%D9%88%D9%86%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20%D8%A8%D8%AE%D8%A7%D8%B1%20%D8%A3%D9%85%D8%B1%D9%8A%D9%83%D9%8A.png",
   "alt_text_ar": "صورة كليكسون ثلاجة بخار أمريكي",
   "sort_order": 1,
   "is_primary": true
@@ -786,7 +786,7 @@
  {
   "id": 111,
   "product_id": 98,
-  "storage_path": "product-images-v2/TF-RF-031/TF-RF-031-1.webp",
+  "storage_path": "product-images-v3/TF-RF-031/TF-RF-031__%D9%83%D9%84%D9%8A%D9%83%D8%B3%D9%88%D9%86%20%D8%AF%D9%8A%D8%AC%D9%81%D8%B1%D8%A7%D8%AC%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20LG%20%D8%A8%D8%AE%D8%A7%D8%B1.png",
   "alt_text_ar": "صورة كليكسون ديجفراج ثلاجة LG بخار",
   "sort_order": 1,
   "is_primary": true
@@ -794,7 +794,7 @@
  {
   "id": 112,
   "product_id": 99,
-  "storage_path": "product-images-v2/TF-RF-030/TF-RF-030-1.webp",
+  "storage_path": "product-images-v3/TF-RF-030/TF-RF-030__%D9%83%D9%84%D9%8A%D9%83%D8%B3%D9%88%D9%86%20%2B%20%D9%81%D9%8A%D8%B2%D9%8A%D8%A8%D9%84%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20%D8%A8%D8%AE%D8%A7%D8%B1%20%D8%B3%D8%AA%D8%A7%D9%86%D8%AF%D8%A7%D8%B1.png",
   "alt_text_ar": "صورة كليكسون + فيزيبل ثلاجة بخار ستاندار",
   "sort_order": 1,
   "is_primary": true
@@ -802,7 +802,7 @@
  {
   "id": 113,
   "product_id": 100,
-  "storage_path": "product-images-v2/TF-RF-029/TF-RF-029-1.webp",
+  "storage_path": "product-images-v3/TF-RF-029/TF-RF-029__%D9%83%D9%84%D9%8A%D9%83%D8%B3%D9%88%D9%86%20%D8%AF%D9%8A%D8%AC%D9%81%D8%B1%D8%A7%D8%AC%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20%D8%A8%D8%AE%D8%A7%D8%B1.png",
   "alt_text_ar": "صورة كليكسون ديجفراج ثلاجة بخار",
   "sort_order": 1,
   "is_primary": true
@@ -810,7 +810,7 @@
  {
   "id": 114,
   "product_id": 101,
-  "storage_path": "product-images-v2/TF-RF-028/TF-RF-028-1.webp",
+  "storage_path": "product-images-v3/TF-RF-028/TF-RF-028__%D9%81%D8%B1%D9%81%D8%A7%D8%B1%D8%A9%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20LG%20%D8%A8%D8%AE%D8%A7%D8%B1.png",
   "alt_text_ar": "صورة فرفارة ثلاجة LG بخار",
   "sort_order": 1,
   "is_primary": true
@@ -818,7 +818,7 @@
  {
   "id": 115,
   "product_id": 102,
-  "storage_path": "product-images-v2/TF-RF-027/TF-RF-027-1.webp",
+  "storage_path": "product-images-v3/TF-RF-027/TF-RF-027__%D8%AA%D8%B1%D9%85%D9%88%D8%B3%D8%AA%D8%A7%D8%AA%20A13%20%D9%88%D9%8A%D8%B1%D8%A8%D9%88%D9%84.png",
   "alt_text_ar": "صورة ترموستات A13 ويربول",
   "sort_order": 1,
   "is_primary": true
@@ -826,7 +826,7 @@
  {
   "id": 116,
   "product_id": 103,
-  "storage_path": "product-images-v2/TF-RF-026/TF-RF-026-1.webp",
+  "storage_path": "product-images-v3/TF-RF-026/TF-RF-026__%D8%A8%D9%84%D8%A7%D9%83%D8%A9%20%D9%85%D9%8A%D9%86%D9%8A%20%D8%A8%D8%A7%D8%B1.png",
   "alt_text_ar": "صورة بلاكة ميني بار",
   "sort_order": 1,
   "is_primary": true
@@ -834,7 +834,7 @@
  {
   "id": 117,
   "product_id": 104,
-  "storage_path": "product-images-v2/TF-RF-025/TF-RF-025-1.webp",
+  "storage_path": "product-images-v3/TF-RF-025/TF-RF-025__%D8%A8%D9%84%D8%A7%D9%83%D8%A9%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20125%20%D9%84%D8%AA%D8%B1.png",
   "alt_text_ar": "صورة بلاكة ثلاجة 125 لتر",
   "sort_order": 1,
   "is_primary": true
@@ -842,7 +842,7 @@
  {
   "id": 118,
   "product_id": 105,
-  "storage_path": "product-images-v2/TF-RF-024/TF-RF-024-1.webp",
+  "storage_path": "product-images-v3/TF-RF-024/TF-RF-024__%D8%AA%D8%B1%D9%85%D9%88%D8%B3%D8%AA%D8%A7%D8%AA%20%D9%81%D8%B1%D9%8A%D9%83%D9%88%20%D9%86%D9%8A%D8%BA%D8%A7%D8%AA%D9%8A%D9%81.png",
   "alt_text_ar": "صورة ترموستات فريكو نيغاتيف",
   "sort_order": 1,
   "is_primary": true
@@ -858,7 +858,7 @@
  {
   "id": 120,
   "product_id": 106,
-  "storage_path": "product-images-v2/TF-RF-023/TF-RF-023-1.webp",
+  "storage_path": "product-images-v3/TF-RF-023/TF-RF-023__%D8%AA%D8%B1%D9%85%D9%88%D8%B3%D8%AA%D8%A7%D8%AA%20VT9%20%D8%A3%D8%B5%D9%84%D9%8A.png",
   "alt_text_ar": "صورة ترموستات VT9 أصلي",
   "sort_order": 1,
   "is_primary": true
@@ -866,7 +866,7 @@
  {
   "id": 121,
   "product_id": 107,
-  "storage_path": "product-images-v2/TF-WM-050/back-fraka-11x10.webp",
+  "storage_path": "product-images-v3/TF-WM-050/TF-WM-050__%D8%A8%D8%A7%D9%83%20%D9%81%D8%B1%D8%A7%D9%83%D8%A9%20%D9%83%D8%A7%D8%B1%D9%8A%2011%C3%9710.png",
   "alt_text_ar": "صورة باك فراكة كاري 11×10",
   "sort_order": 1,
   "is_primary": true
@@ -874,7 +874,7 @@
  {
   "id": 122,
   "product_id": 108,
-  "storage_path": "product-images-v2/TF-RF-088/TF-RF-088-1.webp",
+  "storage_path": "product-images-v3/TF-RF-088/TF-RF-088__%D9%81%D8%B1%D9%81%D8%A7%D8%B1%D8%A9%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20Siera%20%D8%A8%D8%AE%D8%A7%D8%B1.png",
   "alt_text_ar": "صورة فرفارة ثلاجة Siera بخار",
   "sort_order": 1,
   "is_primary": true
@@ -890,7 +890,7 @@
  {
   "id": 124,
   "product_id": 109,
-  "storage_path": "product-images-v2/TF-RF-087/TF-RF-087-1.webp",
+  "storage_path": "product-images-v3/TF-RF-087/TF-RF-087__%D8%BA%D8%A7%D8%B2%20%D8%AA%D8%A8%D8%B1%D9%8A%D8%AF%20R134a%20%D9%88%D8%B2%D9%86%201%20%D9%83%D8%BA.png",
   "alt_text_ar": "صورة غاز تبريد R134a وزن 1 كغ",
   "sort_order": 1,
   "is_primary": true
@@ -898,7 +898,7 @@
  {
   "id": 125,
   "product_id": 110,
-  "storage_path": "product-images-v2/TF-RF-086/TF-RF-086-1.webp",
+  "storage_path": "product-images-v3/TF-RF-086/TF-RF-086__%D9%81%D9%84%D8%AA%D8%B1%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%2030g.png",
   "alt_text_ar": "صورة فلتر ثلاجة 30g",
   "sort_order": 1,
   "is_primary": true
@@ -906,7 +906,7 @@
  {
   "id": 126,
   "product_id": 111,
-  "storage_path": "product-images-v2/TF-RF-085/TF-RF-085-1.webp",
+  "storage_path": "product-images-v3/TF-RF-085/TF-RF-085__%D9%81%D9%84%D8%AA%D8%B1%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%2020g.png",
   "alt_text_ar": "صورة فلتر ثلاجة 20g",
   "sort_order": 1,
   "is_primary": true
@@ -914,7 +914,7 @@
  {
   "id": 127,
   "product_id": 112,
-  "storage_path": "product-images-v2/TF-RF-084/TF-RF-084-1.webp",
+  "storage_path": "product-images-v3/TF-RF-084/TF-RF-084__%D9%81%D9%84%D8%AA%D8%B1%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%2015g.png",
   "alt_text_ar": "صورة فلتر ثلاجة 15g",
   "sort_order": 1,
   "is_primary": true
@@ -922,7 +922,7 @@
  {
   "id": 128,
   "product_id": 113,
-  "storage_path": "product-images-v2/TF-RF-083/TF-RF-083-1.webp",
+  "storage_path": "product-images-v3/TF-RF-083/TF-RF-083__%D9%83%D8%A7%D8%A8%D9%8A%D9%84%D9%8A%D8%B1%20%D9%86%D8%AD%D8%A7%D8%B3%20%D9%84%D9%84%D8%AB%D9%84%D8%A7%D8%AC%D8%A9.png",
   "alt_text_ar": "صورة كابيلير نحاس للثلاجة",
   "sort_order": 1,
   "is_primary": true
@@ -938,7 +938,7 @@
  {
   "id": 130,
   "product_id": 115,
-  "storage_path": "product-images-v2/TF-RF-081/TF-RF-081-1.webp",
+  "storage_path": "product-images-v3/TF-RF-081/TF-RF-081__%D8%AA%D8%B1%D9%85%D9%88%D8%B3%D8%AA%D8%A7%D8%AA%20K50%20%D8%B9%D8%A7%D8%AF%D9%8A.png",
   "alt_text_ar": "صورة ترموستات K50 عادي",
   "sort_order": 1,
   "is_primary": true
@@ -946,7 +946,7 @@
  {
   "id": 131,
   "product_id": 116,
-  "storage_path": "product-images-v2/TF-RF-080/TF-RF-080-1.webp",
+  "storage_path": "product-images-v3/TF-RF-080/TF-RF-080__%D9%83%D9%88%D9%86%D8%AF%D9%86%D8%B3%D8%A7%D8%AA%D9%88%D8%B1%20%D9%85%D9%88%D8%B7%D9%88%D8%B1%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%2047%C2%B5F%20-%2080%C2%B5F.png",
   "alt_text_ar": "صورة كوندنساتور موطور ثلاجة 47µF / 80µF",
   "sort_order": 1,
   "is_primary": true
@@ -954,7 +954,7 @@
  {
   "id": 132,
   "product_id": 117,
-  "storage_path": "product-images-v2/TF-RF-079/TF-RF-079-1.webp",
+  "storage_path": "product-images-v3/TF-RF-079/TF-RF-079__%D8%A8%D9%88%D9%84%D8%A9%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20LED.png",
   "alt_text_ar": "صورة بولة ثلاجة LED",
   "sort_order": 1,
   "is_primary": true
@@ -962,7 +962,7 @@
  {
   "id": 133,
   "product_id": 118,
-  "storage_path": "product-images-v2/TF-RF-078/TF-RF-078-1.webp",
+  "storage_path": "product-images-v3/TF-RF-078/TF-RF-078__%D8%BA%D8%A7%D8%B2%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20R290.png",
   "alt_text_ar": "صورة غاز ثلاجة R290",
   "sort_order": 1,
   "is_primary": true
@@ -970,7 +970,7 @@
  {
   "id": 134,
   "product_id": 119,
-  "storage_path": "product-images-v2/TF-RF-077/TF-RF-077-1.webp",
+  "storage_path": "product-images-v3/TF-RF-077/TF-RF-077__%D8%BA%D8%A7%D8%B2%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20R600a.png",
   "alt_text_ar": "صورة غاز ثلاجة R600a",
   "sort_order": 1,
   "is_primary": true
@@ -978,7 +978,7 @@
  {
   "id": 135,
   "product_id": 120,
-  "storage_path": "product-images-v2/TF-RF-076/TF-RF-076-1.webp",
+  "storage_path": "product-images-v3/TF-RF-076/TF-RF-076__%D8%BA%D8%A7%D8%B2%20%D8%B4%D9%84%D9%8A%D9%85%D9%88%20MAPP%20PRO.png",
   "alt_text_ar": "صورة غاز شليمو MAPP PRO",
   "sort_order": 1,
   "is_primary": true
@@ -986,7 +986,7 @@
  {
   "id": 136,
   "product_id": 121,
-  "storage_path": "product-images-v2/TF-RF-075/TF-RF-075-1.webp",
+  "storage_path": "product-images-v3/TF-RF-075/TF-RF-075__%D8%B2%D9%8A%D8%AA%20%D9%85%D9%88%D8%B7%D9%88%D8%B1%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20R600a.png",
   "alt_text_ar": "صورة زيت موطور ثلاجة R600a",
   "sort_order": 1,
   "is_primary": true
@@ -994,7 +994,7 @@
  {
   "id": 137,
   "product_id": 122,
-  "storage_path": "product-images-v2/TF-RF-074/TF-RF-074-1.webp",
+  "storage_path": "product-images-v3/TF-RF-074/TF-RF-074__%D9%83%D9%84%D9%8A%D9%83%D8%B3%D9%88%D9%86%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20%D8%B3%D8%AA%D8%A7%D9%86%D8%AF%D8%A7%D8%B1.png",
   "alt_text_ar": "صورة كليكسون ثلاجة ستاندار",
   "sort_order": 1,
   "is_primary": true
@@ -1002,7 +1002,7 @@
  {
   "id": 138,
   "product_id": 123,
-  "storage_path": "product-images-v2/TF-RF-073/TF-RF-073-1.webp",
+  "storage_path": "product-images-v3/TF-RF-073/TF-RF-073__%D8%AA%D8%B1%D9%85%D9%88%D8%B3%D8%AA%D8%A7%D8%AA%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20ATEA%20%D8%A3%D8%B5%D9%84%D9%8A.png",
   "alt_text_ar": "صورة ترموستات ثلاجة ATEA أصلي",
   "sort_order": 1,
   "is_primary": true
@@ -1010,7 +1010,7 @@
  {
   "id": 139,
   "product_id": 124,
-  "storage_path": "product-images-v2/TF-RF-072/TF-RF-072-1.webp",
+  "storage_path": "product-images-v3/TF-RF-072/TF-RF-072__%D9%81%D8%B1%D9%81%D8%A7%D8%B1%D8%A9%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20%D9%81%D8%B1%D9%8A%D9%83%D9%88%20%D8%A8%D8%AE%D8%A7%D8%B1.png",
   "alt_text_ar": "صورة فرفارة ثلاجة فريكو بخار",
   "sort_order": 1,
   "is_primary": true
@@ -1018,7 +1018,7 @@
  {
   "id": 140,
   "product_id": 125,
-  "storage_path": "product-images-v2/TF-RF-071/TF-RF-071-1.webp",
+  "storage_path": "product-images-v3/TF-RF-071/TF-RF-071__%D8%B2%D9%8A%D8%AA%20%D9%85%D9%88%D8%B7%D9%88%D8%B1%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20R134a.png",
   "alt_text_ar": "صورة زيت موطور ثلاجة R134a",
   "sort_order": 1,
   "is_primary": true
@@ -1026,7 +1026,7 @@
  {
   "id": 141,
   "product_id": 126,
-  "storage_path": "product-images-v2/TF-RF-070/TF-RF-070-1.webp",
+  "storage_path": "product-images-v3/TF-RF-070/TF-RF-070__%D8%BA%D8%A7%D8%B2%20%D8%AA%D8%A8%D8%B1%D9%8A%D8%AF%20R600a%20%D9%88%D8%B2%D9%86%203%20%D9%83%D8%BA.png",
   "alt_text_ar": "صورة غاز تبريد R600a وزن 3 كغ",
   "sort_order": 1,
   "is_primary": true
@@ -1034,7 +1034,7 @@
  {
   "id": 142,
   "product_id": 127,
-  "storage_path": "product-images-v2/TF-RF-069/TF-RF-069-1.webp",
+  "storage_path": "product-images-v3/TF-RF-069/TF-RF-069__%D9%81%D8%B1%D9%81%D8%A7%D8%B1%D8%A9%20%D9%83%D8%A7%D8%B1%D9%8A%D8%A9%20220V.png",
   "alt_text_ar": "صورة فرفارة كارية 220V",
   "sort_order": 1,
   "is_primary": true
@@ -1042,7 +1042,7 @@
  {
   "id": 143,
   "product_id": 128,
-  "storage_path": "product-images-v2/TF-RF-068/TF-RF-068-1.webp",
+  "storage_path": "product-images-v3/TF-RF-068/TF-RF-068__%D8%B3%D8%A7%D8%B1%D9%88%D8%A9%20%D8%A8%D9%88%D8%B7%D9%88%D9%86%20%D8%AA%D8%B1%D9%85%D9%88%D8%B3%D8%AA%D8%A7%D8%AA%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20%D8%B3%D8%AA%D8%A7%D9%86%D8%AF%D8%A7%D8%B1.png",
   "alt_text_ar": "صورة ساروة بوطون ترموستات ثلاجة ستاندار",
   "sort_order": 1,
   "is_primary": true
@@ -1050,7 +1050,7 @@
  {
   "id": 144,
   "product_id": 129,
-  "storage_path": "product-images-v2/TF-RF-067/TF-RF-067-1.webp",
+  "storage_path": "product-images-v3/TF-RF-067/TF-RF-067__%D9%83%D9%88%D8%A8%20%D8%AA%D9%8A%D9%88%D8%A8%20%D8%B5%D8%BA%D9%8A%D8%B1%20%D9%84%D9%82%D8%B7%D8%B9%20%D8%A7%D9%84%D9%86%D8%AD%D8%A7%D8%B3.png",
   "alt_text_ar": "صورة كوب تيوب صغير لقطع النحاس",
   "sort_order": 1,
   "is_primary": true
@@ -1058,7 +1058,7 @@
  {
   "id": 145,
   "product_id": 130,
-  "storage_path": "product-images-v2/TF-RF-066/TF-RF-066-1.webp",
+  "storage_path": "product-images-v3/TF-RF-066/TF-RF-066__%D9%81%D8%A7%D9%86%20%D8%B4%D8%A7%D8%B1%D8%AC%20%D8%B3%D8%AA%D8%A7%D9%86%D8%AF%D8%A7%D8%B1.png",
   "alt_text_ar": "صورة فان شارج ستاندار",
   "sort_order": 1,
   "is_primary": true
@@ -1066,7 +1066,7 @@
  {
   "id": 146,
   "product_id": 131,
-  "storage_path": "product-images-v2/TF-RF-065/TF-RF-065-1.webp",
+  "storage_path": "product-images-v3/TF-RF-065/TF-RF-065__%D9%81%D9%8A%D9%83%D8%B3%D9%8A%D8%A8%D9%84%20%D8%BA%D8%A7%D8%B2.png",
   "alt_text_ar": "صورة فيكسيبل غاز",
   "sort_order": 1,
   "is_primary": true
@@ -1074,7 +1074,7 @@
  {
   "id": 147,
   "product_id": 132,
-  "storage_path": "product-images-v2/TF-RF-064/TF-RF-064-1.webp",
+  "storage_path": "product-images-v3/TF-RF-064/TF-RF-064__%D8%A8%D9%83%D9%8A%D8%B7%20%D8%A3%D8%BA%D8%AC%D9%88%D9%86%20%D8%B1%D9%82%D9%8A%D9%82.png",
   "alt_text_ar": "صورة بكيط أغجون رقيق",
   "sort_order": 1,
   "is_primary": true
@@ -1082,7 +1082,7 @@
  {
   "id": 148,
   "product_id": 133,
-  "storage_path": "product-images-v2/TF-RF-063/TF-RF-063-1.webp",
+  "storage_path": "product-images-v3/TF-RF-063/TF-RF-063__%D8%A8%D9%83%D9%8A%D8%B7%20%D8%A3%D8%BA%D8%AC%D9%88%D9%86%20%D9%86%D8%AD%D8%A7%D8%B3%20%D8%BA%D9%84%D9%8A%D8%B8.png",
   "alt_text_ar": "صورة بكيط أغجون نحاس غليظ",
   "sort_order": 1,
   "is_primary": true
@@ -1090,7 +1090,7 @@
  {
   "id": 149,
   "product_id": 134,
-  "storage_path": "product-images-v2/TF-RF-062/TF-RF-062-1.webp",
+  "storage_path": "product-images-v3/TF-RF-062/TF-RF-062__%D8%A8%D9%88%D9%84%D8%A9%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%2020W.png",
   "alt_text_ar": "صورة بولة ثلاجة 20W",
   "sort_order": 1,
   "is_primary": true
@@ -1106,7 +1106,7 @@
  {
   "id": 151,
   "product_id": 136,
-  "storage_path": "product-images-v2/TF-RF-060/TF-RF-060-1.webp",
+  "storage_path": "product-images-v3/TF-RF-060/TF-RF-060__%D9%81%D8%A7%D9%84%D9%81%20%D8%B7%D9%88%D9%8A%D9%84.png",
   "alt_text_ar": "صورة فالف طويل",
   "sort_order": 1,
   "is_primary": true
@@ -1114,7 +1114,7 @@
  {
   "id": 152,
   "product_id": 137,
-  "storage_path": "product-images-v2/TF-RF-059/TF-RF-059-1.webp",
+  "storage_path": "product-images-v3/TF-RF-059/TF-RF-059__%D8%B1%D9%88%D9%84%D9%8A%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%204%20%D9%83%D9%88%D8%B3%D8%A7%D8%AA.png",
   "alt_text_ar": "صورة رولي ثلاجة 4 كوسات",
   "sort_order": 1,
   "is_primary": true
@@ -1122,7 +1122,7 @@
  {
   "id": 153,
   "product_id": 138,
-  "storage_path": "product-images-v2/TF-RF-058/TF-RF-058-1.webp",
+  "storage_path": "product-images-v3/TF-RF-058/TF-RF-058__%D8%B1%D9%88%D9%84%D9%8A%20%D8%AB%D9%84%D8%A7%D8%AC%D8%A9%20%D8%B3%D8%AA%D8%A7%D9%86%D8%AF%D8%A7%D8%B1.png",
   "alt_text_ar": "صورة رولي ثلاجة ستاندار",
   "sort_order": 1,
   "is_primary": true
