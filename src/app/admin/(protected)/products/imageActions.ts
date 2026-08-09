@@ -64,6 +64,88 @@ export async function uploadProductImage(
   return { error: null, success: true };
 }
 
+/**
+ * تغيير الصورة الرئيسية للمنتج بخطوة واحدة (زر "تغيير الصورة" فكارت المنتج
+ * فـ/admin/products): يحفظ الملف الجديد بنفس نظام storage الحالي
+ * (saveProductImageFile — محلي أو Supabase Storage حسب الإعداد)، ثم يحدّث
+ * سجل الصورة الرئيسية الموجود فمكانه (نفس id، يبقى is_primary = true) بدل
+ * إنشاء سجل جديد، فلا يمكن أبداً أن ينتج عن هذا سجل "رئيسية" مكرر. إن لم
+ * يكن للمنتج أي صورة بعد (حالة نادرة)، يُنشأ سجل واحد جديد كرئيسية.
+ *
+ * ترتيب آمن صارم:
+ *   1) رفع الملف الجديد أولاً والتأكد من نجاحه.
+ *   2) تحديث قاعدة البيانات. إن فشل، يُحذف الملف الجديد فوراً (تنظيف) ولا
+ *      يُلمس السجل/الملف القديم إطلاقاً.
+ *   3) فقط بعد نجاح خطوة 2، يُحذف الملف القديم من التخزين.
+ * الملف القديم لا يُحذف أبداً قبل تأكيد نجاح تحديث قاعدة البيانات.
+ *
+ * لا يُلمس أي حقل آخر فالمنتج (الاسم/الأثمنة/المخزون/أقل كمية/الحالة) ولا
+ * أي منتج آخر.
+ */
+export async function replacePrimaryImage(
+  productId: number,
+  _prevState: ImageActionState,
+  formData: FormData
+): Promise<ImageActionState> {
+  const admin = await getAdminUser();
+  if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+  if (!isOwnerAdmin(admin)) return { error: "هذا الإجراء مقصور على صاحب الحساب (Admin)." };
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { error: "اختر صورة أولاً." };
+  }
+
+  const fileError = validateImageFile(file);
+  if (fileError) return { error: fileError };
+
+  const existing = await getProductImagesAdmin(productId);
+  const currentPrimary = existing.find((img) => img.is_primary) ?? null;
+
+  // 1) رفع الملف الجديد أولاً.
+  let newStoragePath: string;
+  try {
+    newStoragePath = await saveProductImageFile(productId, file);
+  } catch {
+    return { error: "تعذّر حفظ الصورة. حاول مرة أخرى." };
+  }
+
+  // 2) تحديث قاعدة البيانات — عند الفشل، نحذف الملف الجديد فوراً (تنظيف)
+  // ولا نلمس السجل/الملف القديم إطلاقاً.
+  try {
+    if (currentPrimary) {
+      await sql`
+        update public.product_images
+        set storage_path = ${newStoragePath}
+        where id = ${currentPrimary.id} and product_id = ${productId}
+      `;
+    } else {
+      await sql`
+        insert into public.product_images (product_id, storage_path, alt_text_ar, sort_order, is_primary)
+        values (${productId}, ${newStoragePath}, null, 1, true)
+      `;
+    }
+  } catch {
+    await deleteProductImageFile(newStoragePath).catch(() => {});
+    return { error: "تعذّر تحديث الصورة فقاعدة البيانات. لم يتغيّر شيء." };
+  }
+
+  // 3) فقط بعد نجاح التحديث، نحذف الملف القديم من التخزين.
+  if (currentPrimary) {
+    await deleteProductImageFile(currentPrimary.storage_path).catch(() => {});
+  }
+
+  revalidatePath(`/admin/products/${productId}`);
+  revalidatePath("/admin/products");
+  // الواجهة الأمامية (صفحة المنتج، صفحة التصنيف، الرئيسية...) كلها
+  // force-dynamic أصلاً فلا تحتاج revalidatePath لتُحدَّث فعلياً — لكن نُنعشها
+  // بنفس النمط المعتمد فـsettings/actions.ts (revalidatePath("/", "layout"))
+  // لتفادي أي عرض من ذاكرة تنقّل جانب العميل (client-side router cache).
+  revalidatePath("/", "layout");
+
+  return { error: null, success: true };
+}
+
 export async function deleteProductImage(
   imageId: number,
   productId: number

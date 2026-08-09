@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
-import { listProductsAdmin } from "@/lib/queries/adminProducts";
+import { listProductsAdmin, getPrimaryImagesForProductsAdmin } from "@/lib/queries/adminProducts";
 import { getAllCategoriesAdmin } from "@/lib/queries/adminCategories";
 import { quickUpdateProduct } from "@/app/admin/(protected)/products/actions";
+import { replacePrimaryImage } from "@/app/admin/(protected)/products/imageActions";
 import { ProductQuickEditRow } from "@/components/admin/ProductQuickEditRow";
 
 export const dynamic = "force-dynamic";
@@ -54,6 +55,9 @@ export default async function AdminProductsPage({ searchParams }: Props) {
     }),
     getAllCategoriesAdmin(),
   ]);
+
+  const primaryImages = await getPrimaryImagesForProductsAdmin(products.map((p) => p.id));
+  const primaryImageByProductId = new Map(primaryImages.map((img) => [img.product_id, img]));
 
   return (
     <div>
@@ -125,6 +129,8 @@ export default async function AdminProductsPage({ searchParams }: Props) {
               key={product.id}
               product={product}
               action={quickUpdateProduct.bind(null, product.id)}
+              changeImageAction={replacePrimaryImage.bind(null, product.id)}
+              currentImagePath={primaryImageByProductId.get(product.id)?.storage_path ?? null}
             />
           ))}
         </div>
