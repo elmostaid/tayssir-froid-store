@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "gen:meta-catalog-audit": "tsx scripts/gen-audit-report.ts"
+    "gen:meta-catalog-audit": "tsx scripts/gen-audit-report.ts",
+    "validate:meta-feed": "tsx scripts/validate-meta-feed.ts"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.5.1",
