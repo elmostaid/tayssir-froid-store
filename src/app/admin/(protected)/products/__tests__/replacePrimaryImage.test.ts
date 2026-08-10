@@ -158,7 +158,7 @@ describe("replacePrimaryImage — تغيير الصورة الرئيسية بخ�
     await expect(fs.access(oldAbsPath)).resolves.toBeUndefined();
   });
 
-  test("Admin: يبدّل الصورة الرئيسية بنجاح — نفس السجل، صورة واحدة رئيسية، الملف الجديد على القرص، والقديم يُحذف، وبقية بيانات المنتج بلا تغيير", async () => {
+  test("Admin: يبدّل الصورة الرئيسية بنجاح — نفس السجل، صورة واحدة رئيسية، الملف الجديد على القرص، والقديم يبقى بلا حذف، وبقية بيانات المنتج بلا تغيير", async () => {
     getAdminUserMock.mockResolvedValueOnce(ADMIN_USER);
 
     const fd = new FormData();
@@ -185,8 +185,8 @@ describe("replacePrimaryImage — تغيير الصورة الرئيسية بخ�
     const written = await fs.readFile(newAbsPath);
     expect(written.equals(IMAGE_BYTES)).toBe(true);
 
-    // الملف القديم حُذف فعلياً من التخزين (لا صور يتيمة متراكمة).
-    await expect(fs.access(oldAbsPath)).rejects.toThrow();
+    // الملف القديم يبقى موجوداً بلا حذف — لا يُلمس إطلاقاً عند تغيير الصورة الرئيسية.
+    await expect(fs.access(oldAbsPath)).resolves.toBeUndefined();
 
     // بقية بيانات المنتج لم تتغيّر إطلاقاً.
     const [product] = await sql<

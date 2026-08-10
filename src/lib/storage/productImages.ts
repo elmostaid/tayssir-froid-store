@@ -65,15 +65,17 @@ export class StorageNotConfiguredError extends Error {
 
 /**
  * يحفظ ملف صورة المنتج ويرجع storage_path لتخزينه في قاعدة البيانات.
- * الاتفاقية: product-images/{productId}/{filename} — نفس الاتفاقية تُستعمل
- * محلياً (داخل public/) ولاحقاً كمسار كائن داخل bucket باسم "product-images"
- * في Supabase Storage، فتبقى قيم storage_path المخزَّنة صالحة دون أي تغيير
- * عند تفعيل التخزين الحقيقي مستقبلاً.
+ * عند تخزين Supabase Storage الحقيقي المُهيَّأ: القيمة المُرجَعة هي الرابط
+ * العام الكامل (https://.../storage/v1/object/public/product-images/...)
+ * جاهزاً، لأن resolveProductImageUrl لا يحاول حل/تخمين أي شيء بنفسه —
+ * يُعيد أي storage_path يبدأ بـhttps://‏/http:// كما هو حرفياً. محلياً (بلا
+ * تخزين سحابي مُهيَّأ): تبقى الاتفاقية القديمة كما كانت دائماً —
+ * product-images/{productId}/{filename} نسبةً إلى public/، بلا أي تغيير.
+ * اسم الملف نفسه دائماً UUID عشوائي آمن (لا حروف عربية ولا مسافات).
  */
 export async function saveProductImageFile(productId: number, file: File): Promise<string> {
   const ext = EXT_BY_TYPE[file.type] ?? "bin";
   const filename = `${randomUUID()}.${ext}`;
-  const storagePath = `product-images/${productId}/${filename}`;
   const buffer = Buffer.from(await file.arrayBuffer());
 
   if (isRemoteStorageConfigured()) {
@@ -81,14 +83,21 @@ export async function saveProductImageFile(productId: number, file: File): Promi
     if (!client) {
       throw new Error("تعذّر الاتصال بمخزن الصور.");
     }
+    const objectKey = `${productId}/${filename}`;
     const { error } = await client.storage
       .from("product-images")
-      .upload(`${productId}/${filename}`, buffer, { contentType: file.type });
+      .upload(objectKey, buffer, { contentType: file.type });
     if (error) {
       throw new Error("تعذّر رفع الصورة إلى مخزن الصور.");
     }
-    return storagePath;
+    // نُخزِّن الرابط العام الكامل (https://...) مباشرة كـstorage_path بدل
+    // مسار نسبي داخل الـbucket — resolveProductImageUrl يُعيده كما هو حرفياً
+    // بلا أي محاولة حل أو تخمين لاحقة (انظر تعليقها).
+    const { data } = client.storage.from("product-images").getPublicUrl(objectKey);
+    return data.publicUrl;
   }
+
+  const storagePath = `product-images/${productId}/${filename}`;
 
   if (isRunningOnVercel()) {
     // ممنوع استعمال نظام الملفات المحلي كحل للصور على Vercel — فشل واضح
@@ -102,12 +111,24 @@ export async function saveProductImageFile(productId: number, file: File): Promi
   return storagePath;
 }
 
+const PUBLIC_URL_OBJECT_KEY_MARKER = "/storage/v1/object/public/product-images/";
+
+// storagePath هنا إما رابط عام كامل (getPublicUrl الجاهز من saveProductImageFile
+// الحديثة) أو مساراً نسبياً قديماً بادئته "product-images/" — نستخرج مفتاح
+// الكائن الحقيقي داخل الـbucket من كلتا الصيغتين لحذفٍ صحيح فالحالتين.
+function objectKeyFromStoragePath(storagePath: string): string {
+  const markerIndex = storagePath.indexOf(PUBLIC_URL_OBJECT_KEY_MARKER);
+  if (markerIndex !== -1) {
+    return storagePath.slice(markerIndex + PUBLIC_URL_OBJECT_KEY_MARKER.length);
+  }
+  return storagePath.replace(/^product-images\//, "");
+}
+
 export async function deleteProductImageFile(storagePath: string): Promise<void> {
   if (isRemoteStorageConfigured()) {
     const client = getSupabaseServiceRoleClient();
     if (client) {
-      const objectKey = storagePath.replace(/^product-images\//, "");
-      await client.storage.from("product-images").remove([objectKey]);
+      await client.storage.from("product-images").remove([objectKeyFromStoragePath(storagePath)]);
     }
     return;
   }
