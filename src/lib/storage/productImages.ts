@@ -8,7 +8,7 @@ export const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"] as 
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 ميجابايت
 export const MAX_IMAGES_PER_PRODUCT = 5;
 
-const EXT_BY_TYPE: Record<string, string> = {
+export const EXT_BY_TYPE: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/png": "png",
   "image/webp": "webp",

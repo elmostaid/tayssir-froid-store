@@ -3,8 +3,11 @@
 import { useRef, useState, useTransition } from "react";
 import Image from "next/image";
 import { resolveImageUrl } from "@/lib/images";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type { AdminProductImage } from "@/lib/queries/adminProducts";
-import type { ImageActionState } from "@/app/admin/(protected)/products/imageActions";
+import type { ImageActionState, UploadTargetState } from "@/app/admin/(protected)/products/imageActions";
+
+const PRODUCT_IMAGES_BUCKET = "product-images";
 
 type ImageWithActions = {
   image: AdminProductImage;
@@ -27,7 +30,8 @@ export function ProductImagesPanel({
   images,
   imageUrlByPath = {},
   canUploadImages,
-  replacePrimaryAction,
+  createUploadTargetAction,
+  commitUploadAction,
   addImageAction,
   imagesWithActions,
 }: {
@@ -42,10 +46,13 @@ export function ProductImagesPanel({
   // Supabase Storage مُهيَّأ) — نُعطّل أزرار الرفع ونعرض رسالة واضحة بدل
   // إتاحة محاولة ستفشل حتماً بخطأ غير مفهوم للمستخدم.
   canUploadImages: boolean;
-  replacePrimaryAction: (
-    prevState: ImageActionState,
-    formData: FormData
-  ) => Promise<ImageActionState>;
+  // تغيير الصورة الرئيسية: binary الصورة لا يمرّ عبر Server Action/Vercel
+  // إطلاقاً — createUploadTargetAction تُرجع رابط رفع موقَّع من Supabase
+  // Storage، المتصفح يرفع الملف مباشرة إليه (uploadToSignedUrl)، ثم
+  // commitUploadAction تُحدِّث storage_path فقط بعد التأكد من نجاح الرفع
+  // الفعلي. راجع imageActions.ts.
+  createUploadTargetAction: (contentType: string) => Promise<UploadTargetState>;
+  commitUploadAction: (objectPath: string) => Promise<ImageActionState>;
   addImageAction: (
     prevState: ImageActionState,
     formData: FormData
@@ -87,10 +94,35 @@ export function ProductImagesPanel({
 
   function handleReplaceSave() {
     if (!replaceFile) return;
-    const fd = new FormData();
-    fd.set("file", replaceFile);
+    const file = replaceFile;
     startReplaceTransition(async () => {
-      const result = await replacePrimaryAction({ error: null }, fd);
+      // 1) رابط رفع موقَّع من Supabase Storage — Server Action صغيرة، بدون
+      // الملف نفسه إطلاقاً (productId + نوع الملف فقط).
+      const target = await createUploadTargetAction(file.type);
+      if (target.error || !target.uploadUrl || !target.token || !target.objectPath) {
+        setReplaceResult({ error: target.error ?? "تعذّر تحضير الرفع. حاول مرة أخرى." });
+        return;
+      }
+
+      // 2) المتصفح يرفع binary الصورة مباشرة إلى Supabase Storage — لا يمرّ
+      // إطلاقاً عبر Vercel/Server Action، فلا حد حجم body ولا payload يُطبَّق.
+      try {
+        const supabase = createSupabaseBrowserClient();
+        const { error: uploadError } = await supabase.storage
+          .from(PRODUCT_IMAGES_BUCKET)
+          .uploadToSignedUrl(target.objectPath, target.token, file);
+        if (uploadError) {
+          setReplaceResult({ error: "تعذّر رفع الصورة. تحقق من الاتصال وحاول مرة أخرى." });
+          return;
+        }
+      } catch {
+        setReplaceResult({ error: "تعذّر رفع الصورة. تحقق من الاتصال وحاول مرة أخرى." });
+        return;
+      }
+
+      // 3) الرفع نجح فعلاً — الآن فقط نُحدِّث storage_path (Server Action
+      // صغيرة أخرى: productId + objectPath، لا ملف هنا أيضاً).
+      const result = await commitUploadAction(target.objectPath);
       setReplaceResult(result);
       if (result.success) {
         if (replacePreviewUrl) URL.revokeObjectURL(replacePreviewUrl);

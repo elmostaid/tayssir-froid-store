@@ -1,11 +1,25 @@
 import { describe, test, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
-import { ProductImagesPanel } from "@/components/admin/ProductImagesPanel";
 import type { AdminProductImage } from "@/lib/queries/adminProducts";
-import type { ImageActionState } from "@/app/admin/(protected)/products/imageActions";
+import type { ImageActionState, UploadTargetState } from "@/app/admin/(protected)/products/imageActions";
+
+const uploadToSignedUrlMock = vi.fn<
+  (path: string, token: string, fileBody: File) => Promise<{ data: { path: string } | null; error: unknown }>
+>(async () => ({ data: { path: "x" }, error: null }));
+vi.mock("@/lib/supabase/browser", () => ({
+  createSupabaseBrowserClient: () => ({
+    storage: {
+      from: () => ({ uploadToSignedUrl: uploadToSignedUrlMock }),
+    },
+  }),
+}));
+
+const { ProductImagesPanel } = await import("@/components/admin/ProductImagesPanel");
 
 afterEach(() => {
   cleanup();
+  uploadToSignedUrlMock.mockClear();
+  uploadToSignedUrlMock.mockResolvedValue({ data: { path: "x" }, error: null });
 });
 
 // jsdom لا يوفّر URL.createObjectURL/revokeObjectURL فعلياً — نُحاكيهما هنا
@@ -36,13 +50,19 @@ const SECONDARY: AdminProductImage = {
 };
 
 function renderPanel(images: AdminProductImage[], canUploadImages = true) {
-  // التوقيع الكامل (ImageActionState, FormData) مطلوب هنا فقط ليلتقط vi.fn
-  // نوع args الصحيح لاحقاً فـmock.calls (وليس لأن الاختبار يقرأ المعاملين).
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const replacePrimaryAction = vi.fn(async (_prevState: ImageActionState, _formData: FormData) => ({
-    error: null,
-    success: true,
-  }));
+  const createUploadTargetAction = vi.fn(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    async (_contentType: string): Promise<UploadTargetState> => ({
+      error: null,
+      uploadUrl: "https://example.supabase.co/storage/v1/upload/sign/10/new.png",
+      token: "fake-token",
+      objectPath: "10/new.png",
+    })
+  );
+  const commitUploadAction = vi.fn(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    async (_objectPath: string): Promise<ImageActionState> => ({ error: null, success: true })
+  );
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const addImageAction = vi.fn(async (_prevState: ImageActionState, _formData: FormData) => ({
     error: null,
@@ -56,7 +76,8 @@ function renderPanel(images: AdminProductImage[], canUploadImages = true) {
       productNameAr="منتج اختبار"
       images={images}
       canUploadImages={canUploadImages}
-      replacePrimaryAction={replacePrimaryAction}
+      createUploadTargetAction={createUploadTargetAction}
+      commitUploadAction={commitUploadAction}
       addImageAction={addImageAction}
       imagesWithActions={images
         .filter((img) => !img.is_primary)
@@ -64,7 +85,7 @@ function renderPanel(images: AdminProductImage[], canUploadImages = true) {
     />
   );
 
-  return { replacePrimaryAction, addImageAction, setPrimaryAction, deleteAction };
+  return { createUploadTargetAction, commitUploadAction, addImageAction, setPrimaryAction, deleteAction };
 }
 
 describe("ProductImagesPanel — كارت صور المنتج فـ/admin/products", () => {
@@ -106,22 +127,81 @@ describe("ProductImagesPanel — كارت صور المنتج فـ/admin/product
     expect(screen.getByAltText("معاينة الصورة الجديدة")).toBeTruthy();
   });
 
-  test("عند الضغط على 'حفظ' بعد اختيار ملف، يُستدعى الإجراء بـFile حقيقي داخل FormData وليس بـpreview URL فقط", async () => {
-    const { replacePrimaryAction } = renderPanel([PRIMARY]);
+  test("عند الضغط على 'حفظ': يُطلَب رابط رفع موقَّع، يُرفَع الملف مباشرة إلى Supabase (بدون Server Action)، ثم يُثبَّت التغيير — بنفس ترتيب الخطوات الثلاث", async () => {
+    const { createUploadTargetAction, commitUploadAction } = renderPanel([PRIMARY]);
     const fileInputs = document.querySelectorAll('input[type="file"]');
     const replaceInput = fileInputs[0] as HTMLInputElement;
 
-    const file = new File(["x"], "new.png", { type: "image/png" });
+    const file = new File(["x".repeat(2_000_000)], "phone-photo.jpg", { type: "image/jpeg" });
     fireEvent.change(replaceInput, { target: { files: [file] } });
 
     const saveButton = screen.getByRole("button", { name: "حفظ" });
     fireEvent.click(saveButton);
 
-    await vi.waitFor(() => expect(replacePrimaryAction).toHaveBeenCalledTimes(1));
-    const [, formData] = replacePrimaryAction.mock.calls[0];
-    const sentFile = formData.get("file");
-    expect(sentFile).toBeInstanceOf(File);
-    expect((sentFile as File).name).toBe("new.png");
+    await vi.waitFor(() => expect(commitUploadAction).toHaveBeenCalledTimes(1));
+
+    // 1) طلب رابط الرفع: نوع الملف فقط، لا الملف نفسه.
+    expect(createUploadTargetAction).toHaveBeenCalledWith("image/jpeg");
+
+    // 2) الرفع المباشر: الملف الحقيقي يذهب لـSupabase عبر uploadToSignedUrl،
+    // وليس عبر أي Server Action.
+    expect(uploadToSignedUrlMock).toHaveBeenCalledTimes(1);
+    const [uploadedPath, uploadedToken, uploadedFile] = uploadToSignedUrlMock.mock.calls[0];
+    expect(uploadedPath).toBe("10/new.png");
+    expect(uploadedToken).toBe("fake-token");
+    expect(uploadedFile).toBeInstanceOf(File);
+    expect((uploadedFile as File).name).toBe("phone-photo.jpg");
+    expect((uploadedFile as File).size).toBeGreaterThan(1_000_000);
+
+    // 3) التثبيت النهائي: objectPath فقط، لا الملف.
+    expect(commitUploadAction).toHaveBeenCalledWith("10/new.png");
+  });
+
+  test("فشل الرفع المباشر إلى Supabase: يعرض رسالة خطأ ولا يُستدعى commitUploadAction إطلاقاً", async () => {
+    uploadToSignedUrlMock.mockResolvedValueOnce({ data: null, error: { message: "network error" } as never });
+    const { commitUploadAction } = renderPanel([PRIMARY]);
+    const fileInputs = document.querySelectorAll('input[type="file"]');
+    const replaceInput = fileInputs[0] as HTMLInputElement;
+
+    const file = new File(["x"], "new.png", { type: "image/png" });
+    fireEvent.change(replaceInput, { target: { files: [file] } });
+    fireEvent.click(screen.getByRole("button", { name: "حفظ" }));
+
+    await vi.waitFor(() => expect(screen.getByText(/تعذّر رفع الصورة/)).toBeTruthy());
+    expect(commitUploadAction).not.toHaveBeenCalled();
+  });
+
+  test("فشل تحضير رابط الرفع (createUploadTargetAction): يعرض الخطأ ولا يحاول الرفع", async () => {
+    const createUploadTargetAction = vi.fn(async (): Promise<UploadTargetState> => ({
+      error: "رفع الصور غير مُفعَّل حالياً.",
+    }));
+    const commitUploadAction = vi.fn(async (): Promise<ImageActionState> => ({ error: null, success: true }));
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const addImageAction = vi.fn(async (_prevState: ImageActionState, _formData: FormData) => ({
+      error: null,
+      success: true,
+    }));
+
+    render(
+      <ProductImagesPanel
+        productNameAr="منتج اختبار"
+        images={[PRIMARY]}
+        canUploadImages
+        createUploadTargetAction={createUploadTargetAction}
+        commitUploadAction={commitUploadAction}
+        addImageAction={addImageAction}
+        imagesWithActions={[]}
+      />
+    );
+
+    const fileInputs = document.querySelectorAll('input[type="file"]');
+    const file = new File(["x"], "new.png", { type: "image/png" });
+    fireEvent.change(fileInputs[0], { target: { files: [file] } });
+    fireEvent.click(screen.getByRole("button", { name: "حفظ" }));
+
+    await vi.waitFor(() => expect(screen.getByText("رفع الصور غير مُفعَّل حالياً.")).toBeTruthy());
+    expect(uploadToSignedUrlMock).not.toHaveBeenCalled();
+    expect(commitUploadAction).not.toHaveBeenCalled();
   });
 
   test("لكل صورة إضافية: زر 'اجعلها رئيسية' وزر 'حذف'، ولا يظهران على الصورة الرئيسية", () => {

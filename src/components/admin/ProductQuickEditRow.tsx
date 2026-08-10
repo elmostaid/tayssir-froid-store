@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useActionState } from "react";
 import type { ProductFormState } from "@/app/admin/(protected)/products/actions";
-import type { ImageActionState } from "@/app/admin/(protected)/products/imageActions";
+import type { ImageActionState, UploadTargetState } from "@/app/admin/(protected)/products/imageActions";
 import type { AdminProduct, AdminProductImage } from "@/lib/queries/adminProducts";
 import { LOW_STOCK_THRESHOLD } from "@/lib/lowStockThreshold";
 import { ProductImagesPanel } from "@/components/admin/ProductImagesPanel";
@@ -26,7 +26,8 @@ export function ProductQuickEditRow({
   images,
   imageUrlByPath,
   canUploadImages,
-  replacePrimaryAction,
+  createUploadTargetAction,
+  commitUploadAction,
   addImageAction,
   imagesWithActions,
 }: {
@@ -37,7 +38,8 @@ export function ProductQuickEditRow({
   // Storage الحقيقي حسب مكان وجود الملف فعلياً). راجع resolveProductImageUrl.
   imageUrlByPath: Record<string, string>;
   canUploadImages: boolean;
-  replacePrimaryAction: (prevState: ImageActionState, formData: FormData) => Promise<ImageActionState>;
+  createUploadTargetAction: (contentType: string) => Promise<UploadTargetState>;
+  commitUploadAction: (objectPath: string) => Promise<ImageActionState>;
   addImageAction: (prevState: ImageActionState, formData: FormData) => Promise<ImageActionState>;
   imagesWithActions: {
     image: AdminProductImage;
@@ -56,7 +58,8 @@ export function ProductQuickEditRow({
           images={images}
           imageUrlByPath={imageUrlByPath}
           canUploadImages={canUploadImages}
-          replacePrimaryAction={replacePrimaryAction}
+          createUploadTargetAction={createUploadTargetAction}
+          commitUploadAction={commitUploadAction}
           addImageAction={addImageAction}
           imagesWithActions={imagesWithActions}
         />
