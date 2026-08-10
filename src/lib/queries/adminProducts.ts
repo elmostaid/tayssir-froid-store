@@ -34,7 +34,7 @@ export async function getAllProductsAdmin(): Promise<AdminProduct[]> {
       p.stock_quantity, p.status
     from public.products p
     join public.categories c on c.id = p.category_id
-    order by p.created_at desc
+    order by p.category_id, p.sort_order asc, p.created_at desc
   `;
 }
 
@@ -67,7 +67,7 @@ export async function listProductsAdmin(
       and (${categoryId ?? null}::bigint is null or p.category_id = ${categoryId ?? null})
       and (${status ?? null}::text is null or p.status = ${status ?? null})
       and (${lowStockOnly ?? false} = false or p.stock_quantity <= ${LOW_STOCK_THRESHOLD})
-    order by p.created_at desc
+    order by p.category_id, p.sort_order asc, p.created_at desc
   `;
 }
 

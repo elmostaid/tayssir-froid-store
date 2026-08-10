@@ -146,6 +146,11 @@ export async function getProducts(
 
   try {
     const pattern = query?.trim() ? `%${query.trim()}%` : null;
+    // الترتيب الافتراضي ("الأحدث"): ترتيب المدير اليدوي داخل التصنيف
+    // (sort_order تصاعدياً) أولاً — أزرار "↑ طلّع"/"↓ هبّط" فـ/admin/products
+    // تُحدِّثه مباشرة — ثم created_at تنازلياً كـfallback ثابت عند تساوي
+    // sort_order (كل المنتجات القديمة تبدأ بقيم sort_order مختلفة أصلاً؛
+    // التساوي يحدث فقط لمنتجات جديدة لم تُرتَّب يدوياً بعد).
     const orderBy =
       sort === "price_asc"
         ? sql`order by sale_price asc`
@@ -153,7 +158,7 @@ export async function getProducts(
           ? sql`order by sale_price desc`
           : sort === "name"
             ? sql`order by name_ar asc`
-            : sql`order by created_at desc`;
+            : sql`order by sort_order asc, created_at desc`;
 
     const rows = await sql<CatalogProduct[]>`
       select * from public.catalog_products

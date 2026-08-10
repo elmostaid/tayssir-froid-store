@@ -9,7 +9,7 @@ import {
 import { getAllCategoriesAdmin } from "@/lib/queries/adminCategories";
 import { canWriteProductImages } from "@/lib/storage/productImages";
 import { resolveProductImageUrls } from "@/lib/storage/resolveProductImageUrl";
-import { quickUpdateProduct } from "@/app/admin/(protected)/products/actions";
+import { quickUpdateProduct, moveProductUp, moveProductDown } from "@/app/admin/(protected)/products/actions";
 import {
   createImageUploadTarget,
   commitPrimaryImage,
@@ -156,8 +156,16 @@ export default async function AdminProductsPage({ searchParams }: Props) {
         <p className="mt-6 text-sm text-neutral-500">لا توجد منتجات مطابقة.</p>
       ) : (
         <div className="mt-4 flex flex-col gap-3">
-          {products.map((product) => {
+          {products.map((product, index) => {
             const productImages = imagesByProductId.get(product.id) ?? [];
+            // listProductsAdmin مرتَّبة أصلاً حسب category_id ثم sort_order —
+            // منتجات نفس التصنيف متتالية دائماً، فمقارنة الجار السابق/اللاحق
+            // فنفس المصفوفة كافية لتحديد أول/آخر منتج داخل تصنيفه (لتعطيل
+            // "↑"/"↓" فحدود التصنيف بلا استعلام إضافي).
+            const isFirstInCategory =
+              index === 0 || products[index - 1].category_id !== product.category_id;
+            const isLastInCategory =
+              index === products.length - 1 || products[index + 1].category_id !== product.category_id;
             return (
               <ProductQuickEditRow
                 key={product.id}
@@ -174,6 +182,10 @@ export default async function AdminProductsPage({ searchParams }: Props) {
                   setPrimaryAction: setPrimaryImage.bind(null, image.id, product.id),
                   deleteAction: deleteProductImage.bind(null, image.id, product.id),
                 }))}
+                isFirstInCategory={isFirstInCategory}
+                isLastInCategory={isLastInCategory}
+                moveUpAction={moveProductUp.bind(null, product.id)}
+                moveDownAction={moveProductDown.bind(null, product.id)}
               />
             );
           })}

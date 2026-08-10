@@ -59,16 +59,19 @@ export async function createProduct(
     return { error: "الرابط مستعمل من منتج آخر.", fieldErrors: { slug: "مستعمل من قبل" } };
   }
 
+  // منتج جديد يُضاف فآخر الترتيب اليدوي داخل تصنيفه (وليس sort_order=0
+  // الافتراضي الذي يعني "الأول") — لا يُزيح أي منتج موجود من مكانه.
   const inserted = await sql<{ id: number }[]>`
     insert into public.products (
       sku, slug, category_id, name_ar, name_fr, description_ar, technical_specs,
       unit_label, min_order_qty, qty_increment, purchase_price, sale_price,
-      stock_quantity, status
+      stock_quantity, status, sort_order
     ) values (
       ${parsed.data.sku}, ${parsed.data.slug}, ${parsed.data.categoryId}, ${parsed.data.nameAr},
       ${parsed.data.nameFr || null}, ${parsed.data.descriptionAr || null}, ${parsed.data.technicalSpecs || null},
       ${parsed.data.unitLabel}, ${parsed.data.minOrderQty}, ${parsed.data.qtyIncrement},
-      ${parsed.data.purchasePrice}, ${parsed.data.salePrice}, ${parsed.data.stockQuantity}, ${parsed.data.status}
+      ${parsed.data.purchasePrice}, ${parsed.data.salePrice}, ${parsed.data.stockQuantity}, ${parsed.data.status},
+      coalesce((select max(sort_order) from public.products where category_id = ${parsed.data.categoryId}), 0) + 1
     )
     returning id
   `;
@@ -296,4 +299,68 @@ export async function quickUpdateProduct(
   revalidatePath("/admin/products");
   revalidatePath(`/admin/products/${productId}`);
   return { error: null, success: true };
+}
+
+// ترتيب المنتجات يدوياً داخل كل تصنيف (أزرار "↑ طلّع"/"↓ هبّط" فـ
+// /admin/products): نفس نمط swapSortOrder المستعمل أصلاً لصور المنتج
+// (imageActions.ts) بالضبط — نجلب كل منتجات نفس التصنيف بترتيب العرض
+// الحقيقي نفسه، نحدّد موقع المنتج الحالي، ونبدّل sort_order مع الجار
+// المباشر فقط (سابق لـ"↑"، لاحق لـ"↓"). أول/آخر منتج فالتصنيف: لا جار فتلك
+// الجهة، فالإجراء لا يفعل شيئاً بصمت (بلا خطأ) — يطابق سلوك أزرار صور
+// المنتج تماماً. يُحدَّث sort_order فقط؛ لا حقل آخر (الاسم/الثمن/المخزون/
+// الصور/SKU/الحالة) يُلمَس، ولا منتج من تصنيف آخر يتأثر (المقارنة مقصورة
+// دائماً على category_id لنفس المنتج).
+async function swapProductSortOrder(
+  productId: number,
+  direction: "up" | "down"
+): Promise<{ error: string | null }> {
+  const admin = await getAdminUser();
+  if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+  if (!isOwnerAdmin(admin)) return { error: OWNER_ONLY_ERROR };
+
+  const [current] = await sql<{ category_id: number }[]>`
+    select category_id from public.products where id = ${productId}
+  `;
+  if (!current) return { error: null };
+
+  // نفس ترتيب العرض الحقيقي بالضبط (catalog.ts وlistProductsAdmin):
+  // sort_order تصاعدياً، ثم created_at تنازلياً كـfallback ثابت للتساوي.
+  const ordered = await sql<{ id: number; sort_order: number }[]>`
+    select id, sort_order from public.products
+    where category_id = ${current.category_id}
+    order by sort_order asc, created_at desc, id desc
+  `;
+
+  const index = ordered.findIndex((p) => p.id === productId);
+  if (index === -1) return { error: null };
+
+  const neighborIndex = direction === "up" ? index - 1 : index + 1;
+  if (neighborIndex < 0 || neighborIndex >= ordered.length) {
+    return { error: null };
+  }
+
+  const currentEntry = ordered[index];
+  const neighbor = ordered[neighborIndex];
+
+  await sql.begin(async (tx) => {
+    await tx`update public.products set sort_order = ${neighbor.sort_order} where id = ${currentEntry.id}`;
+    await tx`update public.products set sort_order = ${currentEntry.sort_order} where id = ${neighbor.id}`;
+  });
+
+  revalidatePath("/admin/products");
+  // صفحة التصنيف للزبون force-dynamic أصلاً فلا تحتاج revalidatePath
+  // لتُحدَّث فعلياً عند أي زيارة/تحميل جديد — لكن نُنعشها بنفس النمط
+  // المعتمد أصلاً فـimageActions.ts لتفادي أي عرض من ذاكرة تنقّل جانب
+  // العميل (client-side router cache) إن كانت مفتوحة أصلاً فتبويب آخر.
+  revalidatePath("/", "layout");
+
+  return { error: null };
+}
+
+export async function moveProductUp(productId: number): Promise<{ error: string | null }> {
+  return swapProductSortOrder(productId, "up");
+}
+
+export async function moveProductDown(productId: number): Promise<{ error: string | null }> {
+  return swapProductSortOrder(productId, "down");
 }

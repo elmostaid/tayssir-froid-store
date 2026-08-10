@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, useState, useTransition } from "react";
 import type { ProductFormState } from "@/app/admin/(protected)/products/actions";
 import type { ImageActionState, UploadTargetState } from "@/app/admin/(protected)/products/imageActions";
 import type { AdminProduct, AdminProductImage } from "@/lib/queries/adminProducts";
@@ -30,6 +30,10 @@ export function ProductQuickEditRow({
   commitPrimaryUploadAction,
   commitAdditionalUploadAction,
   imagesWithActions,
+  isFirstInCategory,
+  isLastInCategory,
+  moveUpAction,
+  moveDownAction,
 }: {
   product: AdminProduct;
   action: (prevState: ProductFormState, formData: FormData) => Promise<ProductFormState>;
@@ -46,9 +50,30 @@ export function ProductQuickEditRow({
     setPrimaryAction: () => Promise<{ error: string | null }>;
     deleteAction: () => Promise<{ error: string | null }>;
   }[];
+  // ترتيب المنتج داخل تصنيفه فقط (sort_order) — "↑"/"↓" لا يلمسان أي حقل
+  // آخر (الاسم/الثمن/المخزون/الصور/SKU/الحالة)، ولا يقارنان إلا بمنتجات نفس
+  // category_id (محسوبة من ترتيب القائمة الكاملة فـpage.tsx). لا زر يعمل
+  // شيئاً عند حدود التصنيف (أول/آخر منتج).
+  isFirstInCategory: boolean;
+  isLastInCategory: boolean;
+  moveUpAction: () => Promise<{ error: string | null }>;
+  moveDownAction: () => Promise<{ error: string | null }>;
 }) {
   const [state, formAction, isPending] = useActionState(action, initialState);
   const fieldError = (field: string) => state.fieldErrors?.[field];
+
+  const [isReordering, startReorderTransition] = useTransition();
+  const [reorderError, setReorderError] = useState<string | null>(null);
+
+  function handleMove(e: React.MouseEvent<HTMLButtonElement>, moveAction: () => Promise<{ error: string | null }>) {
+    e.preventDefault();
+    e.stopPropagation();
+    setReorderError(null);
+    startReorderTransition(async () => {
+      const result = await moveAction();
+      if (result.error) setReorderError(result.error);
+    });
+  }
 
   return (
     <div className="rounded-xl border border-neutral-200 bg-white p-4">
@@ -63,6 +88,32 @@ export function ProductQuickEditRow({
           commitAdditionalUploadAction={commitAdditionalUploadAction}
           imagesWithActions={imagesWithActions}
         />
+      </div>
+
+      {/* ترتيب المنتج داخل تصنيفه — خارج فورم الثمن/المخزون تماماً، بلا أي
+          علاقة أو تأثير على حفظه. */}
+      <div className="mb-2 flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={(e) => handleMove(e, moveUpAction)}
+          disabled={isReordering || isFirstInCategory}
+          aria-label="طلّع المنتج للأعلى داخل نفس التصنيف"
+          title="طلّع"
+          className="flex min-h-9 min-w-9 items-center justify-center rounded-full border border-neutral-300 text-sm text-neutral-700 disabled:cursor-not-allowed disabled:opacity-30"
+        >
+          ↑
+        </button>
+        <button
+          type="button"
+          onClick={(e) => handleMove(e, moveDownAction)}
+          disabled={isReordering || isLastInCategory}
+          aria-label="هبّط المنتج للأسفل داخل نفس التصنيف"
+          title="هبّط"
+          className="flex min-h-9 min-w-9 items-center justify-center rounded-full border border-neutral-300 text-sm text-neutral-700 disabled:cursor-not-allowed disabled:opacity-30"
+        >
+          ↓
+        </button>
+        {reorderError && <p className="text-xs text-red-600">{reorderError}</p>}
       </div>
 
       <form action={formAction}>
