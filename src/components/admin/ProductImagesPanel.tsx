@@ -4,6 +4,7 @@ import { useRef, useState, useTransition } from "react";
 import Image from "next/image";
 import { resolveImageUrl } from "@/lib/images";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { validateImageFile } from "@/lib/storage/imageValidation";
 import type { AdminProductImage } from "@/lib/queries/adminProducts";
 import type { ImageActionState, UploadTargetState } from "@/app/admin/(protected)/products/imageActions";
 
@@ -19,20 +20,21 @@ type ImageWithActions = {
 // الصورة الرئيسية مُعلَّمة بوضوح، وأزرار "تغيير الصورة الرئيسية" /
 // "إضافة صورة" / "اجعلها رئيسية" / "حذف" لكل صورة إضافية.
 //
-// كل اختيار ملف يُلتقَط كـFile حقيقي داخل حالة React عند onChange، ويُبنى
-// FormData يدوياً منه ثم يُستدعى الإجراء مباشرة عبر startTransition — بدل
-// الاعتماد على تسلسل input مخفي عبر form action الأصلي لـuseActionState
-// (كان سبب خلل "Veuillez sélectionner un fichier": الملف الحقيقي أحياناً لا
-// يصل عند وقت الإرسال). label حقيقي يلف input الملف بدل زر + ref.click()
-// proxy — تفعيل مضمون فكل المتصفحات بما فيها الهاتف.
+// ممنوع تماماً: ملف الصورة لا يمرّ عبر أي Server Action إطلاقاً (لا FormData
+// فيها File، ولا <form action={...}> يحتوي input الملف) — الرفع مباشر من
+// المتصفح إلى Supabase Storage عبر رابط موقَّع (راجع createUploadTargetAction
+// وimageActions.ts). كل input[type=file] هنا بلا خاصية name، ويُقرأ فقط عبر
+// state/ref فمكوّن العميل. لا <form> يلف أياً من عناصر هذه اللوحة إطلاقاً —
+// هي مستقلة تماماً عن فورم تعديل المنتج الكبير (سيبلينغ فـProductQuickEditRow)،
+// وكل الأزرار هنا type="button" حتى لا يُغري أحدها submit لأي فورم أب مستقبلاً.
 export function ProductImagesPanel({
   productNameAr,
   images,
   imageUrlByPath = {},
   canUploadImages,
   createUploadTargetAction,
-  commitUploadAction,
-  addImageAction,
+  commitPrimaryUploadAction,
+  commitAdditionalUploadAction,
   imagesWithActions,
 }: {
   productNameAr: string;
@@ -42,21 +44,18 @@ export function ProductImagesPanel({
   // — راجع resolveProductImageUrl). عند غياب مسار فـهذا الكائن (نادر)، نرجع
   // لـresolveImageUrl التركيبي القديم كملاذ أخير بدل عدم عرض شيء إطلاقاً.
   imageUrlByPath?: Record<string, string>;
-  // false عندما يتعذّر رفع/حذف أي ملف فعلياً فهذه البيئة (Vercel بلا
-  // Supabase Storage مُهيَّأ) — نُعطّل أزرار الرفع ونعرض رسالة واضحة بدل
-  // إتاحة محاولة ستفشل حتماً بخطأ غير مفهوم للمستخدم.
+  // false عندما يتعذّر رفع أي صورة فعلياً فهذه البيئة (Supabase Storage غير
+  // مُهيَّأ) — نُعطّل أزرار الرفع ونعرض رسالة واضحة بدل إتاحة محاولة ستفشل حتماً.
   canUploadImages: boolean;
-  // تغيير الصورة الرئيسية: binary الصورة لا يمرّ عبر Server Action/Vercel
-  // إطلاقاً — createUploadTargetAction تُرجع رابط رفع موقَّع من Supabase
-  // Storage، المتصفح يرفع الملف مباشرة إليه (uploadToSignedUrl)، ثم
-  // commitUploadAction تُحدِّث storage_path فقط بعد التأكد من نجاح الرفع
-  // الفعلي. راجع imageActions.ts.
+  // binary الصورة لا يمرّ عبر Server Action/Vercel إطلاقاً فأي من الحالتين
+  // (تغيير الصورة الرئيسية أو إضافة صورة): createUploadTargetAction تُرجع
+  // رابط رفع موقَّع من Supabase Storage (نص فقط)، المتصفح يرفع الملف مباشرة
+  // إليه (uploadToSignedUrl)، ثم commitPrimaryUploadAction/
+  // commitAdditionalUploadAction تُحدِّث/تُنشئ سجل الصورة (نص فقط: objectPath
+  // ± altText). راجع imageActions.ts.
   createUploadTargetAction: (contentType: string) => Promise<UploadTargetState>;
-  commitUploadAction: (objectPath: string) => Promise<ImageActionState>;
-  addImageAction: (
-    prevState: ImageActionState,
-    formData: FormData
-  ) => Promise<ImageActionState>;
+  commitPrimaryUploadAction: (objectPath: string) => Promise<ImageActionState>;
+  commitAdditionalUploadAction: (objectPath: string, altText: string | null) => Promise<ImageActionState>;
   imagesWithActions: ImageWithActions[];
 }) {
   const imageSrc = (storagePath: string) => imageUrlByPath[storagePath] ?? resolveImageUrl(storagePath);
@@ -66,6 +65,32 @@ export function ProductImagesPanel({
     return a.sort_order - b.sort_order;
   });
   const secondaryWithActions = imagesWithActions.filter((entry) => !entry.image.is_primary);
+
+  // رفع مباشر مشترك: يطلب رابطاً موقَّعاً، يرفع الملف من المتصفح مباشرة إلى
+  // Supabase Storage، ثم يستدعي commit (نص فقط) لتحديث/إنشاء سجل الصورة.
+  async function uploadFileDirectly(
+    file: File,
+    commit: (objectPath: string) => Promise<ImageActionState>
+  ): Promise<ImageActionState> {
+    const target = await createUploadTargetAction(file.type);
+    if (target.error || !target.uploadUrl || !target.token || !target.objectPath) {
+      return { error: target.error ?? "تعذّر تحضير الرفع. حاول مرة أخرى." };
+    }
+
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const { error: uploadError } = await supabase.storage
+        .from(PRODUCT_IMAGES_BUCKET)
+        .uploadToSignedUrl(target.objectPath, target.token, file);
+      if (uploadError) {
+        return { error: "تعذّر رفع الصورة. تحقق من الاتصال وحاول مرة أخرى." };
+      }
+    } catch {
+      return { error: "تعذّر رفع الصورة. تحقق من الاتصال وحاول مرة أخرى." };
+    }
+
+    return commit(target.objectPath);
+  }
 
   // --- تغيير الصورة الرئيسية: اختيار → معاينة → زر "حفظ" منفصل ---
   const [replaceFile, setReplaceFile] = useState<File | null>(null);
@@ -77,6 +102,14 @@ export function ProductImagesPanel({
   function handleReplaceFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = e.target.files?.[0] ?? null;
     setReplaceResult(null);
+    if (selected) {
+      const validationError = validateImageFile(selected);
+      if (validationError) {
+        setReplaceResult({ error: validationError });
+        if (replaceInputRef.current) replaceInputRef.current.value = "";
+        return;
+      }
+    }
     setReplaceFile(selected);
     setReplacePreviewUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
@@ -84,7 +117,9 @@ export function ProductImagesPanel({
     });
   }
 
-  function cancelReplace() {
+  function cancelReplace(e: React.MouseEvent<HTMLButtonElement>) {
+    e.preventDefault();
+    e.stopPropagation();
     if (replacePreviewUrl) URL.revokeObjectURL(replacePreviewUrl);
     setReplacePreviewUrl(null);
     setReplaceFile(null);
@@ -92,37 +127,13 @@ export function ProductImagesPanel({
     if (replaceInputRef.current) replaceInputRef.current.value = "";
   }
 
-  function handleReplaceSave() {
+  function handleReplaceSave(e: React.MouseEvent<HTMLButtonElement>) {
+    e.preventDefault();
+    e.stopPropagation();
     if (!replaceFile) return;
     const file = replaceFile;
     startReplaceTransition(async () => {
-      // 1) رابط رفع موقَّع من Supabase Storage — Server Action صغيرة، بدون
-      // الملف نفسه إطلاقاً (productId + نوع الملف فقط).
-      const target = await createUploadTargetAction(file.type);
-      if (target.error || !target.uploadUrl || !target.token || !target.objectPath) {
-        setReplaceResult({ error: target.error ?? "تعذّر تحضير الرفع. حاول مرة أخرى." });
-        return;
-      }
-
-      // 2) المتصفح يرفع binary الصورة مباشرة إلى Supabase Storage — لا يمرّ
-      // إطلاقاً عبر Vercel/Server Action، فلا حد حجم body ولا payload يُطبَّق.
-      try {
-        const supabase = createSupabaseBrowserClient();
-        const { error: uploadError } = await supabase.storage
-          .from(PRODUCT_IMAGES_BUCKET)
-          .uploadToSignedUrl(target.objectPath, target.token, file);
-        if (uploadError) {
-          setReplaceResult({ error: "تعذّر رفع الصورة. تحقق من الاتصال وحاول مرة أخرى." });
-          return;
-        }
-      } catch {
-        setReplaceResult({ error: "تعذّر رفع الصورة. تحقق من الاتصال وحاول مرة أخرى." });
-        return;
-      }
-
-      // 3) الرفع نجح فعلاً — الآن فقط نُحدِّث storage_path (Server Action
-      // صغيرة أخرى: productId + objectPath، لا ملف هنا أيضاً).
-      const result = await commitUploadAction(target.objectPath);
+      const result = await uploadFileDirectly(file, commitPrimaryUploadAction);
       setReplaceResult(result);
       if (result.success) {
         if (replacePreviewUrl) URL.revokeObjectURL(replacePreviewUrl);
@@ -142,10 +153,18 @@ export function ProductImagesPanel({
     const selected = e.target.files?.[0] ?? null;
     if (!selected) return;
     setAddResult(null);
-    const fd = new FormData();
-    fd.set("file", selected);
+
+    const validationError = validateImageFile(selected);
+    if (validationError) {
+      setAddResult({ error: validationError });
+      if (addInputRef.current) addInputRef.current.value = "";
+      return;
+    }
+
     startAddTransition(async () => {
-      const result = await addImageAction({ error: null }, fd);
+      const result = await uploadFileDirectly(selected, (objectPath) =>
+        commitAdditionalUploadAction(objectPath, null)
+      );
       setAddResult(result);
       if (addInputRef.current) addInputRef.current.value = "";
     });

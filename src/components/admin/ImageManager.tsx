@@ -4,9 +4,12 @@ import { useRef, useState, useTransition } from "react";
 import { useActionState } from "react";
 import Image from "next/image";
 import { resolveImageUrl } from "@/lib/images";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { validateImageFile } from "@/lib/storage/imageValidation";
 import type { AdminProductImage } from "@/lib/queries/adminProducts";
-import type { ImageActionState } from "@/app/admin/(protected)/products/imageActions";
+import type { ImageActionState, UploadTargetState } from "@/app/admin/(protected)/products/imageActions";
 
+const PRODUCT_IMAGES_BUCKET = "product-images";
 const initialState: ImageActionState = { error: null };
 
 function ImageRow({
@@ -64,6 +67,7 @@ function ImageRow({
       </div>
 
       <div className="flex flex-1 flex-col gap-2">
+        {/* هذا الفورم لنص alt فقط — لا input ملف فيه إطلاقاً. */}
         <form action={formAction} className="flex flex-col gap-2 sm:flex-row">
           <input
             name="altText"
@@ -124,47 +128,107 @@ function ImageRow({
   );
 }
 
+// رفع صورة إضافية: لا <form action={...}> إطلاقاً ولا input[name="file"] —
+// binary الصورة لا يمرّ عبر Server Action/Vercel أبداً. اختيار → رفع مباشر
+// من المتصفح إلى Supabase Storage عبر رابط موقَّع (createUploadTargetAction)،
+// ثم commitUploadAction (نص فقط: objectPath + altText) يُنشئ سجل الصورة.
 function UploadForm({
-  uploadAction,
+  createUploadTargetAction,
+  commitUploadAction,
   disabled,
 }: {
-  uploadAction: (prevState: ImageActionState, formData: FormData) => Promise<ImageActionState>;
+  createUploadTargetAction: (contentType: string) => Promise<UploadTargetState>;
+  commitUploadAction: (objectPath: string, altText: string | null) => Promise<ImageActionState>;
   disabled: boolean;
 }) {
-  const [state, formAction, isPending] = useActionState(uploadAction, initialState);
-  const formRef = useRef<HTMLFormElement>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [altText, setAltText] = useState("");
+  const [state, setState] = useState<ImageActionState>(initialState);
+  const [isPending, startTransition] = useTransition();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const selected = e.target.files?.[0] ?? null;
+    setState(initialState);
+    if (selected) {
+      const validationError = validateImageFile(selected);
+      if (validationError) {
+        setState({ error: validationError });
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        setFile(null);
+        return;
+      }
+    }
+    setFile(selected);
+  }
+
+  function handleUpload(e: React.MouseEvent<HTMLButtonElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!file) {
+      setState({ error: "اختر صورة أولاً." });
+      return;
+    }
+    const selectedFile = file;
+    const selectedAltText = altText;
+    startTransition(async () => {
+      const target = await createUploadTargetAction(selectedFile.type);
+      if (target.error || !target.uploadUrl || !target.token || !target.objectPath) {
+        setState({ error: target.error ?? "تعذّر تحضير الرفع. حاول مرة أخرى." });
+        return;
+      }
+
+      try {
+        const supabase = createSupabaseBrowserClient();
+        const { error: uploadError } = await supabase.storage
+          .from(PRODUCT_IMAGES_BUCKET)
+          .uploadToSignedUrl(target.objectPath, target.token, selectedFile);
+        if (uploadError) {
+          setState({ error: "تعذّر رفع الصورة. تحقق من الاتصال وحاول مرة أخرى." });
+          return;
+        }
+      } catch {
+        setState({ error: "تعذّر رفع الصورة. تحقق من الاتصال وحاول مرة أخرى." });
+        return;
+      }
+
+      const result = await commitUploadAction(target.objectPath, selectedAltText || null);
+      setState(result);
+      if (result.success) {
+        setFile(null);
+        setAltText("");
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
+    });
+  }
 
   return (
-    <form
-      ref={formRef}
-      action={(formData) => {
-        formAction(formData);
-        formRef.current?.reset();
-      }}
-      className="flex flex-col gap-2 rounded-xl border border-dashed border-neutral-300 p-3"
-    >
+    <div className="flex flex-col gap-2 rounded-xl border border-dashed border-neutral-300 p-3">
       <label className="text-sm">
         <span className="mb-1 block font-medium text-neutral-700">إضافة صورة (JPG/PNG/WEBP، حتى 5 ميجابايت)</span>
         <input
-          name="file"
+          ref={fileInputRef}
           type="file"
           accept="image/jpeg,image/png,image/webp"
-          required
-          disabled={disabled}
+          onChange={handleFileChange}
+          disabled={disabled || isPending}
           className="w-full text-sm"
         />
       </label>
       <input
-        name="altText"
+        value={altText}
+        onChange={(e) => setAltText(e.target.value)}
         maxLength={200}
         placeholder="نص بديل (اختياري)"
-        disabled={disabled}
+        disabled={disabled || isPending}
         className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-turquoise focus:outline-none"
       />
       {state.error && <p className="text-xs text-red-600">{state.error}</p>}
+      {state.success && <p className="text-xs text-brand-turquoise-dark">تمت إضافة الصورة بنجاح.</p>}
       <button
-        type="submit"
-        disabled={disabled || isPending}
+        type="button"
+        onClick={handleUpload}
+        disabled={disabled || isPending || !file}
         className="rounded-full bg-brand-orange px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
       >
         {isPending ? "جارٍ الرفع…" : "رفع الصورة"}
@@ -172,14 +236,15 @@ function UploadForm({
       {disabled && (
         <p className="text-xs text-neutral-500">وصلت للحد الأقصى (5 صور). احذف صورة لإضافة أخرى.</p>
       )}
-    </form>
+    </div>
   );
 }
 
 export function ImageManager({
   images,
   imageUrlByPath = {},
-  uploadAction,
+  createUploadTargetAction,
+  commitUploadAction,
   imagesWithActions,
   maxImages,
 }: {
@@ -188,7 +253,8 @@ export function ImageManager({
   // resolveProductImageUrl. عند غياب مسار (نادر) نرجع لـresolveImageUrl
   // التركيبي القديم كملاذ أخير.
   imageUrlByPath?: Record<string, string>;
-  uploadAction: (prevState: ImageActionState, formData: FormData) => Promise<ImageActionState>;
+  createUploadTargetAction: (contentType: string) => Promise<UploadTargetState>;
+  commitUploadAction: (objectPath: string, altText: string | null) => Promise<ImageActionState>;
   imagesWithActions: {
     image: AdminProductImage;
     updateAltAction: (
@@ -223,7 +289,11 @@ export function ImageManager({
           moveDownAction={entry.moveDownAction}
         />
       ))}
-      <UploadForm uploadAction={uploadAction} disabled={images.length >= maxImages} />
+      <UploadForm
+        createUploadTargetAction={createUploadTargetAction}
+        commitUploadAction={commitUploadAction}
+        disabled={images.length >= maxImages}
+      />
     </div>
   );
 }

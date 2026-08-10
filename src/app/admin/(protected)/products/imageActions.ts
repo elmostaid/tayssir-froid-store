@@ -5,16 +5,8 @@ import { randomUUID } from "crypto";
 import { sql } from "@/lib/db";
 import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import { productImageAltTextSchema } from "@/lib/validation/product";
-import {
-  MAX_IMAGES_PER_PRODUCT,
-  ALLOWED_IMAGE_TYPES,
-  EXT_BY_TYPE,
-  saveProductImageFile,
-  deleteProductImageFile,
-  validateImageFile,
-  isRemoteStorageConfigured,
-  StorageNotConfiguredError,
-} from "@/lib/storage/productImages";
+import { ALLOWED_IMAGE_TYPES, EXT_BY_TYPE, MAX_IMAGES_PER_PRODUCT } from "@/lib/storage/imageValidation";
+import { deleteProductImageFile, isRemoteStorageConfigured } from "@/lib/storage/productImages";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/serviceRole";
 import { getProductImagesAdmin, type AdminProductImage } from "@/lib/queries/adminProducts";
 
@@ -27,68 +19,10 @@ export type ImageActionState = {
 
 // رسالة واضحة وصادقة عند عدم تهيئة تخزين الصور السحابي (Supabase Storage)
 // بدل رسالة "حاول مرة أخرى" المضلِّلة — إعادة المحاولة لن تنجح أبداً فهذه
-// الحالة، لأن Vercel لا يسمح بالكتابة على نظام الملفات المحلي.
-function saveFailureMessage(err: unknown): string {
-  if (err instanceof StorageNotConfiguredError) {
-    return "رفع الصور غير مُفعَّل حالياً على الإنتاج (تخزين Supabase غير مُهيَّأ). تواصل مع المطوّر لإكمال الإعداد.";
-  }
-  return "تعذّر حفظ الصورة. حاول مرة أخرى.";
-}
-
-export async function uploadProductImage(
-  productId: number,
-  _prevState: ImageActionState,
-  formData: FormData
-): Promise<ImageActionState> {
-  const admin = await getAdminUser();
-  if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
-  if (!isOwnerAdmin(admin)) return { error: "هذا الإجراء مقصور على صاحب الحساب (Admin)." };
-
-  const file = formData.get("file");
-  if (!(file instanceof File)) {
-    return { error: "اختر صورة أولاً." };
-  }
-
-  const fileError = validateImageFile(file);
-  if (fileError) return { error: fileError };
-
-  const altTextRaw = formData.get("altText");
-  const altTextParsed = productImageAltTextSchema.safeParse(altTextRaw || undefined);
-  if (!altTextParsed.success) {
-    return { error: altTextParsed.error.issues[0]?.message ?? "النص البديل غير صالح." };
-  }
-
-  const existing = await getProductImagesAdmin(productId);
-  if (existing.length >= MAX_IMAGES_PER_PRODUCT) {
-    return { error: `الحد الأقصى ${MAX_IMAGES_PER_PRODUCT} صور لكل منتج.` };
-  }
-
-  // نفس الترتيب الآمن المعتمد فـreplacePrimaryImage: رفع الملف أولاً، وعند
-  // فشل تحديث قاعدة البيانات نحذف الملف المرفوع تواً فوراً (لا صور يتيمة).
-  let storagePath: string;
-  try {
-    storagePath = await saveProductImageFile(productId, file);
-  } catch (err) {
-    return { error: saveFailureMessage(err) };
-  }
-
-  const nextSortOrder = existing.reduce((max, img) => Math.max(max, img.sort_order), 0) + 1;
-  const isPrimary = existing.length === 0;
-
-  try {
-    await sql`
-      insert into public.product_images (product_id, storage_path, alt_text_ar, sort_order, is_primary)
-      values (${productId}, ${storagePath}, ${altTextParsed.data || null}, ${nextSortOrder}, ${isPrimary})
-    `;
-  } catch {
-    await deleteProductImageFile(storagePath).catch(() => {});
-    return { error: "تعذّر حفظ الصورة فقاعدة البيانات. لم يتغيّر شيء." };
-  }
-
-  revalidatePath(`/admin/products/${productId}`);
-  revalidatePath("/admin/products");
-  revalidatePath("/", "layout");
-  return { error: null, success: true };
+// الحالة، فلا مسار محلي بديل للرفع إطلاقاً (كل رفع صورة مباشر من المتصفح
+// إلى Supabase Storage — راجع createImageUploadTarget أدناه).
+function storageNotConfiguredMessage(): string {
+  return "رفع الصور غير مُفعَّل حالياً على الإنتاج (تخزين Supabase غير مُهيَّأ). تواصل مع المطوّر لإكمال الإعداد.";
 }
 
 export type UploadTargetState = {
@@ -98,22 +32,23 @@ export type UploadTargetState = {
   objectPath?: string;
 };
 
-// اسم الكائن دائماً {productId}/{UUID}.{ext} — نفس اتفاقية saveProductImageFile
-// بالضبط. التحقق منه صارماً فـcommitPrimaryImage أدناه (وليس تخميناً) هو ما
-// يمنع أي عميل من تمرير مسار كائن تعسفي/يخص منتجاً آخر.
+// اسم الكائن دائماً {productId}/{UUID}.{ext} — التحقق منه صارماً فـ
+// commitPrimaryImage/commitAdditionalImage أدناه (وليس تخميناً) هو ما يمنع
+// أي عميل من تمرير مسار كائن تعسفي/يخص منتجاً آخر.
 const UPLOAD_OBJECT_PATH_RE =
   /^(\d+)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|jpeg|png|webp)$/;
 
 /**
- * تغيير الصورة الرئيسية للمنتج، بدون تمرير الملف عبر Server Action/Vercel
- * إطلاقاً: المتصفح يرفع الصورة مباشرة إلى Supabase Storage باستعمال رابط
- * رفع موقَّع (signed upload URL) تولّده هذه الدالة، ثم commitPrimaryImage
- * أدناه يُحدِّث فقط storage_path بعد نجاح الرفع الفعلي. هذا يتفادى حد حجم
- * body الافتراضي لـServer Actions (1MB) وحد payload لدوال Vercel (4.5MB)،
- * اللذين كانا يُسقطان /admin/products بـServer Error عند اختيار صورة هاتف
- * حقيقية أكبر من ميغابايت واحد.
+ * تحضير رفع صورة (سواء الصورة الرئيسية أو صورة إضافية) بدون تمرير الملف
+ * عبر Server Action/Vercel إطلاقاً: Server Action صغيرة (نص فقط — productId
+ * ونوع الملف)، تُرجع رابط رفع موقَّع (signed upload URL) من Supabase
+ * Storage. المتصفح يرفع binary الصورة مباشرة إلى هذا الرابط بعدها
+ * (uploadToSignedUrl)، فلا حد حجم body لـServer Actions (1MB افتراضياً) ولا
+ * حد payload لدوال Vercel (~4.5MB) يُطبَّق أبداً على الملف — كان هذا بالضبط
+ * سبب سقوط /admin/products بـ"Body exceeded 1 MB limit" (413) عند اختيار
+ * صورة هاتف حقيقية أكبر من ميغابايت واحد.
  */
-export async function createPrimaryImageUploadTarget(
+export async function createImageUploadTarget(
   productId: number,
   contentType: string
 ): Promise<UploadTargetState> {
@@ -122,7 +57,7 @@ export async function createPrimaryImageUploadTarget(
   if (!isOwnerAdmin(admin)) return { error: "هذا الإجراء مقصور على صاحب الحساب (Admin)." };
 
   if (!isRemoteStorageConfigured()) {
-    return { error: saveFailureMessage(new StorageNotConfiguredError()) };
+    return { error: storageNotConfiguredMessage() };
   }
 
   const ext = ALLOWED_IMAGE_TYPES.includes(contentType as (typeof ALLOWED_IMAGE_TYPES)[number])
@@ -148,13 +83,40 @@ export async function createPrimaryImageUploadTarget(
   return { error: null, uploadUrl: data.signedUrl, token: data.token, objectPath: data.path };
 }
 
+/** يتحقق أن objectPath مطابق تماماً لاتفاقية {productId}/{UUID}.{ext} — يرفض أي تلاعب أو مسار يخص منتجاً آخر. */
+function validateObjectPathForProduct(objectPath: string, productId: number): boolean {
+  const match = UPLOAD_OBJECT_PATH_RE.exec(objectPath);
+  return Boolean(match) && Number(match![1]) === productId;
+}
+
 /**
- * الخطوة الثانية بعد نجاح الرفع المباشر من المتصفح إلى Supabase Storage:
- * تتحقق فعلياً أن الكائن موجود بالفعل فالتخزين (وليس فقط أن المتصفح ادّعى
- * النجاح)، ثم تُحدِّث storage_path للصورة الرئيسية فقط. لا ملف يمرّ هنا
- * إطلاقاً — productId وobjectPath فقط، وكلاهما نص قصير جداً.
+ * يتأكد أن الكائن مرفوع فعلاً فالتخزين قبل أي تحديث لقاعدة البيانات — بلا
+ * هذا قد نُشير لصورة غير موجودة إن ادّعى المتصفح النجاح خطأً (فشل شبكة
+ * صامت) أو تلاعب أحد بالمسار.
+ */
+async function confirmObjectUploaded(
+  client: NonNullable<ReturnType<typeof getSupabaseServiceRoleClient>>,
+  productId: number,
+  objectPath: string
+): Promise<boolean> {
+  const filename = objectPath.slice(objectPath.indexOf("/") + 1);
+  const { data: listing, error } = await client.storage
+    .from(PRODUCT_IMAGES_BUCKET)
+    .list(String(productId), { search: filename });
+  return !error && Boolean(listing?.some((entry) => entry.name === filename));
+}
+
+/**
+ * تغيير الصورة الرئيسية للمنتج بخطوة واحدة (زر "تغيير الصورة الرئيسية" فكارت
+ * المنتج فـ/admin/products): الخطوة الثانية بعد نجاح الرفع المباشر من
+ * المتصفح إلى Supabase Storage عبر createImageUploadTarget أعلاه. لا ملف
+ * يمرّ هنا إطلاقاً — productId وobjectPath فقط، وكلاهما نص قصير جداً.
  *
- * نفس الترتيب الآمن السابق: تحديث قاعدة البيانات فقط بعد التأكد من الرفع.
+ * يُحدِّث سجل الصورة الرئيسية الموجود فمكانه (نفس id، يبقى is_primary =
+ * true) بدل إنشاء سجل جديد، فلا يمكن أبداً أن ينتج عن هذا سجل "رئيسية"
+ * مكرر. إن لم يكن للمنتج أي صورة بعد (حالة نادرة)، يُنشأ سجل واحد جديد
+ * كرئيسية.
+ *
  * الصورة/الملف القديم لا يُحذف ولا يُلمس أبداً — مقصود.
  */
 export async function commitPrimaryImage(
@@ -165,13 +127,12 @@ export async function commitPrimaryImage(
   if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
   if (!isOwnerAdmin(admin)) return { error: "هذا الإجراء مقصور على صاحب الحساب (Admin)." };
 
-  const match = UPLOAD_OBJECT_PATH_RE.exec(objectPath);
-  if (!match || Number(match[1]) !== productId) {
+  if (!validateObjectPathForProduct(objectPath, productId)) {
     return { error: "مسار الصورة غير صالح." };
   }
 
   if (!isRemoteStorageConfigured()) {
-    return { error: saveFailureMessage(new StorageNotConfiguredError()) };
+    return { error: storageNotConfiguredMessage() };
   }
 
   const client = getSupabaseServiceRoleClient();
@@ -179,13 +140,7 @@ export async function commitPrimaryImage(
     return { error: "تعذّر الاتصال بمخزن الصور." };
   }
 
-  // تأكيد أن الكائن مرفوع فعلاً فالتخزين قبل تحديث القاعدة — بلا هذا قد
-  // نُشير لصورة غير موجودة إن ادّعى المتصفح النجاح خطأً أو تلاعب أحد بالمسار.
-  const filename = objectPath.slice(objectPath.indexOf("/") + 1);
-  const { data: listing, error: listError } = await client.storage
-    .from(PRODUCT_IMAGES_BUCKET)
-    .list(String(productId), { search: filename });
-  if (listError || !listing?.some((entry) => entry.name === filename)) {
+  if (!(await confirmObjectUploaded(client, productId, objectPath))) {
     return { error: "تعذّر التأكد من رفع الصورة. حاول مرة أخرى." };
   }
 
@@ -220,6 +175,69 @@ export async function commitPrimaryImage(
   // لتفادي أي عرض من ذاكرة تنقّل جانب العميل (client-side router cache).
   revalidatePath("/", "layout");
 
+  return { error: null, success: true };
+}
+
+/**
+ * إضافة صورة إضافية للمنتج (زر "إضافة صورة") — نفس نمط commitPrimaryImage
+ * بالضبط: الخطوة الثانية بعد نجاح الرفع المباشر من المتصفح إلى Supabase
+ * Storage، لا ملف يمرّ عبر Server Action إطلاقاً. تُنشئ سجلاً جديداً (رئيسية
+ * فقط إن لم يكن للمنتج أي صورة بعد)، وتحترم الحد الأقصى MAX_IMAGES_PER_PRODUCT.
+ */
+export async function commitAdditionalImage(
+  productId: number,
+  objectPath: string,
+  altText: string | null
+): Promise<ImageActionState> {
+  const admin = await getAdminUser();
+  if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+  if (!isOwnerAdmin(admin)) return { error: "هذا الإجراء مقصور على صاحب الحساب (Admin)." };
+
+  if (!validateObjectPathForProduct(objectPath, productId)) {
+    return { error: "مسار الصورة غير صالح." };
+  }
+
+  const altTextParsed = productImageAltTextSchema.safeParse(altText || undefined);
+  if (!altTextParsed.success) {
+    return { error: altTextParsed.error.issues[0]?.message ?? "النص البديل غير صالح." };
+  }
+
+  if (!isRemoteStorageConfigured()) {
+    return { error: storageNotConfiguredMessage() };
+  }
+
+  const client = getSupabaseServiceRoleClient();
+  if (!client) {
+    return { error: "تعذّر الاتصال بمخزن الصور." };
+  }
+
+  const existing = await getProductImagesAdmin(productId);
+  if (existing.length >= MAX_IMAGES_PER_PRODUCT) {
+    return { error: `الحد الأقصى ${MAX_IMAGES_PER_PRODUCT} صور لكل منتج.` };
+  }
+
+  if (!(await confirmObjectUploaded(client, productId, objectPath))) {
+    return { error: "تعذّر التأكد من رفع الصورة. حاول مرة أخرى." };
+  }
+
+  const { data: publicUrlData } = client.storage.from(PRODUCT_IMAGES_BUCKET).getPublicUrl(objectPath);
+  const newStoragePath = publicUrlData.publicUrl;
+
+  const nextSortOrder = existing.reduce((max, img) => Math.max(max, img.sort_order), 0) + 1;
+  const isPrimary = existing.length === 0;
+
+  try {
+    await sql`
+      insert into public.product_images (product_id, storage_path, alt_text_ar, sort_order, is_primary)
+      values (${productId}, ${newStoragePath}, ${altTextParsed.data || null}, ${nextSortOrder}, ${isPrimary})
+    `;
+  } catch {
+    return { error: "تعذّر حفظ الصورة فقاعدة البيانات. لم يتغيّر شيء." };
+  }
+
+  revalidatePath(`/admin/products/${productId}`);
+  revalidatePath("/admin/products");
+  revalidatePath("/", "layout");
   return { error: null, success: true };
 }
 

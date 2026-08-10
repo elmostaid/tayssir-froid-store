@@ -11,9 +11,9 @@ import { canWriteProductImages } from "@/lib/storage/productImages";
 import { resolveProductImageUrls } from "@/lib/storage/resolveProductImageUrl";
 import { quickUpdateProduct } from "@/app/admin/(protected)/products/actions";
 import {
-  createPrimaryImageUploadTarget,
+  createImageUploadTarget,
   commitPrimaryImage,
-  uploadProductImage,
+  commitAdditionalImage,
   setPrimaryImage,
   deleteProductImage,
 } from "@/app/admin/(protected)/products/imageActions";
@@ -166,9 +166,9 @@ export default async function AdminProductsPage({ searchParams }: Props) {
                 images={productImages}
                 imageUrlByPath={imageUrlByPath}
                 canUploadImages={canUpload}
-                createUploadTargetAction={createPrimaryImageUploadTarget.bind(null, product.id)}
-                commitUploadAction={commitPrimaryImage.bind(null, product.id)}
-                addImageAction={uploadProductImage.bind(null, product.id)}
+                createUploadTargetAction={createImageUploadTarget.bind(null, product.id)}
+                commitPrimaryUploadAction={commitPrimaryImage.bind(null, product.id)}
+                commitAdditionalUploadAction={commitAdditionalImage.bind(null, product.id)}
                 imagesWithActions={productImages.map((image) => ({
                   image,
                   setPrimaryAction: setPrimaryImage.bind(null, image.id, product.id),

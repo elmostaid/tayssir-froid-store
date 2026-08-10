@@ -27,8 +27,8 @@ export function ProductQuickEditRow({
   imageUrlByPath,
   canUploadImages,
   createUploadTargetAction,
-  commitUploadAction,
-  addImageAction,
+  commitPrimaryUploadAction,
+  commitAdditionalUploadAction,
   imagesWithActions,
 }: {
   product: AdminProduct;
@@ -39,8 +39,8 @@ export function ProductQuickEditRow({
   imageUrlByPath: Record<string, string>;
   canUploadImages: boolean;
   createUploadTargetAction: (contentType: string) => Promise<UploadTargetState>;
-  commitUploadAction: (objectPath: string) => Promise<ImageActionState>;
-  addImageAction: (prevState: ImageActionState, formData: FormData) => Promise<ImageActionState>;
+  commitPrimaryUploadAction: (objectPath: string) => Promise<ImageActionState>;
+  commitAdditionalUploadAction: (objectPath: string, altText: string | null) => Promise<ImageActionState>;
   imagesWithActions: {
     image: AdminProductImage;
     setPrimaryAction: () => Promise<{ error: string | null }>;
@@ -59,8 +59,8 @@ export function ProductQuickEditRow({
           imageUrlByPath={imageUrlByPath}
           canUploadImages={canUploadImages}
           createUploadTargetAction={createUploadTargetAction}
-          commitUploadAction={commitUploadAction}
-          addImageAction={addImageAction}
+          commitPrimaryUploadAction={commitPrimaryUploadAction}
+          commitAdditionalUploadAction={commitAdditionalUploadAction}
           imagesWithActions={imagesWithActions}
         />
       </div>

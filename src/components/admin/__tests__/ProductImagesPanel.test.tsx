@@ -59,15 +59,18 @@ function renderPanel(images: AdminProductImage[], canUploadImages = true) {
       objectPath: "10/new.png",
     })
   );
-  const commitUploadAction = vi.fn(
+  const commitPrimaryUploadAction = vi.fn(
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     async (_objectPath: string): Promise<ImageActionState> => ({ error: null, success: true })
   );
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const addImageAction = vi.fn(async (_prevState: ImageActionState, _formData: FormData) => ({
-    error: null,
-    success: true,
-  }));
+  const commitAdditionalUploadAction = vi.fn(
+    async (
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      _objectPath: string,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      _altText: string | null
+    ): Promise<ImageActionState> => ({ error: null, success: true })
+  );
   const setPrimaryAction = vi.fn(async () => ({ error: null }));
   const deleteAction = vi.fn(async () => ({ error: null }));
 
@@ -77,15 +80,21 @@ function renderPanel(images: AdminProductImage[], canUploadImages = true) {
       images={images}
       canUploadImages={canUploadImages}
       createUploadTargetAction={createUploadTargetAction}
-      commitUploadAction={commitUploadAction}
-      addImageAction={addImageAction}
+      commitPrimaryUploadAction={commitPrimaryUploadAction}
+      commitAdditionalUploadAction={commitAdditionalUploadAction}
       imagesWithActions={images
         .filter((img) => !img.is_primary)
         .map((image) => ({ image, setPrimaryAction, deleteAction }))}
     />
   );
 
-  return { createUploadTargetAction, commitUploadAction, addImageAction, setPrimaryAction, deleteAction };
+  return {
+    createUploadTargetAction,
+    commitPrimaryUploadAction,
+    commitAdditionalUploadAction,
+    setPrimaryAction,
+    deleteAction,
+  };
 }
 
 describe("ProductImagesPanel — كارت صور المنتج فـ/admin/products", () => {
@@ -98,7 +107,7 @@ describe("ProductImagesPanel — كارت صور المنتج فـ/admin/product
     expect(screen.getAllByAltText(SECONDARY.alt_text_ar!)).toHaveLength(2);
   });
 
-  test("يعرض زر 'تغيير الصورة الرئيسية' و'إضافة صورة'، وinput حقيقي لكل واحد", () => {
+  test("يعرض زر 'تغيير الصورة الرئيسية' و'إضافة صورة'، وinput حقيقي لكل واحد بلا خاصية name إطلاقاً", () => {
     renderPanel([PRIMARY]);
     expect(screen.getByText("تغيير الصورة الرئيسية")).toBeTruthy();
     expect(screen.getByText("إضافة صورة")).toBeTruthy();
@@ -107,6 +116,15 @@ describe("ProductImagesPanel — كارت صور المنتج فـ/admin/product
     expect(fileInputs.length).toBe(2);
     fileInputs.forEach((input) => {
       expect(input.getAttribute("accept")).toBe("image/*");
+      // ممنوع أي name يجعل الملف يدخل FormData فورم أب عند submit.
+      expect(input.getAttribute("name")).toBeNull();
+    });
+
+    // لا <form> يلف أياً من هذين input — اللوحة كلها بلا form إطلاقاً.
+    expect(document.querySelectorAll("form")).toHaveLength(0);
+    // كل الأزرار type="button"، لا submit واحد.
+    document.querySelectorAll("button").forEach((btn) => {
+      expect(btn.getAttribute("type")).toBe("button");
     });
   });
 
@@ -127,8 +145,10 @@ describe("ProductImagesPanel — كارت صور المنتج فـ/admin/product
     expect(screen.getByAltText("معاينة الصورة الجديدة")).toBeTruthy();
   });
 
-  test("عند الضغط على 'حفظ': يُطلَب رابط رفع موقَّع، يُرفَع الملف مباشرة إلى Supabase (بدون Server Action)، ثم يُثبَّت التغيير — بنفس ترتيب الخطوات الثلاث", async () => {
-    const { createUploadTargetAction, commitUploadAction } = renderPanel([PRIMARY]);
+  test("عند الضغط على 'حفظ' (تغيير الصورة الرئيسية): يُطلَب رابط رفع موقَّع، يُرفَع الملف مباشرة إلى Supabase (بدون Server Action)، ثم يُثبَّت التغيير — بنفس ترتيب الخطوات الثلاث", async () => {
+    const { createUploadTargetAction, commitPrimaryUploadAction, commitAdditionalUploadAction } = renderPanel([
+      PRIMARY,
+    ]);
     const fileInputs = document.querySelectorAll('input[type="file"]');
     const replaceInput = fileInputs[0] as HTMLInputElement;
 
@@ -138,13 +158,13 @@ describe("ProductImagesPanel — كارت صور المنتج فـ/admin/product
     const saveButton = screen.getByRole("button", { name: "حفظ" });
     fireEvent.click(saveButton);
 
-    await vi.waitFor(() => expect(commitUploadAction).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(commitPrimaryUploadAction).toHaveBeenCalledTimes(1));
 
     // 1) طلب رابط الرفع: نوع الملف فقط، لا الملف نفسه.
     expect(createUploadTargetAction).toHaveBeenCalledWith("image/jpeg");
 
-    // 2) الرفع المباشر: الملف الحقيقي يذهب لـSupabase عبر uploadToSignedUrl،
-    // وليس عبر أي Server Action.
+    // 2) الرفع المباشر: الملف الحقيقي (>1MB هنا فعلاً) يذهب لـSupabase عبر
+    // uploadToSignedUrl، وليس عبر أي Server Action.
     expect(uploadToSignedUrlMock).toHaveBeenCalledTimes(1);
     const [uploadedPath, uploadedToken, uploadedFile] = uploadToSignedUrlMock.mock.calls[0];
     expect(uploadedPath).toBe("10/new.png");
@@ -153,13 +173,15 @@ describe("ProductImagesPanel — كارت صور المنتج فـ/admin/product
     expect((uploadedFile as File).name).toBe("phone-photo.jpg");
     expect((uploadedFile as File).size).toBeGreaterThan(1_000_000);
 
-    // 3) التثبيت النهائي: objectPath فقط، لا الملف.
-    expect(commitUploadAction).toHaveBeenCalledWith("10/new.png");
+    // 3) التثبيت النهائي: objectPath فقط، لا الملف — وuploadAction الآخر
+    // (إضافة صورة) لم يُستدعَ إطلاقاً.
+    expect(commitPrimaryUploadAction).toHaveBeenCalledWith("10/new.png");
+    expect(commitAdditionalUploadAction).not.toHaveBeenCalled();
   });
 
-  test("فشل الرفع المباشر إلى Supabase: يعرض رسالة خطأ ولا يُستدعى commitUploadAction إطلاقاً", async () => {
+  test("فشل الرفع المباشر إلى Supabase: يعرض رسالة خطأ ولا يُستدعى commit إطلاقاً", async () => {
     uploadToSignedUrlMock.mockResolvedValueOnce({ data: null, error: { message: "network error" } as never });
-    const { commitUploadAction } = renderPanel([PRIMARY]);
+    const { commitPrimaryUploadAction } = renderPanel([PRIMARY]);
     const fileInputs = document.querySelectorAll('input[type="file"]');
     const replaceInput = fileInputs[0] as HTMLInputElement;
 
@@ -168,19 +190,17 @@ describe("ProductImagesPanel — كارت صور المنتج فـ/admin/product
     fireEvent.click(screen.getByRole("button", { name: "حفظ" }));
 
     await vi.waitFor(() => expect(screen.getByText(/تعذّر رفع الصورة/)).toBeTruthy());
-    expect(commitUploadAction).not.toHaveBeenCalled();
+    expect(commitPrimaryUploadAction).not.toHaveBeenCalled();
   });
 
   test("فشل تحضير رابط الرفع (createUploadTargetAction): يعرض الخطأ ولا يحاول الرفع", async () => {
     const createUploadTargetAction = vi.fn(async (): Promise<UploadTargetState> => ({
       error: "رفع الصور غير مُفعَّل حالياً.",
     }));
-    const commitUploadAction = vi.fn(async (): Promise<ImageActionState> => ({ error: null, success: true }));
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const addImageAction = vi.fn(async (_prevState: ImageActionState, _formData: FormData) => ({
-      error: null,
-      success: true,
-    }));
+    const commitPrimaryUploadAction = vi.fn(async (): Promise<ImageActionState> => ({ error: null, success: true }));
+    const commitAdditionalUploadAction = vi.fn(
+      async (): Promise<ImageActionState> => ({ error: null, success: true })
+    );
 
     render(
       <ProductImagesPanel
@@ -188,8 +208,8 @@ describe("ProductImagesPanel — كارت صور المنتج فـ/admin/product
         images={[PRIMARY]}
         canUploadImages
         createUploadTargetAction={createUploadTargetAction}
-        commitUploadAction={commitUploadAction}
-        addImageAction={addImageAction}
+        commitPrimaryUploadAction={commitPrimaryUploadAction}
+        commitAdditionalUploadAction={commitAdditionalUploadAction}
         imagesWithActions={[]}
       />
     );
@@ -201,7 +221,7 @@ describe("ProductImagesPanel — كارت صور المنتج فـ/admin/product
 
     await vi.waitFor(() => expect(screen.getByText("رفع الصور غير مُفعَّل حالياً.")).toBeTruthy());
     expect(uploadToSignedUrlMock).not.toHaveBeenCalled();
-    expect(commitUploadAction).not.toHaveBeenCalled();
+    expect(commitPrimaryUploadAction).not.toHaveBeenCalled();
   });
 
   test("لكل صورة إضافية: زر 'اجعلها رئيسية' وزر 'حذف'، ولا يظهران على الصورة الرئيسية", () => {
@@ -210,17 +230,40 @@ describe("ProductImagesPanel — كارت صور المنتج فـ/admin/product
     expect(screen.getAllByRole("button", { name: "حذف" })).toHaveLength(1);
   });
 
-  test("اختيار ملف لإضافة صورة يستدعي الإجراء فوراً بدون خطوة حفظ منفصلة", async () => {
-    const { addImageAction } = renderPanel([PRIMARY]);
+  test("اختيار ملف لإضافة صورة: نفس مسار الرفع المباشر (بدون Server Action للملف)، ثم commitAdditionalUploadAction بنص فقط", async () => {
+    const { createUploadTargetAction, commitAdditionalUploadAction, commitPrimaryUploadAction } = renderPanel([
+      PRIMARY,
+    ]);
     const fileInputs = document.querySelectorAll('input[type="file"]');
     const addInput = fileInputs[1] as HTMLInputElement;
 
-    const file = new File(["x"], "extra.png", { type: "image/png" });
+    const file = new File(["x".repeat(2_000_000)], "extra-phone-photo.jpg", { type: "image/jpeg" });
     fireEvent.change(addInput, { target: { files: [file] } });
 
-    await vi.waitFor(() => expect(addImageAction).toHaveBeenCalledTimes(1));
-    const [, formData] = addImageAction.mock.calls[0];
-    expect((formData.get("file") as File).name).toBe("extra.png");
+    await vi.waitFor(() => expect(commitAdditionalUploadAction).toHaveBeenCalledTimes(1));
+
+    expect(createUploadTargetAction).toHaveBeenCalledWith("image/jpeg");
+    expect(uploadToSignedUrlMock).toHaveBeenCalledTimes(1);
+    const [, , uploadedFile] = uploadToSignedUrlMock.mock.calls[0];
+    expect((uploadedFile as File).name).toBe("extra-phone-photo.jpg");
+    expect((uploadedFile as File).size).toBeGreaterThan(1_000_000);
+
+    expect(commitAdditionalUploadAction).toHaveBeenCalledWith("10/new.png", null);
+    expect(commitPrimaryUploadAction).not.toHaveBeenCalled();
+  });
+
+  test("اختيار ملف كبير جداً (>5MB) لتغيير الصورة الرئيسية: يُرفَض فوراً فالمتصفح، بلا أي طلب رابط رفع", async () => {
+    const { createUploadTargetAction } = renderPanel([PRIMARY]);
+    const fileInputs = document.querySelectorAll('input[type="file"]');
+    const replaceInput = fileInputs[0] as HTMLInputElement;
+
+    const tooLarge = new File([new Uint8Array(6 * 1024 * 1024)], "huge.png", { type: "image/png" });
+    fireEvent.change(replaceInput, { target: { files: [tooLarge] } });
+
+    expect(screen.getByText(/حجم الصورة كبير جداً/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "حفظ" })).toBeNull();
+    expect(createUploadTargetAction).not.toHaveBeenCalled();
+    expect(uploadToSignedUrlMock).not.toHaveBeenCalled();
   });
 
   test("canUploadImages=false: تعطيل حقول اختيار الملف وعرض رسالة واضحة بدل السماح برفع سيفشل", () => {

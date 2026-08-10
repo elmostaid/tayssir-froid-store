@@ -1,7 +1,7 @@
 /**
  * محلِّل روابط صور المنتجات — بسيط ومباشر عمداً، بلا أي فحص لنظام الملفات
  * ولا أي تخمين: storage_path إما رابط كامل جاهز (صورة رُفعت حديثاً إلى
- * Supabase Storage — saveProductImageFile يُرجع public URL الكامل الجاهز
+ * Supabase Storage — commitPrimaryImage/commitAdditionalImage يُخزِّنان public URL الكامل الجاهز
  * وقت الرفع نفسه)، أو مسار محلي قديم داخل public/ يُخدَم كما كان دائماً
  * قبل نظام Supabase بالكامل — بلا لمس أو تحليل أو فك ترميز لأي صورة قديمة.
  */

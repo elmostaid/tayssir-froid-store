@@ -3,7 +3,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import { sql } from "@/lib/db";
 
-// نفس نمط replacePrimaryImage.test.ts: getAdminUser() تحتاج جلسة Supabase Auth
+// نفس نمط الاختبارات الأخرى فهذا الملف: getAdminUser() تحتاج جلسة Supabase Auth
 // حقيقية غير متاحة فبيئة الاختبار — نُحاكيها هنا فقط.
 const getAdminUserMock = vi.fn();
 vi.mock("@/lib/auth/requireAdmin", async () => {
@@ -15,20 +15,17 @@ vi.mock("@/lib/auth/requireAdmin", async () => {
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
-const { uploadProductImage, setPrimaryImage, deleteProductImage } = await import(
+const { setPrimaryImage, deleteProductImage } = await import(
   "@/app/admin/(protected)/products/imageActions"
 );
 
 const ADMIN_USER = { id: "test-admin", email: "admin@local", role: "admin" as const };
 const STAFF_USER = { id: "test-staff", email: "staff@local", role: "staff" as const };
 
-const PNG_1X1_BASE64 =
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
-const IMAGE_BYTES = Buffer.from(PNG_1X1_BASE64, "base64");
-
-function pngFile(name: string): File {
-  return new File([IMAGE_BYTES], name, { type: "image/png" });
-}
+const IMAGE_BYTES = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+  "base64"
+);
 
 async function fileExists(absPath: string): Promise<boolean> {
   return fs.access(absPath).then(
@@ -39,8 +36,11 @@ async function fileExists(absPath: string): Promise<boolean> {
 
 let productId: number;
 let primaryImageId: number;
+let secondaryImageId: number;
 const PRIMARY_SUFFIX = "fixture-primary.png";
+const SECONDARY_SUFFIX = "fixture-secondary.png";
 let primaryAbsPath: string;
+let secondaryAbsPath: string;
 
 async function currentImages() {
   return sql<{ id: number; storage_path: string; is_primary: boolean }[]>`
@@ -76,6 +76,11 @@ async function assertProductFieldsUnchanged() {
   expect(productCount[0].count).toBe(1);
 }
 
+// اثنتان من صور المنتج القديمة (محلية داخل public/، بنفس الاتفاقية القديمة
+// قبل نظام Supabase Storage المباشر) — تُنشآن مباشرة كـfixture بدل المرور
+// عبر مسار الرفع الفعلي (الرفع المباشر إلى Supabase مُختبَر بشكل كامل
+// ومنفصل فـchangePrimaryImageDirectUpload.test.ts)، لاختبار setPrimaryImage
+// وdeleteProductImage فقط هنا.
 beforeAll(async () => {
   const [category] = await sql<{ id: number }[]>`select id from public.categories order by id limit 1`;
   const [product] = await sql<{ id: number }[]>`
@@ -95,21 +100,32 @@ beforeAll(async () => {
 
   await sql`delete from public.product_images where product_id = ${productId}`;
 
-  const storagePath = `product-images/${productId}/${PRIMARY_SUFFIX}`;
-  primaryAbsPath = path.join(process.cwd(), "public", storagePath);
+  const primaryStoragePath = `product-images/${productId}/${PRIMARY_SUFFIX}`;
+  primaryAbsPath = path.join(process.cwd(), "public", primaryStoragePath);
   await fs.mkdir(path.dirname(primaryAbsPath), { recursive: true });
   await fs.writeFile(primaryAbsPath, IMAGE_BYTES);
 
-  const [image] = await sql<{ id: number }[]>`
+  const secondaryStoragePath = `product-images/${productId}/${SECONDARY_SUFFIX}`;
+  secondaryAbsPath = path.join(process.cwd(), "public", secondaryStoragePath);
+  await fs.writeFile(secondaryAbsPath, IMAGE_BYTES);
+
+  const [primary] = await sql<{ id: number }[]>`
     insert into public.product_images (product_id, storage_path, alt_text_ar, sort_order, is_primary)
-    values (${productId}, ${storagePath}, 'الصورة الرئيسية الأصلية', 1, true)
+    values (${productId}, ${primaryStoragePath}, 'الصورة الرئيسية الأصلية', 1, true)
     returning id
   `;
-  primaryImageId = image.id;
+  primaryImageId = primary.id;
+
+  const [secondary] = await sql<{ id: number }[]>`
+    insert into public.product_images (product_id, storage_path, alt_text_ar, sort_order, is_primary)
+    values (${productId}, ${secondaryStoragePath}, 'صورة إضافية أصلية', 2, false)
+    returning id
+  `;
+  secondaryImageId = secondary.id;
 });
 
 afterEach(async () => {
-  // إعادة الحالة الأصلية بين الاختبارات (نفس أسلوب replacePrimaryImage.test.ts).
+  // إعادة الحالة الأصلية بين الاختبارات.
   await sql`
     update public.products set
       name_ar = 'منتج اختبار لوحة الصور', purchase_price = 70.00, sale_price = 120.00,
@@ -129,70 +145,33 @@ afterAll(async () => {
   await sql`delete from public.products where sku = 'TEST-FIXTURE-IMAGESPANEL'`;
 });
 
-describe("لوحة صور المنتج الكاملة — إضافة/تحويل لرئيسية/حذف صورة إضافية", () => {
-  test("Staff: يُرفض uploadProductImage وsetPrimaryImage وdeleteProductImage معاً بلا أي تغيير", async () => {
+describe("لوحة صور المنتج — اجعلها رئيسية / حذف (بلا علاقة بمسار الرفع نفسه)", () => {
+  test("Staff: يُرفض setPrimaryImage وdeleteProductImage معاً بلا أي تغيير", async () => {
     getAdminUserMock.mockResolvedValue(STAFF_USER);
 
-    const fd = new FormData();
-    fd.set("file", pngFile("staff-upload.png"));
-    const uploadResult = await uploadProductImage(productId, { error: null }, fd);
-    expect(uploadResult.error).toBeTruthy();
-    expect(uploadResult.success).toBeFalsy();
-
-    const setPrimaryResult = await setPrimaryImage(primaryImageId, productId);
+    const setPrimaryResult = await setPrimaryImage(secondaryImageId, productId);
     expect(setPrimaryResult.error).toBeTruthy();
 
-    const deleteResult = await deleteProductImage(primaryImageId, productId);
+    const deleteResult = await deleteProductImage(secondaryImageId, productId);
     expect(deleteResult.error).toBeTruthy();
 
     const rows = await currentImages();
-    expect(rows).toHaveLength(1);
-    expect(rows[0].id).toBe(primaryImageId);
-    expect(rows[0].is_primary).toBe(true);
-  });
-
-  test("Admin: إضافة صورة جديدة (is_primary=false) لا تغيّر الصورة الرئيسية الحالية", async () => {
-    getAdminUserMock.mockResolvedValue(ADMIN_USER);
-
-    const fd = new FormData();
-    fd.set("file", pngFile("new-secondary.png"));
-    const result = await uploadProductImage(productId, { error: null }, fd);
-
-    expect(result.success).toBe(true);
-    expect(result.error).toBeNull();
-
-    const rows = await currentImages();
     expect(rows).toHaveLength(2);
-
-    const primaryRows = rows.filter((r) => r.is_primary);
-    expect(primaryRows).toHaveLength(1);
-    expect(primaryRows[0].id).toBe(primaryImageId);
-    expect(primaryRows[0].storage_path).toContain(PRIMARY_SUFFIX);
-
-    const secondary = rows.find((r) => !r.is_primary);
-    expect(secondary).toBeTruthy();
-    const secondaryAbsPath = path.join(process.cwd(), "public", secondary!.storage_path);
-    const written = await fs.readFile(secondaryAbsPath);
-    expect(written.equals(IMAGE_BYTES)).toBe(true);
-
-    await assertProductFieldsUnchanged();
+    expect(rows.filter((r) => r.is_primary)).toHaveLength(1);
+    expect(rows.find((r) => r.id === primaryImageId)?.is_primary).toBe(true);
   });
 
   test("Admin: تحويل الصورة الإضافية إلى رئيسية — القديمة تصبح غير رئيسية، وصورة رئيسية واحدة بالضبط", async () => {
     getAdminUserMock.mockResolvedValue(ADMIN_USER);
 
-    const before = await currentImages();
-    const secondaryImage = before.find((r) => !r.is_primary);
-    expect(secondaryImage).toBeTruthy();
-
-    const result = await setPrimaryImage(secondaryImage!.id, productId);
+    const result = await setPrimaryImage(secondaryImageId, productId);
     expect(result.error).toBeNull();
 
     const after = await currentImages();
     expect(after).toHaveLength(2);
     const primaryRows = after.filter((r) => r.is_primary);
     expect(primaryRows).toHaveLength(1);
-    expect(primaryRows[0].id).toBe(secondaryImage!.id);
+    expect(primaryRows[0].id).toBe(secondaryImageId);
 
     const oldPrimary = after.find((r) => r.id === primaryImageId);
     expect(oldPrimary?.is_primary).toBe(false);
@@ -209,63 +188,19 @@ describe("لوحة صور المنتج الكاملة — إضافة/تحويل 
   test("Admin: حذف صورة إضافية يحذفها من القاعدة والملف من القرص، ولا يمس الصورة الرئيسية", async () => {
     getAdminUserMock.mockResolvedValue(ADMIN_USER);
 
-    const before = await currentImages();
-    const secondaryImage = before.find((r) => !r.is_primary);
-    expect(secondaryImage).toBeTruthy();
-    const secondaryAbsPath = path.join(process.cwd(), "public", secondaryImage!.storage_path);
     expect(await fileExists(secondaryAbsPath)).toBe(true);
 
-    const result = await deleteProductImage(secondaryImage!.id, productId);
+    const result = await deleteProductImage(secondaryImageId, productId);
     expect(result.error).toBeNull();
 
     const after = await currentImages();
     expect(after).toHaveLength(1);
     expect(after[0].id).toBe(primaryImageId);
     expect(after[0].is_primary).toBe(true);
-    expect(after.filter((r) => r.is_primary)).toHaveLength(1);
 
     expect(await fileExists(secondaryAbsPath)).toBe(false);
     expect(await fileExists(primaryAbsPath)).toBe(true);
 
     await assertProductFieldsUnchanged();
-  });
-
-  // يُحاكي عطل الإنتاج الحقيقي بعد commit 3f4c00c: على Vercel بلا Supabase
-  // Storage مُهيَّأ، uploadProductImage كانت تحاول الكتابة على نظام ملفات
-  // للقراءة فقط. الآن يجب أن تفشل برسالة واضحة فوراً، بلا أي تغيير فالقاعدة
-  // أو الملفات، وبلا استثناء غير مُعالَج قد يُسقط الصفحة لاحقاً.
-  test("Admin: على Vercel بلا تخزين سحابي مُهيَّأ، uploadProductImage تفشل برسالة واضحة بلا أي تغيير", async () => {
-    getAdminUserMock.mockResolvedValue(ADMIN_USER);
-    const originalVercel = process.env.VERCEL;
-    const originalSupabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const originalSupabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    const originalServiceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    process.env.VERCEL = "1";
-    delete process.env.NEXT_PUBLIC_SUPABASE_URL;
-    delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    try {
-      const before = await currentImages();
-
-      const fd = new FormData();
-      fd.set("file", pngFile("wont-be-saved.png"));
-      const result = await uploadProductImage(productId, { error: null }, fd);
-
-      expect(result.success).toBeFalsy();
-      expect(result.error).toBeTruthy();
-      expect(result.error).not.toBe("تعذّر حفظ الصورة. حاول مرة أخرى.");
-
-      const after = await currentImages();
-      expect(after).toEqual(before);
-      await assertProductFieldsUnchanged();
-    } finally {
-      if (originalVercel === undefined) delete process.env.VERCEL;
-      else process.env.VERCEL = originalVercel;
-      if (originalSupabaseUrl !== undefined) process.env.NEXT_PUBLIC_SUPABASE_URL = originalSupabaseUrl;
-      if (originalSupabaseAnon !== undefined)
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = originalSupabaseAnon;
-      if (originalServiceRole !== undefined) process.env.SUPABASE_SERVICE_ROLE_KEY = originalServiceRole;
-    }
   });
 });

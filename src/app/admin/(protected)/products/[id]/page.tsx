@@ -16,14 +16,15 @@ import {
   deleteVariant,
 } from "@/app/admin/(protected)/products/actions";
 import {
-  uploadProductImage,
+  createImageUploadTarget,
+  commitAdditionalImage,
   updateImageAltText,
   deleteProductImage,
   setPrimaryImage,
   moveImageUp,
   moveImageDown,
 } from "@/app/admin/(protected)/products/imageActions";
-import { MAX_IMAGES_PER_PRODUCT } from "@/lib/storage/productImages";
+import { MAX_IMAGES_PER_PRODUCT } from "@/lib/storage/imageValidation";
 import { resolveProductImageUrls } from "@/lib/storage/resolveProductImageUrl";
 
 export const dynamic = "force-dynamic";
@@ -79,7 +80,8 @@ export default async function EditProductPage({ params }: Props) {
     deleteAction: deleteVariant.bind(null, variant.id, productId),
   }));
 
-  const boundUploadImage = uploadProductImage.bind(null, productId);
+  const boundCreateUploadTarget = createImageUploadTarget.bind(null, productId);
+  const boundCommitAdditionalImage = commitAdditionalImage.bind(null, productId);
   const imagesWithActions = images.map((image) => ({
     image,
     updateAltAction: updateImageAltText.bind(null, image.id, productId),
@@ -119,7 +121,8 @@ export default async function EditProductPage({ params }: Props) {
           <ImageManager
             images={images}
             imageUrlByPath={imageUrlByPath}
-            uploadAction={boundUploadImage}
+            createUploadTargetAction={boundCreateUploadTarget}
+            commitUploadAction={boundCommitAdditionalImage}
             imagesWithActions={imagesWithActions}
             maxImages={MAX_IMAGES_PER_PRODUCT}
           />

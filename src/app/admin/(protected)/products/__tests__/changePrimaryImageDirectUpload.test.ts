@@ -17,7 +17,7 @@ vi.mock("@/lib/supabase/serviceRole", () => ({
   getSupabaseServiceRoleClient: getSupabaseServiceRoleClientMock,
 }));
 
-const { createPrimaryImageUploadTarget, commitPrimaryImage } = await import(
+const { createImageUploadTarget, commitPrimaryImage, commitAdditionalImage } = await import(
   "@/app/admin/(protected)/products/imageActions"
 );
 
@@ -101,12 +101,12 @@ afterAll(async () => {
   await sql`delete from public.products where sku = 'TEST-FIXTURE-DIRECTUPLOAD'`;
 });
 
-describe("createPrimaryImageUploadTarget — تحضير رفع مباشر بدون تمرير الملف عبر Server Action", () => {
+describe("createImageUploadTarget — تحضير رفع مباشر بدون تمرير الملف عبر Server Action", () => {
   test("Staff: يُرفَض قبل أي محاولة اتصال بـSupabase", async () => {
     getAdminUserMock.mockResolvedValueOnce(STAFF_USER);
     configureRemoteStorageEnv();
 
-    const result = await createPrimaryImageUploadTarget(productId, "image/png");
+    const result = await createImageUploadTarget(productId, "image/png");
 
     expect(result.error).toBeTruthy();
     expect(result.uploadUrl).toBeUndefined();
@@ -117,7 +117,7 @@ describe("createPrimaryImageUploadTarget — تحضير رفع مباشر بدو
     getAdminUserMock.mockResolvedValueOnce(ADMIN_USER);
     configureRemoteStorageEnv();
 
-    const result = await createPrimaryImageUploadTarget(productId, "application/pdf");
+    const result = await createImageUploadTarget(productId, "application/pdf");
 
     expect(result.error).toBeTruthy();
     expect(getSupabaseServiceRoleClientMock).not.toHaveBeenCalled();
@@ -127,7 +127,7 @@ describe("createPrimaryImageUploadTarget — تحضير رفع مباشر بدو
     getAdminUserMock.mockResolvedValueOnce(ADMIN_USER);
     clearRemoteStorageEnv();
 
-    const result = await createPrimaryImageUploadTarget(productId, "image/png");
+    const result = await createImageUploadTarget(productId, "image/png");
 
     expect(result.error).toContain("رفع الصور غير مُفعَّل");
   });
@@ -138,7 +138,7 @@ describe("createPrimaryImageUploadTarget — تحضير رفع مباشر بدو
     const client = fakeSupabaseClient();
     getSupabaseServiceRoleClientMock.mockReturnValue(client);
 
-    const result = await createPrimaryImageUploadTarget(productId, "image/webp");
+    const result = await createImageUploadTarget(productId, "image/webp");
 
     expect(result.error).toBeNull();
     expect(result.token).toBe("fake-token");
@@ -231,5 +231,110 @@ describe("commitPrimaryImage — تحديث storage_path فقط بعد التأ�
     `;
     expect(Number(product.sale_price)).toBe(99);
     expect(product.stock_quantity).toBe(40);
+  });
+});
+
+describe("commitAdditionalImage — إضافة صورة إضافية دون تمرير الملف عبر Server Action", () => {
+  afterEach(async () => {
+    // نُبقي فقط الصورة الرئيسية الأصلية بين الاختبارات فهذا describe.
+    await sql`
+      delete from public.product_images
+      where product_id = ${productId} and id != ${originalImageId}
+    `;
+  });
+
+  test("Staff: يُرفَض ولا يُنشأ أي سجل", async () => {
+    getAdminUserMock.mockResolvedValueOnce(STAFF_USER);
+    configureRemoteStorageEnv();
+
+    const result = await commitAdditionalImage(
+      productId,
+      `${productId}/aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb.png`,
+      null
+    );
+
+    expect(result.error).toBeTruthy();
+    expect(getSupabaseServiceRoleClientMock).not.toHaveBeenCalled();
+
+    const rows = await sql<{ id: number }[]>`
+      select id from public.product_images where product_id = ${productId}
+    `;
+    expect(rows).toHaveLength(1);
+  });
+
+  test("objectPath غير صالح: يُرفَض بلا أي سجل جديد", async () => {
+    getAdminUserMock.mockResolvedValueOnce(ADMIN_USER);
+    configureRemoteStorageEnv();
+
+    const result = await commitAdditionalImage(productId, `${productId}/not-a-uuid.png`, null);
+
+    expect(result.error).toBeTruthy();
+    const rows = await sql<{ id: number }[]>`
+      select id from public.product_images where product_id = ${productId}
+    `;
+    expect(rows).toHaveLength(1);
+  });
+
+  test("نجاح: يُنشئ سجلاً جديداً غير رئيسي، الصورة الرئيسية القديمة بلا تغيير", async () => {
+    // يُلتقَط storage_path الحالي للصورة الرئيسية قبل الإضافة (وليس ثابتاً
+    // مبنياً على OLD_STORAGE_PATH_SUFFIX) لأن describe السابق فهذا الملف
+    // (commitPrimaryImage) قد يكون بدّله فعلياً فآخر اختباراته — المهم هنا
+    // فقط أن commitAdditionalImage لا يُغيّره إطلاقاً.
+    const [primaryBefore] = await sql<{ storage_path: string }[]>`
+      select storage_path from public.product_images where id = ${originalImageId}
+    `;
+
+    getAdminUserMock.mockResolvedValueOnce(ADMIN_USER);
+    configureRemoteStorageEnv();
+    const client = fakeSupabaseClient(true);
+    getSupabaseServiceRoleClientMock.mockReturnValue(client);
+
+    const objectPath = `${productId}/aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb.webp`;
+    const result = await commitAdditionalImage(productId, objectPath, "نص بديل تجريبي");
+
+    expect(result.success).toBe(true);
+    expect(result.error).toBeNull();
+
+    const rows = await sql<
+      { id: number; storage_path: string; is_primary: boolean; alt_text_ar: string | null }[]
+    >`select id, storage_path, is_primary, alt_text_ar from public.product_images where product_id = ${productId} order by sort_order asc`;
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0].id).toBe(originalImageId);
+    expect(rows[0].is_primary).toBe(true);
+    expect(rows[0].storage_path).toBe(primaryBefore.storage_path);
+
+    expect(rows[1].is_primary).toBe(false);
+    expect(rows[1].alt_text_ar).toBe("نص بديل تجريبي");
+    expect(rows[1].storage_path).toBe(
+      `https://example.supabase.co/storage/v1/object/public/product-images/${objectPath}`
+    );
+  });
+
+  test("الحد الأقصى للصور: يُرفَض بلا أي تغيير عند بلوغ الحد", async () => {
+    getAdminUserMock.mockResolvedValueOnce(ADMIN_USER);
+    configureRemoteStorageEnv();
+    const client = fakeSupabaseClient(true);
+    getSupabaseServiceRoleClientMock.mockReturnValue(client);
+
+    // نملأ حتى الحد الأقصى (5) يدوياً.
+    for (let i = 2; i <= 5; i++) {
+      await sql`
+        insert into public.product_images (product_id, storage_path, alt_text_ar, sort_order, is_primary)
+        values (${productId}, ${`https://example.supabase.co/storage/v1/object/public/product-images/${productId}/filler-${i}.webp`}, null, ${i}, false)
+      `;
+    }
+
+    const result = await commitAdditionalImage(
+      productId,
+      `${productId}/aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb.webp`,
+      null
+    );
+
+    expect(result.error).toContain("الحد الأقصى");
+    const rows = await sql<{ id: number }[]>`
+      select id from public.product_images where product_id = ${productId}
+    `;
+    expect(rows).toHaveLength(5);
   });
 });
