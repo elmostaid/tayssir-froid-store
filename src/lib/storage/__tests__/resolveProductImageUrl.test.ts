@@ -108,6 +108,29 @@ describe("resolveProductImageUrl — الصور القديمة (محلية) تب
     expect(url).toBe(`/${storagePath}`);
   });
 
+  test("ملف قديم اسمه عربي/فيه مسافات (storage_path مُرمَّز كرابط) موجود محلياً، حتى لو كان تخزين Supabase مُهيَّأ فعلياً (حالة Production الحقيقية): يبقى مسار محلي، ولا يُستدعى Supabase إطلاقاً (regression لـTF-CK-009 وما شابهها)", async () => {
+    // مُهيَّأ فعلياً هنا تحديداً لأن الخطأ الحقيقي في Production لا يظهر إلا
+    // عندما يكون تخزين Supabase مُهيَّأ فعلاً (وإلا فالملاذ الأخير محلي بأي
+    // حال ويُخفي الخلل) — نفس وضع Production الفعلي بعد إضافة رفع الصور.
+    configureRemoteStorageEnv();
+    const client = fakeSupabaseClient((objectPath) => ({
+      data: { publicUrl: `https://example.supabase.co/storage/v1/object/public/product-images/${objectPath}` },
+    }));
+    getSupabaseServiceRoleClientMock.mockReturnValue(client);
+
+    const rawFilename = "09__يد كوكوة شنوة 2 تقاب صغيرة.png";
+    const encodedStoragePath = `product-images/__test-fixture__/${encodeURIComponent(rawFilename)}`;
+    const rawAbsPath = path.join(process.cwd(), "public", "product-images", "__test-fixture__", rawFilename);
+
+    await fs.mkdir(path.dirname(rawAbsPath), { recursive: true });
+    await fs.writeFile(rawAbsPath, "x");
+
+    const url = await resolveProductImageUrl(encodedStoragePath);
+
+    expect(url).toBe(`/${encodedStoragePath}`);
+    expect(getSupabaseServiceRoleClientMock).not.toHaveBeenCalled();
+  });
+
   test("resolveProductImageUrls: يحل دفعة مسارات فريدة ويرجع كائناً عادياً (قابل للتمرير عبر props)", async () => {
     clearRemoteStorageEnv();
     await fs.mkdir(path.dirname(localAbsPath), { recursive: true });

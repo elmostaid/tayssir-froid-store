@@ -10,6 +10,23 @@ function stripBucketPrefix(storagePath: string): string {
   return storagePath.replace(/^product-images\//, "");
 }
 
+// storage_path للصور القديمة مُخزَّن بصيغة مُرمَّزة كرابط (URL-encoded —
+// مثلاً "%D9%8A%D8%AF%20..." لاسم ملف عربي فيه مسافات)، بينما الملف الفعلي
+// داخل public/ محفوظ باسمه الخام (UTF-8 غير مُرمَّز) — هكذا يكتبه fs.writeFile
+// في saveProductImageFile عند الرفع محلياً. فحص وجود الملف يجب أن يُقارن
+// بالاسم الخام لا المُرمَّز، وإلا يفشل fs.access دائماً لأي صورة قديمة فيها
+// حرف غير ASCII أو مسافة فيُظَن خطأً أنها غير موجودة محلياً وتُحل عبر
+// Supabase Storage لمسار لم يُرفَع إليه فعلاً (صورة مكسورة). القيمة المُرجَعة
+// كرابط href (localUrl أدناه) تبقى بصيغتها المُرمَّزة الأصلية كما هي —
+// المسار المرمَّز صالح تماماً كرابط، والمتصفح/خادم Next الثابت يفكّه تلقائياً.
+function toLocalFsPath(storagePath: string): string {
+  try {
+    return decodeURIComponent(storagePath);
+  } catch {
+    return storagePath;
+  }
+}
+
 /**
  * محلِّل روابط صور المنتجات من جهة الخادم فقط (يستعمل fs — يُمنع استيراده من
  * أي مكوّن "use client"؛ الصفحات/الاستعلامات الخادمية تحله وتُمرّر الرابط
@@ -29,7 +46,7 @@ export async function resolveProductImageUrl(storagePath: string): Promise<strin
   const localUrl = `/${storagePath}`;
 
   try {
-    await fs.access(path.join(LOCAL_PUBLIC_ROOT, storagePath));
+    await fs.access(path.join(LOCAL_PUBLIC_ROOT, toLocalFsPath(storagePath)));
     return localUrl;
   } catch {
     // لا وجود محلياً — نكمل لمحاولة الرابط البعيد أدناه.
