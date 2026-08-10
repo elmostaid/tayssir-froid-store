@@ -1,5 +1,6 @@
 import { getAllProductsForExport, getAllVariantsForExport } from "@/lib/queries/catalogExport";
 import { resolveImageUrl } from "@/lib/images";
+import { resolveProductImageUrls } from "@/lib/storage/resolveProductImageUrl";
 import { getSiteUrl } from "@/lib/siteUrl";
 import type { CatalogProductVariant } from "@/lib/types";
 
@@ -64,7 +65,11 @@ function priceString(amount: string | number): string {
   return `${Number(amount).toFixed(2)} ${CURRENCY}`;
 }
 
+// path قد يكون مساراً محلياً نسبياً ("/product-images/...") أو رابطاً
+// مطلقاً جاهزاً بالفعل (Supabase Storage public URL) — لا نُلحق siteUrl إذا
+// كان مطلقاً أصلاً، وإلا ننتج رابطاً مكسوراً (siteUrl + رابط https كامل).
 function absoluteUrl(siteUrl: string | null, path: string): string {
+  if (/^https?:\/\//.test(path)) return path;
   return siteUrl ? `${siteUrl}${path}` : path;
 }
 
@@ -75,6 +80,12 @@ export async function buildCatalogExport(): Promise<CatalogExportResult> {
   ]);
 
   const siteUrl = getSiteUrl();
+  // نفس المصدر المركزي resolveProductImageUrls (محلي للصور القديمة، أو
+  // Supabase Storage الحقيقي للصور المرفوعة حديثاً) — يُحل دفعة واحدة قبل
+  // الحلقة بدل استدعاء متزامن قديم per-row كان يفترض مساراً محلياً دائماً.
+  const imageUrlByPath = await resolveProductImageUrls(
+    products.map((p) => p.primary_image_path).filter((p): p is string => Boolean(p))
+  );
   const variantsByProduct = new Map<number, CatalogProductVariant[]>();
   for (const variant of variants) {
     const list = variantsByProduct.get(variant.product_id) ?? [];
@@ -159,7 +170,10 @@ export async function buildCatalogExport(): Promise<CatalogExportResult> {
     const productVariants = variantsByProduct.get(product.id) ?? [];
     const link = absoluteUrl(siteUrl, `/product/${product.slug}`);
     const imageLink = product.primary_image_path
-      ? absoluteUrl(siteUrl, resolveImageUrl(product.primary_image_path))
+      ? absoluteUrl(
+          siteUrl,
+          imageUrlByPath[product.primary_image_path] ?? resolveImageUrl(product.primary_image_path)
+        )
       : "";
     const description = product.description_ar ?? product.name_ar;
     const productType = product.category_name_ar;

@@ -4,6 +4,7 @@ import {
   getAllProductImagesForExport,
 } from "@/lib/queries/catalogExport";
 import { resolveImageUrl } from "@/lib/images";
+import { resolveProductImageUrls } from "@/lib/storage/resolveProductImageUrl";
 import { getSiteUrl } from "@/lib/siteUrl";
 import type { CatalogProductVariant, CatalogProductImage } from "@/lib/types";
 
@@ -61,7 +62,11 @@ function resolveAbsoluteSiteUrl(): string | null {
   return null;
 }
 
+// path قد يكون مساراً محلياً نسبياً ("/product-images/...") أو رابطاً
+// مطلقاً جاهزاً بالفعل (Supabase Storage public URL) — لا نُلحق siteUrl إذا
+// كان مطلقاً أصلاً، وإلا ننتج رابطاً مكسوراً (siteUrl + رابط https كامل).
 function absoluteUrl(siteUrl: string | null, path: string): string {
+  if (/^https?:\/\//.test(path)) return path;
   return siteUrl ? `${siteUrl}${path}` : path;
 }
 
@@ -73,6 +78,10 @@ export async function buildCleanCatalogExport(): Promise<CleanCatalogExportResul
   ]);
 
   const siteUrl = resolveAbsoluteSiteUrl();
+  // نفس المصدر المركزي resolveProductImageUrls (محلي للصور القديمة، أو
+  // Supabase Storage الحقيقي للصور المرفوعة حديثاً) — يُحل دفعة واحدة قبل
+  // الحلقة بدل استدعاء متزامن قديم per-row كان يفترض مساراً محلياً دائماً.
+  const imageUrlByPath = await resolveProductImageUrls(images.map((img) => img.storage_path));
 
   const variantsByProduct = new Map<number, CatalogProductVariant[]>();
   for (const variant of variants) {
@@ -115,9 +124,14 @@ export async function buildCleanCatalogExport(): Promise<CleanCatalogExportResul
     }
 
     const [primaryImage, ...otherImages] = productImages;
-    const imageLink = absoluteUrl(siteUrl, resolveImageUrl(primaryImage.storage_path));
+    const imageLink = absoluteUrl(
+      siteUrl,
+      imageUrlByPath[primaryImage.storage_path] ?? resolveImageUrl(primaryImage.storage_path)
+    );
     const additionalImageLink = otherImages
-      .map((img) => absoluteUrl(siteUrl, resolveImageUrl(img.storage_path)))
+      .map((img) =>
+        absoluteUrl(siteUrl, imageUrlByPath[img.storage_path] ?? resolveImageUrl(img.storage_path))
+      )
       .join(",");
 
     validImageCount += 1 + otherImages.length;

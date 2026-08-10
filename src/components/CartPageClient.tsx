@@ -1,14 +1,42 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useCart } from "@/components/CartProvider";
 import { cartItemKey, meetsMinimumOrder, snapQuantity } from "@/lib/cart/cartMath";
 import { resolveImageUrl } from "@/lib/images";
+import { resolveCartImageUrls } from "@/app/(storefront)/cart/resolveCartImageUrls";
 import { formatMad, formatMinOrderAmount } from "@/lib/format";
 
 export function CartPageClient({ minOrderAmountMad }: { minOrderAmountMad: number }) {
   const { items, subtotal, updateQuantity, removeItem, isHydrated } = useCart();
+
+  // السلة (localStorage) لا تخزّن سوى storage_path الخام. نحلّه من جهة
+  // الخادم (نفس resolveProductImageUrls المركزي، عبر resolveCartImageUrls)
+  // بعد التحميل — قبل أن يصل الرد، أو لصورة لم تُحل بعد، نرجع لـ
+  // resolveImageUrl التركيبي القديم (صحيح للصور المحلية القديمة، وهي
+  // الغالبية) بدل عدم عرض شيء إطلاقاً.
+  const [imageUrlByPath, setImageUrlByPath] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const paths = Array.from(
+      new Set(items.map((item) => item.imageUrl).filter((p): p is string => Boolean(p)))
+    );
+    if (paths.length === 0) return;
+    let cancelled = false;
+    resolveCartImageUrls(paths)
+      .then((result) => {
+        if (!cancelled) setImageUrlByPath((prev) => ({ ...prev, ...result }));
+      })
+      .catch(() => {
+        // فشل الحل البعيد يبقى غير حرج — الصور المحلية القديمة تبقى تعمل
+        // عبر resolveImageUrl أدناه، ولا نُسقط الصفحة لأجل هذا.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [items]);
 
   if (!isHydrated) {
     return <div className="mx-auto max-w-3xl px-4 py-10 text-sm text-neutral-500">جارٍ تحميل السلة…</div>;
@@ -51,7 +79,7 @@ export function CartPageClient({ minOrderAmountMad }: { minOrderAmountMad: numbe
               <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-neutral-100">
                 {item.imageUrl ? (
                   <Image
-                    src={resolveImageUrl(item.imageUrl)}
+                    src={imageUrlByPath[item.imageUrl] ?? resolveImageUrl(item.imageUrl)}
                     alt={item.name}
                     fill
                     sizes="80px"

@@ -1,11 +1,16 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { CatalogProduct } from "@/lib/types";
-import { resolveImageUrl } from "@/lib/images";
+import { resolveProductImageUrl } from "@/lib/storage/resolveProductImageUrl";
 import { formatMad } from "@/lib/format";
 import { ProductCardActions } from "@/components/ProductCardActions";
 
-export function ProductCard({
+// مكوّن خادمي async (نمط Next.js App Router قياسي): يحل رابط الصورة من جهة
+// الخادم (محلي للصور القديمة، أو Supabase Storage الحقيقي للصور المرفوعة
+// حديثاً — نفس resolveProductImageUrl المركزي المستعمل فـ/admin/products
+// وصفحة المنتج). imageUrl الخام يبقى يُمرَّر لـProductCardActions كما هو —
+// السلة تخزّن storage_path الخام وتحله بنفسها عند العرض (راجع resolveCartImageUrls).
+export async function ProductCard({
   product,
   imageUrl,
   hasVariants = false,
@@ -17,6 +22,7 @@ export function ProductCard({
   whatsappNumber: string;
 }) {
   const isUnavailable = product.status === "out_of_stock" || product.stock_quantity <= 0;
+  const resolvedImageUrl = imageUrl ? await resolveProductImageUrl(imageUrl) : null;
 
   return (
     <div className="flex flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white transition-shadow hover:shadow-md">
@@ -24,9 +30,9 @@ export function ProductCard({
         href={`/product/${product.slug}`}
         className="group relative block aspect-square w-full bg-neutral-100"
       >
-        {imageUrl ? (
+        {resolvedImageUrl ? (
           <Image
-            src={resolveImageUrl(imageUrl)}
+            src={resolvedImageUrl}
             alt={product.name_ar}
             fill
             sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 220px"
