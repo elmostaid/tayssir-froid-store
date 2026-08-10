@@ -13,7 +13,7 @@ vi.mock("@/lib/auth/requireAdmin", async () => {
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
-const { moveProductUp, moveProductDown } = await import(
+const { moveProductUp, moveProductDown, moveProductToRank } = await import(
   "@/app/admin/(protected)/products/actions"
 );
 
@@ -208,5 +208,200 @@ describe("moveProductUp / moveProductDown — ترتيب المنتجات داخ
 
     const order = await currentOrder();
     expect(order.map((p) => p.id)).toEqual([productA, productB, productC]);
+  });
+
+  test("نتيجة النجاح تُرجع المنتجَين اللذين تغيّرت مرتبتهما فعلياً (لتحديث فوري بالواجهة)", async () => {
+    getAdminUserMock.mockResolvedValueOnce(ADMIN_USER);
+
+    const result = await moveProductUp(productB);
+    expect(result.updated).toBeTruthy();
+    const byId = new Map(result.updated!.map((u) => [u.id, u.sort_order]));
+    expect(byId.get(productA)).toBe(2);
+    expect(byId.get(productB)).toBe(1);
+  });
+});
+
+describe("moveProductToRank — نقل مباشر لمرتبة مطلوبة داخل التصنيف (خانة المرتبة + زر نقل)", () => {
+  // تصنيف أكبر مخصَّص لهذا الوصف فقط (10 منتجات) لاختبار قفزة كبيرة فمرتبة
+  // واحدة (مطابق لسيناريو المستخدم: نقل من مرتبة بعيدة إلى مرتبة قريبة من
+  // الأول بعملية واحدة).
+  let bigCategoryId: number;
+  let bigProducts: number[]; // ids بترتيب المرتبة 1..10
+
+  beforeAll(async () => {
+    const [category] = await sql<{ id: number }[]>`
+      insert into public.categories (slug, name_ar, is_active)
+      values ('test-fixture-move-to-rank-category', 'تصنيف اختبار النقل المباشر', true)
+      on conflict (slug) do update set is_active = true
+      returning id
+    `;
+    bigCategoryId = category.id;
+
+    await sql`delete from public.products where sku like 'TEST-FIXTURE-RANK-%'`;
+
+    bigProducts = [];
+    for (let i = 1; i <= 10; i++) {
+      const [row] = await sql<{ id: number }[]>`
+        insert into public.products (
+          sku, slug, category_id, name_ar, unit_label,
+          min_order_qty, qty_increment, sale_price, stock_quantity, status, sort_order
+        ) values (
+          ${"TEST-FIXTURE-RANK-" + i}, ${"test-fixture-rank-" + i}, ${bigCategoryId},
+          ${"منتج رقم " + i}, 'قطعة', 1, 1, 50.00, 10, 'published', ${i}
+        ) returning id
+      `;
+      bigProducts.push(row.id);
+    }
+  });
+
+  afterEach(async () => {
+    for (let i = 0; i < bigProducts.length; i++) {
+      await sql`update public.products set sort_order = ${i + 1} where id = ${bigProducts[i]}`;
+    }
+  });
+
+  afterAll(async () => {
+    await sql`delete from public.products where sku like 'TEST-FIXTURE-RANK-%'`;
+    await sql`delete from public.categories where slug = 'test-fixture-move-to-rank-category'`;
+  });
+
+  async function bigCategoryOrder(): Promise<{ id: number; sort_order: number }[]> {
+    return sql<{ id: number; sort_order: number }[]>`
+      select id, sort_order from public.products
+      where category_id = ${bigCategoryId}
+      order by sort_order asc, created_at desc, id desc
+    `;
+  }
+
+  test("Staff: يُرفَض ولا يتغيّر الترتيب", async () => {
+    getAdminUserMock.mockResolvedValueOnce(STAFF_USER);
+
+    const result = await moveProductToRank(bigProducts[9], 2);
+    expect(result.error).toBeTruthy();
+
+    const order = await bigCategoryOrder();
+    expect(order.map((p) => p.id)).toEqual(bigProducts);
+  });
+
+  test("رقم مرتبة غير صحيح (0، سالب، عشري): يُرفَض بلا لمس القاعدة", async () => {
+    getAdminUserMock.mockResolvedValueOnce(ADMIN_USER);
+    let result = await moveProductToRank(bigProducts[0], 0);
+    expect(result.error).toBeTruthy();
+
+    getAdminUserMock.mockResolvedValueOnce(ADMIN_USER);
+    result = await moveProductToRank(bigProducts[0], -3);
+    expect(result.error).toBeTruthy();
+
+    getAdminUserMock.mockResolvedValueOnce(ADMIN_USER);
+    result = await moveProductToRank(bigProducts[0], 1.5);
+    expect(result.error).toBeTruthy();
+
+    const order = await bigCategoryOrder();
+    expect(order.map((p) => p.id)).toEqual(bigProducts);
+  });
+
+  test("نقل منتج من مرتبة 10 إلى مرتبة 2: يعيد ترتيب 1..10 بلا تكرار ولا فراغات، بعملية واحدة", async () => {
+    getAdminUserMock.mockResolvedValueOnce(ADMIN_USER);
+
+    // المنتج العاشر (bigProducts[9], مرتبته الحالية 10) → مرتبة 2.
+    const result = await moveProductToRank(bigProducts[9], 2);
+    expect(result.error).toBeNull();
+    expect(result.updated).toBeTruthy();
+
+    const order = await bigCategoryOrder();
+    // التسلسل المتوقع: 1(بلا تغيير) ، 10(الجديد فمرتبة 2) ، 2..9 (كل واحد
+    // تحرَّك مرتبة واحدة للأسفل ليُفسح المكان).
+    expect(order.map((p) => p.id)).toEqual([
+      bigProducts[0],
+      bigProducts[9],
+      bigProducts[1],
+      bigProducts[2],
+      bigProducts[3],
+      bigProducts[4],
+      bigProducts[5],
+      bigProducts[6],
+      bigProducts[7],
+      bigProducts[8],
+    ]);
+
+    // sort_order متصل تماماً 1..10 بلا تكرار ولا فراغ.
+    const sortOrders = order.map((p) => p.sort_order).sort((a, b) => a - b);
+    expect(sortOrders).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(new Set(sortOrders).size).toBe(10);
+  });
+
+  test("نقل منتج من مرتبة 1 إلى مرتبة 8: الاتجاه المعاكس يعمل بنفس الصحة", async () => {
+    getAdminUserMock.mockResolvedValueOnce(ADMIN_USER);
+
+    const result = await moveProductToRank(bigProducts[0], 8);
+    expect(result.error).toBeNull();
+
+    const order = await bigCategoryOrder();
+    expect(order.map((p) => p.id)).toEqual([
+      bigProducts[1],
+      bigProducts[2],
+      bigProducts[3],
+      bigProducts[4],
+      bigProducts[5],
+      bigProducts[6],
+      bigProducts[7],
+      bigProducts[0],
+      bigProducts[8],
+      bigProducts[9],
+    ]);
+
+    const sortOrders = order.map((p) => p.sort_order).sort((a, b) => a - b);
+    expect(sortOrders).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  });
+
+  test("مرتبة هدف أكبر من عدد المنتجات: تُثبَّت (clamp) عند آخر مرتبة، بلا خطأ", async () => {
+    getAdminUserMock.mockResolvedValueOnce(ADMIN_USER);
+
+    const result = await moveProductToRank(bigProducts[0], 999);
+    expect(result.error).toBeNull();
+
+    const order = await bigCategoryOrder();
+    expect(order[order.length - 1].id).toBe(bigProducts[0]);
+    const sortOrders = order.map((p) => p.sort_order).sort((a, b) => a - b);
+    expect(sortOrders).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  });
+
+  test("نقل لنفس المرتبة الحالية: بلا أي تغيير (updated فارغة أو غير موجودة)", async () => {
+    getAdminUserMock.mockResolvedValueOnce(ADMIN_USER);
+
+    const result = await moveProductToRank(bigProducts[4], 5);
+    expect(result.error).toBeNull();
+    expect(result.updated ?? []).toHaveLength(0);
+
+    const order = await bigCategoryOrder();
+    expect(order.map((p) => p.id)).toEqual(bigProducts);
+  });
+
+  test("منتج تصنيف آخر (تصنيف صغير من الوصف السابق) لا يتأثر إطلاقاً", async () => {
+    getAdminUserMock.mockResolvedValueOnce(ADMIN_USER);
+
+    const [before] = await sql<{ sort_order: number }[]>`
+      select sort_order from public.products where id = ${otherCategoryProductId}
+    `;
+
+    await moveProductToRank(bigProducts[9], 3);
+
+    const [after] = await sql<{ sort_order: number }[]>`
+      select sort_order from public.products where id = ${otherCategoryProductId}
+    `;
+    expect(after.sort_order).toBe(before.sort_order);
+  });
+
+  test("بيانات المنتجات الأخرى (الاسم/الثمن/المخزون/الحالة) بلا أي تغيير بعد النقل", async () => {
+    getAdminUserMock.mockResolvedValueOnce(ADMIN_USER);
+    await moveProductToRank(bigProducts[9], 2);
+
+    const [product] = await sql<
+      { name_ar: string; sale_price: string; stock_quantity: number; status: string }[]
+    >`select name_ar, sale_price, stock_quantity, status from public.products where id = ${bigProducts[9]}`;
+    expect(product.name_ar).toBe("منتج رقم 10");
+    expect(Number(product.sale_price)).toBe(50);
+    expect(product.stock_quantity).toBe(10);
+    expect(product.status).toBe("published");
   });
 });

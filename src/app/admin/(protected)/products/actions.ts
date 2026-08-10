@@ -301,19 +301,21 @@ export async function quickUpdateProduct(
   return { error: null, success: true };
 }
 
-// ترتيب المنتجات يدوياً داخل كل تصنيف (أزرار "↑ طلّع"/"↓ هبّط" فـ
-// /admin/products): نفس نمط swapSortOrder المستعمل أصلاً لصور المنتج
-// (imageActions.ts) بالضبط — نجلب كل منتجات نفس التصنيف بترتيب العرض
-// الحقيقي نفسه، نحدّد موقع المنتج الحالي، ونبدّل sort_order مع الجار
-// المباشر فقط (سابق لـ"↑"، لاحق لـ"↓"). أول/آخر منتج فالتصنيف: لا جار فتلك
-// الجهة، فالإجراء لا يفعل شيئاً بصمت (بلا خطأ) — يطابق سلوك أزرار صور
-// المنتج تماماً. يُحدَّث sort_order فقط؛ لا حقل آخر (الاسم/الثمن/المخزون/
-// الصور/SKU/الحالة) يُلمَس، ولا منتج من تصنيف آخر يتأثر (المقارنة مقصورة
-// دائماً على category_id لنفس المنتج).
+// ترتيب المنتجات يدوياً داخل كل تصنيف — أزرار "↑ طلّع"/"↓ هبّط" وخانة
+// "المرتبة" + زر "نقل" فـ/admin/products. كل الدوال الثلاث تُحدِّث sort_order
+// فقط؛ لا حقل آخر (الاسم/الثمن/المخزون/الصور/SKU/الحالة) يُلمَس، ولا منتج من
+// تصنيف آخر يتأثر (كل الاستعلامات مقصورة دائماً على category_id لنفس
+// المنتج). كل نتيجة تُرجع قائمة الصفوف التي تغيّر ترتيبها فعلياً (id +
+// sort_order الجديد) بدل الاعتماد على revalidatePath لإعادة جلب الصفحة
+// كاملة — الواجهة (ReorderableProductsList) تُحدِّث ترتيبها محلياً وفوراً من
+// هذه القيمة مباشرة، بلا reload.
+export type ReorderUpdate = { id: number; sort_order: number };
+export type ReorderResult = { error: string | null; updated?: ReorderUpdate[] };
+
 async function swapProductSortOrder(
   productId: number,
   direction: "up" | "down"
-): Promise<{ error: string | null }> {
+): Promise<ReorderResult> {
   const admin = await getAdminUser();
   if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
   if (!isOwnerAdmin(admin)) return { error: OWNER_ONLY_ERROR };
@@ -347,20 +349,97 @@ async function swapProductSortOrder(
     await tx`update public.products set sort_order = ${currentEntry.sort_order} where id = ${neighbor.id}`;
   });
 
-  revalidatePath("/admin/products");
   // صفحة التصنيف للزبون force-dynamic أصلاً فلا تحتاج revalidatePath
   // لتُحدَّث فعلياً عند أي زيارة/تحميل جديد — لكن نُنعشها بنفس النمط
   // المعتمد أصلاً فـimageActions.ts لتفادي أي عرض من ذاكرة تنقّل جانب
   // العميل (client-side router cache) إن كانت مفتوحة أصلاً فتبويب آخر.
+  // عمداً بلا revalidatePath("/admin/products"): هذا كان يفرض إعادة جلب/عرض
+  // كامل قائمة المنتجات فـلوحة الإدارة عند كل ضغطة (بطيء)، بينما الواجهة
+  // الآن تُحدَّث فوراً من القيمة المُرجَعة أدناه بلا أي طلب إضافي.
   revalidatePath("/", "layout");
 
-  return { error: null };
+  return {
+    error: null,
+    updated: [
+      { id: currentEntry.id, sort_order: neighbor.sort_order },
+      { id: neighbor.id, sort_order: currentEntry.sort_order },
+    ],
+  };
 }
 
-export async function moveProductUp(productId: number): Promise<{ error: string | null }> {
+export async function moveProductUp(productId: number): Promise<ReorderResult> {
   return swapProductSortOrder(productId, "up");
 }
 
-export async function moveProductDown(productId: number): Promise<{ error: string | null }> {
+export async function moveProductDown(productId: number): Promise<ReorderResult> {
   return swapProductSortOrder(productId, "down");
+}
+
+// نقل منتج مباشرة إلى مرتبة مطلوبة داخل تصنيفه (خانة "المرتبة" + زر "نقل"):
+// بدل تكرار "↑"/"↓" عشرات المرات (بطيء، عشرات الطلبات المنفصلة)، عملية
+// واحدة فقاعدة البيانات: استعلام UPDATE وحيد (مع CTEs) يقفل صفوف التصنيف
+// (FOR UPDATE، لمنع تعارض نقلين متزامنين فنفس التصنيف)، يحسب مرتبة كل منتج
+// الحالية عبر row_number() بنفس ترتيب العرض الحقيقي، يُثبِّت المرتبة الهدف
+// بين 1 والعدد الكلي للتصنيف (clamp)، ثم يزيح فقط المنتجات الواقعة بين
+// المرتبة القديمة والجديدة بمقدار واحد (لإفساح/إغلاق الفراغ) — كل هذا فسطر
+// UPDATE واحد، بلا حلقة JS ولا استعلامات منفصلة متعددة. النتيجة: ترتيب
+// 1..N متصل بلا تكرار ولا فراغات داخل نفس التصنيف فقط، بلا أي تأثير على أي
+// تصنيف آخر.
+export async function moveProductToRank(
+  productId: number,
+  targetRankRaw: number
+): Promise<ReorderResult> {
+  const admin = await getAdminUser();
+  if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+  if (!isOwnerAdmin(admin)) return { error: OWNER_ONLY_ERROR };
+
+  if (!Number.isInteger(targetRankRaw) || targetRankRaw < 1) {
+    return { error: "أدخل رقم مرتبة صحيح (1 أو أكثر)." };
+  }
+
+  const [current] = await sql<{ category_id: number }[]>`
+    select category_id from public.products where id = ${productId}
+  `;
+  if (!current) return { error: null };
+
+  const updated = await sql<ReorderUpdate[]>`
+    with locked as (
+      select id from public.products where category_id = ${current.category_id} for update
+    ),
+    current_list as (
+      select p.id, p.sort_order,
+        row_number() over (order by p.sort_order asc, p.created_at desc, p.id desc) as rn,
+        count(*) over () as total
+      from public.products p
+      join locked l on l.id = p.id
+    ),
+    old_rank as (
+      select rn, total from current_list where id = ${productId}
+    ),
+    target as (
+      select least(greatest(${targetRankRaw}::int, 1), total) as rank from old_rank
+    )
+    update public.products p
+    set sort_order = case
+      when cl.id = ${productId} then (select rank from target)
+      when cl.rn < (select rn from old_rank) and cl.rn >= (select rank from target) then cl.rn + 1
+      when cl.rn > (select rn from old_rank) and cl.rn <= (select rank from target) then cl.rn - 1
+      else cl.rn
+    end
+    from current_list cl
+    where p.id = cl.id
+      and cl.sort_order is distinct from (
+        case
+          when cl.id = ${productId} then (select rank from target)
+          when cl.rn < (select rn from old_rank) and cl.rn >= (select rank from target) then cl.rn + 1
+          when cl.rn > (select rn from old_rank) and cl.rn <= (select rank from target) then cl.rn - 1
+          else cl.rn
+        end
+      )
+    returning p.id, p.sort_order
+  `;
+
+  revalidatePath("/", "layout");
+
+  return { error: null, updated };
 }

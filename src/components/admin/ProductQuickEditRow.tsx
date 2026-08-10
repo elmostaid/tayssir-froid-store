@@ -32,8 +32,9 @@ export function ProductQuickEditRow({
   imagesWithActions,
   isFirstInCategory,
   isLastInCategory,
-  moveUpAction,
-  moveDownAction,
+  onMoveUp,
+  onMoveDown,
+  onMoveToRank,
 }: {
   product: AdminProduct;
   action: (prevState: ProductFormState, formData: FormData) => Promise<ProductFormState>;
@@ -50,14 +51,15 @@ export function ProductQuickEditRow({
     setPrimaryAction: () => Promise<{ error: string | null }>;
     deleteAction: () => Promise<{ error: string | null }>;
   }[];
-  // ترتيب المنتج داخل تصنيفه فقط (sort_order) — "↑"/"↓" لا يلمسان أي حقل
-  // آخر (الاسم/الثمن/المخزون/الصور/SKU/الحالة)، ولا يقارنان إلا بمنتجات نفس
-  // category_id (محسوبة من ترتيب القائمة الكاملة فـpage.tsx). لا زر يعمل
-  // شيئاً عند حدود التصنيف (أول/آخر منتج).
+  // ترتيب المنتج داخل تصنيفه فقط (sort_order) — "↑"/"↓"/"نقل" لا تلمس أي
+  // حقل آخر (الاسم/الثمن/المخزون/الصور/SKU/الحالة)، ولا تقارن إلا بمنتجات
+  // نفس category_id (محسوبة من ترتيب القائمة الكاملة فـReorderableProductsList).
+  // لا زر يعمل شيئاً عند حدود التصنيف (أول/آخر منتج).
   isFirstInCategory: boolean;
   isLastInCategory: boolean;
-  moveUpAction: () => Promise<{ error: string | null }>;
-  moveDownAction: () => Promise<{ error: string | null }>;
+  onMoveUp: () => Promise<{ error: string | null }>;
+  onMoveDown: () => Promise<{ error: string | null }>;
+  onMoveToRank: (rank: number) => Promise<{ error: string | null }>;
 }) {
   const [state, formAction, isPending] = useActionState(action, initialState);
   const fieldError = (field: string) => state.fieldErrors?.[field];
@@ -65,12 +67,39 @@ export function ProductQuickEditRow({
   const [isReordering, startReorderTransition] = useTransition();
   const [reorderError, setReorderError] = useState<string | null>(null);
 
+  // خانة "المرتبة": قيمة نصية مستقلة (وليست مربوطة مباشرة بـproduct.sort_order
+  // كـcontrolled input بلا وسيط) لتسمح للمستخدم بالكتابة بحرية، مع مزامنتها
+  // من جديد كلما تغيّرت مرتبة المنتج الفعلية (نقل ناجح لهذا المنتج أو لجاره).
+  // تحديث أثناء الرندر نفسه (نمط React الموصى به لـ"تعديل الحالة عند تغيّر
+  // prop") بدل useEffect+setState، لتفادي رندر إضافي متتالٍ بلا داعٍ.
+  const [prevSortOrder, setPrevSortOrder] = useState(product.sort_order);
+  const [rankInput, setRankInput] = useState(String(product.sort_order));
+  if (product.sort_order !== prevSortOrder) {
+    setPrevSortOrder(product.sort_order);
+    setRankInput(String(product.sort_order));
+  }
+
   function handleMove(e: React.MouseEvent<HTMLButtonElement>, moveAction: () => Promise<{ error: string | null }>) {
     e.preventDefault();
     e.stopPropagation();
     setReorderError(null);
     startReorderTransition(async () => {
       const result = await moveAction();
+      if (result.error) setReorderError(result.error);
+    });
+  }
+
+  function handleMoveToRank(e: React.MouseEvent<HTMLButtonElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    const parsed = Number(rankInput);
+    if (!Number.isInteger(parsed) || parsed < 1) {
+      setReorderError("أدخل رقم مرتبة صحيح (1 أو أكثر).");
+      return;
+    }
+    setReorderError(null);
+    startReorderTransition(async () => {
+      const result = await onMoveToRank(parsed);
       if (result.error) setReorderError(result.error);
     });
   }
@@ -92,10 +121,10 @@ export function ProductQuickEditRow({
 
       {/* ترتيب المنتج داخل تصنيفه — خارج فورم الثمن/المخزون تماماً، بلا أي
           علاقة أو تأثير على حفظه. */}
-      <div className="mb-2 flex items-center gap-1.5">
+      <div className="mb-2 flex flex-wrap items-center gap-1.5">
         <button
           type="button"
-          onClick={(e) => handleMove(e, moveUpAction)}
+          onClick={(e) => handleMove(e, onMoveUp)}
           disabled={isReordering || isFirstInCategory}
           aria-label="طلّع المنتج للأعلى داخل نفس التصنيف"
           title="طلّع"
@@ -105,7 +134,7 @@ export function ProductQuickEditRow({
         </button>
         <button
           type="button"
-          onClick={(e) => handleMove(e, moveDownAction)}
+          onClick={(e) => handleMove(e, onMoveDown)}
           disabled={isReordering || isLastInCategory}
           aria-label="هبّط المنتج للأسفل داخل نفس التصنيف"
           title="هبّط"
@@ -113,7 +142,33 @@ export function ProductQuickEditRow({
         >
           ↓
         </button>
-        {reorderError && <p className="text-xs text-red-600">{reorderError}</p>}
+
+        <span className="mx-0.5 h-6 w-px shrink-0 bg-neutral-200" aria-hidden />
+
+        <label className="flex items-center gap-1 text-xs text-neutral-600">
+          المرتبة
+          <input
+            type="number"
+            inputMode="numeric"
+            min={1}
+            step={1}
+            value={rankInput}
+            onChange={(e) => setRankInput(e.target.value)}
+            disabled={isReordering}
+            aria-label="مرتبة المنتج داخل تصنيفه"
+            className="min-h-9 w-16 rounded-lg border border-neutral-300 px-2 py-1 text-center text-sm disabled:opacity-60"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={handleMoveToRank}
+          disabled={isReordering}
+          className="min-h-9 rounded-lg border border-neutral-300 px-3 text-xs font-semibold text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          نقل
+        </button>
+
+        {reorderError && <p className="w-full text-xs text-red-600">{reorderError}</p>}
       </div>
 
       <form action={formAction}>
