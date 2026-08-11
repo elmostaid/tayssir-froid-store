@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCart } from "@/components/CartProvider";
 import { snapQuantity } from "@/lib/cart/cartMath";
 import { formatMad } from "@/lib/format";
+import { trackAddToCart } from "@/lib/pixel/fbq";
 import type { CatalogProduct, CatalogProductVariant } from "@/lib/types";
 
 export function AddToCartForm({
@@ -76,6 +77,15 @@ export function AddToCartForm({
       },
       quantity
     );
+    // AddToCart يُطلَق هنا فقط — عند الإضافة الفعلية للسلة (بعد نجاح
+    // addItem)، وليس عند مجرد فتح الصفحة أو تغيير الكمية/المقاس.
+    trackAddToCart({
+      sku: product.sku,
+      name: product.name_ar,
+      price: effective.price,
+      quantity,
+      category: product.category_name_ar,
+    });
     setAdded(true);
   }
 

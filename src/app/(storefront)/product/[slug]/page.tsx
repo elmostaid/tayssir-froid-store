@@ -14,6 +14,7 @@ import { formatMad, formatMinOrderAmount } from "@/lib/format";
 import { buildProductWhatsAppLink } from "@/lib/whatsapp";
 import { safeQuery } from "@/lib/safeQuery";
 import { AddToCartForm } from "@/components/AddToCartForm";
+import { ProductViewContentPixel } from "@/components/ProductViewContentPixel";
 import { ServiceUnavailable } from "@/components/ServiceUnavailable";
 import { getSiteUrl } from "@/lib/siteUrl";
 
@@ -215,6 +216,12 @@ export default async function ProductPage({ params }: Props) {
             </div>
           </dl>
 
+          <ProductViewContentPixel
+            sku={product.sku}
+            name={product.name_ar}
+            price={Number(product.sale_price)}
+            category={product.category_name_ar}
+          />
           <AddToCartForm
             product={product}
             variants={variants}

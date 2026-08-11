@@ -1,13 +1,14 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useCart } from "@/components/CartProvider";
 import { formatMad, formatMinOrderAmount } from "@/lib/format";
 import { cartItemKey } from "@/lib/cart/cartMath";
 import { isValidMoroccanPhone } from "@/lib/phone";
 import { buildOrderWhatsAppMessage, buildWhatsAppLink } from "@/lib/whatsapp";
-import { submitOrder } from "@/app/(storefront)/checkout/actions";
+import { submitOrder, type CheckoutState } from "@/app/(storefront)/checkout/actions";
+import { trackInitiateCheckout, trackPurchase } from "@/lib/pixel/fbq";
 
 const SAVE_ORDER_MAX_ATTEMPTS = 3;
 const SAVE_ORDER_RETRY_DELAYS_MS = [800, 2000];
@@ -23,22 +24,29 @@ function delay(ms: number): Promise<void> {
 // إن فشلت كل المحاولات، نُسجّل خطأً واضحاً فـlogs الخادم بدل إخفاء المشكلة
 // بالكامل — هذا يبقى العلامة الوحيدة على أن طلباً وصل عبر واتساب دون أن
 // يُسجَّل بلوحة الإدارة، إلى أن يُصلَح سبب الفشل.
-async function saveOrderWithRetry(formData: FormData): Promise<void> {
+// نفس منطق إعادة المحاولة بالضبط (بلا أي تعديل) — الإضافة الوحيدة هنا هي
+// إرجاع نتيجة submitOrder بدل تجاهلها، ليقدر handleSubmit وحده أن يقرر
+// إطلاق Purchase (Meta Pixel) فقط عند نجاح حقيقي مؤكَّد من قاعدة البيانات
+// (result.ok === true)، لا بمجرد الضغط على الزر. لا تأثير على قرار
+// إعادة المحاولة نفسه، ولا على مسار واتساب، ولا على أي منطق طلب/مخزون.
+async function saveOrderWithRetry(formData: FormData): Promise<CheckoutState | null> {
   let lastFailure: unknown = null;
+  let lastResult: CheckoutState | null = null;
 
   for (let attempt = 1; attempt <= SAVE_ORDER_MAX_ATTEMPTS; attempt++) {
     try {
       const result = await submitOrder({ ok: null }, formData);
       if (result.ok !== false) {
-        return;
+        return result;
       }
+      lastResult = result;
       const isGenericFailure = result.errors.some((err) => err.field === "general");
       if (!isGenericFailure) {
         console.error(
           "submitOrder (خلفية، لا تؤثر على واتساب): فشل تحقق/منطق غير قابل لإعادة المحاولة",
           result.errors
         );
-        return;
+        return result;
       }
       lastFailure = result.errors;
     } catch (err) {
@@ -55,6 +63,7 @@ async function saveOrderWithRetry(formData: FormData): Promise<void> {
       "الطلب وصل عبر واتساب لكنه لم يُسجَّل في لوحة الإدارة، يلزم تسجيله يدوياً وفحص سبب الفشل",
     lastFailure
   );
+  return lastResult;
 }
 
 // إتمام الطلب يفتح رسالة واتساب جاهزة بمعلومات الزبون والمنتجات مباشرة —
@@ -86,8 +95,25 @@ export function CheckoutClient({
   const [sent, setSent] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [idempotencyKey] = useState(() => crypto.randomUUID());
+  const hasTrackedInitiateCheckout = useRef(false);
+  const hasTrackedPurchase = useRef(false);
 
   const belowMinimum = subtotal < minOrderAmountMad;
+
+  // InitiateCheckout: مرة واحدة فقط عند بدء Checkout فعلياً (السلة محمَّلة
+  // من localStorage وغير فارغة) — الـref يمنع أي تكرار حتى لو أُعيد رندر
+  // المكوّن عدة مرات (كتابة فالحقول مثلاً) قبل أن يصل الزبون لنهاية الفورم.
+  useEffect(() => {
+    if (hasTrackedInitiateCheckout.current) return;
+    if (!isHydrated || items.length === 0) return;
+    hasTrackedInitiateCheckout.current = true;
+    trackInitiateCheckout({
+      items: items.map((item) => ({ sku: item.sku, quantity: item.quantity, price: item.unitPrice })),
+      value: subtotal,
+      eventId: crypto.randomUUID(),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHydrated, items.length]);
 
   const whatsappHref = useMemo(() => {
     if (items.length === 0) return null;
@@ -211,7 +237,24 @@ export function CheckoutClient({
     formData.set("notes", notes);
     formData.set("idempotencyKey", idempotencyKey);
 
-    await saveOrderWithRetry(formData);
+    const saveResult = await saveOrderWithRetry(formData);
+
+    // Purchase: فقط بعد نجاح حقيقي مؤكَّد من قاعدة البيانات (createOrder
+    // أرجعت ok:true فعلاً)، وليس بمجرد الضغط على "إرسال الطلب" — طلب فشل
+    // حفظه (مشكلة اتصال مثلاً) لا يُطلِق Purchase أبداً، رغم أن رسالة
+    // واتساب تُرسَل فكلتا الحالتين (سلوك واتساب بلا أي تغيير). event_id هو
+    // idempotencyKey نفسه (ثابت عبر كل محاولات إعادة الحفظ لنفس الطلب)،
+    // ليُستعمَل لاحقاً كـevent_id لنفس الحدث عبر Conversions API فـ
+    // deduplication. الـref يمنع أي إطلاق مزدوج حتى لو استُدعيت handleSubmit
+    // مرتين (نقر مزدوج سريع قبل تعطيل الزر).
+    if (saveResult?.ok === true && !hasTrackedPurchase.current) {
+      hasTrackedPurchase.current = true;
+      trackPurchase({
+        items: items.map((item) => ({ sku: item.sku, quantity: item.quantity, price: item.unitPrice })),
+        value: subtotal,
+        eventId: idempotencyKey,
+      });
+    }
 
     clearCart();
     setSent(true);
