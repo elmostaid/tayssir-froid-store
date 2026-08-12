@@ -18,6 +18,17 @@ function getAccessToken(): string | null {
   return raw;
 }
 
+/**
+ * مؤقت — لاختبار CAPI عبر Meta Events Manager → Test Events فقط (انظر
+ * .env.example). بلا META_TEST_EVENT_CODE، لا شيء يتغيّر فالسلوك الحالي —
+ * test_event_code لا يُدرَج فالطلب إطلاقاً (نفس ما كان قبل هذه الدالة حرفياً).
+ */
+function getTestEventCode(): string | null {
+  const raw = process.env.META_TEST_EVENT_CODE?.trim();
+  if (!raw) return null;
+  return raw;
+}
+
 export function isCapiConfigured(): boolean {
   return Boolean(getMetaPixelId() && getAccessToken());
 }
@@ -80,6 +91,8 @@ export async function sendCapiEvent(params: SendCapiEventParams): Promise<void> 
     if (params.userData?.fbp) userData.fbp = params.userData.fbp;
     if (params.userData?.fbc) userData.fbc = params.userData.fbc;
 
+    const testEventCode = getTestEventCode();
+
     const body = {
       data: [
         {
@@ -92,6 +105,10 @@ export async function sendCapiEvent(params: SendCapiEventParams): Promise<void> 
           custom_data: params.customData,
         },
       ],
+      // فقط عند ضبط META_TEST_EVENT_CODE — غيابه يترك الجسم كما كان بالضبط
+      // (بلا هذا الحقل إطلاقاً)، فلا تغيير على event_id ولا deduplication
+      // ولا أي حقل آخر.
+      ...(testEventCode ? { test_event_code: testEventCode } : {}),
     };
 
     const response = await fetch(

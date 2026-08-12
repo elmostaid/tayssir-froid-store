@@ -119,6 +119,50 @@ describe("capi.ts — Meta Conversions API (خادم فقط)", () => {
     expect(body.data[0].user_data).toEqual({});
   });
 
+  test("sendCapiEvent: بلا META_TEST_EVENT_CODE، لا يُدرَج test_event_code إطلاقاً فالطلب (السلوك الحالي بلا أي تغيير)", async () => {
+    vi.stubEnv("NEXT_PUBLIC_META_PIXEL_ID", "2565914390520172");
+    vi.stubEnv("META_CONVERSIONS_API_ACCESS_TOKEN", "secret-token-xyz");
+    vi.stubEnv("META_TEST_EVENT_CODE", "");
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => "" });
+    vi.stubGlobal("fetch", fetchMock);
+    const { sendCapiEvent } = await loadCapi();
+
+    await sendCapiEvent({
+      eventName: "Purchase",
+      eventId: "order-no-test-code",
+      customData: { content_ids: ["X"], content_type: "product", currency: "MAD" },
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body).not.toHaveProperty("test_event_code");
+  });
+
+  test("sendCapiEvent: مع META_TEST_EVENT_CODE مضبوطاً، يُدرَج test_event_code فمستوى الجسم الأعلى (وليس داخل كل حدث)، بلا أي تأثير على event_id أو باقي الحقول", async () => {
+    vi.stubEnv("NEXT_PUBLIC_META_PIXEL_ID", "2565914390520172");
+    vi.stubEnv("META_CONVERSIONS_API_ACCESS_TOKEN", "secret-token-xyz");
+    vi.stubEnv("META_TEST_EVENT_CODE", "TEST20760");
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => "" });
+    vi.stubGlobal("fetch", fetchMock);
+    const { sendCapiEvent } = await loadCapi();
+
+    await sendCapiEvent({
+      eventName: "Purchase",
+      eventId: "order-with-test-code",
+      eventSourceUrl: "https://www.tayssirfroid.com/checkout",
+      userData: { phone: "212612345678" },
+      customData: { content_ids: ["TF-1"], content_type: "product", currency: "MAD", value: 100 },
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.test_event_code).toBe("TEST20760");
+
+    // event_id وباقي بنية الحدث بلا أي تغيير — نفس ما كانت عليه بدون الكود التجريبي.
+    const event = body.data[0];
+    expect(event.event_id).toBe("order-with-test-code");
+    expect(event.event_name).toBe("Purchase");
+    expect(event).not.toHaveProperty("test_event_code");
+  });
+
   test("sendCapiEvent: فشل الشبكة لا يرمي أبداً (fire-and-forget حقيقي)", async () => {
     vi.stubEnv("NEXT_PUBLIC_META_PIXEL_ID", "2565914390520172");
     vi.stubEnv("META_CONVERSIONS_API_ACCESS_TOKEN", "secret-token-xyz");
