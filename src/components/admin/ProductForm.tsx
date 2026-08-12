@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useActionState } from "react";
 import Link from "next/link";
 import type { ProductFormState } from "@/app/admin/(protected)/products/actions";
+import { generateProductSku } from "@/app/admin/(protected)/products/actions";
 import type { AdminProduct } from "@/lib/queries/adminProducts";
 import type { AdminCategory } from "@/lib/queries/adminCategories";
 import { slugify } from "@/lib/slugify";
@@ -29,6 +30,49 @@ function buildCategoryOptions(categories: AdminCategory[]) {
   return options;
 }
 
+type FormValues = {
+  sku: string;
+  nameAr: string;
+  nameFr: string;
+  slug: string;
+  categoryId: string;
+  descriptionAr: string;
+  technicalSpecs: string;
+  unitLabel: string;
+  status: string;
+  minOrderQty: string;
+  qtyIncrement: string;
+  salePrice: string;
+  stockQuantity: string;
+  purchasePrice: string;
+};
+
+function initialValues(product: AdminProduct | undefined): FormValues {
+  return {
+    sku: product?.sku ?? "",
+    nameAr: product?.name_ar ?? "",
+    nameFr: product?.name_fr ?? "",
+    slug: product?.slug ?? "",
+    categoryId: product?.category_id ? String(product.category_id) : "",
+    descriptionAr: product?.description_ar ?? "",
+    technicalSpecs: product?.technical_specs ?? "",
+    unitLabel: product?.unit_label ?? "قطعة",
+    status: product?.status ?? "draft",
+    minOrderQty: product ? String(product.min_order_qty) : "1",
+    qtyIncrement: product ? String(product.qty_increment) : "1",
+    salePrice: product?.sale_price ?? "",
+    stockQuantity: product ? String(product.stock_quantity) : "0",
+    purchasePrice: product?.purchase_price ?? "",
+  };
+}
+
+// كل الحقول هنا controlled (value+onChange مربوطة بحالة React) عمداً — وليس
+// defaultValue كما كانت. React 19 يُصفِّر تلقائياً أي حقل غير controlled
+// داخل <form action={...}> بمجرد اكتمال الإجراء (نجح أو فشل، لا فرق —
+// React لا "يعرف" أن الفشل يعني "أعد نفس القيم للمستخدم") — هذا بالضبط
+// سبب اختفاء كل ما كتبه المستخدم عند خطأ مثل "SKU مستعمل من قبل". حقل
+// controlled محصَّن من هذا التصفير لأن قيمته المعروضة تُشتَق دائماً من
+// حالة React نفسها، لا من حالة DOM الداخلية التي يُصفِّرها React.
 export function ProductForm({
   action,
   product,
@@ -41,30 +85,105 @@ export function ProductForm({
   mode: "create" | "edit";
 }) {
   const [state, formAction, isPending] = useActionState(action, initialState);
-  const [slug, setSlug] = useState(product?.slug ?? "");
+  const [values, setValues] = useState<FormValues>(() => initialValues(product));
   const [slugTouched, setSlugTouched] = useState(mode === "edit");
+  const [skuTouched, setSkuTouched] = useState(mode === "edit");
+  const [isGeneratingSku, startSkuGeneration] = useTransition();
+  const [skuGenerationError, setSkuGenerationError] = useState<string | null>(null);
+
+  function setValue<K extends keyof FormValues>(key: K, value: FormValues[K]) {
+    setValues((prev) => ({ ...prev, [key]: value }));
+  }
 
   function handleNameArChange(value: string) {
+    setValue("nameAr", value);
     if (!slugTouched) {
-      setSlug(slugify(value));
+      setValue("slug", slugify(value));
     }
+  }
+
+  function requestSkuSuggestion(categoryId: string) {
+    if (mode !== "create" || skuTouched || !categoryId) return;
+    setSkuGenerationError(null);
+    startSkuGeneration(async () => {
+      const result = await generateProductSku(Number(categoryId));
+      if ("error" in result) {
+        setSkuGenerationError(result.error);
+        return;
+      }
+      // فحص ثانٍ: المستخدم قد يكون كتب شيئاً بنفسه أثناء انتظار الاقتراح.
+      setValues((prev) => (skuTouched ? prev : { ...prev, sku: result.sku }));
+    });
+  }
+
+  function handleCategoryChange(value: string) {
+    setValue("categoryId", value);
+    requestSkuSuggestion(value);
+  }
+
+  function handleGenerateSkuClick() {
+    if (!values.categoryId) {
+      setSkuGenerationError("اختر تصنيفاً أولاً.");
+      return;
+    }
+    setSkuGenerationError(null);
+    startSkuGeneration(async () => {
+      const result = await generateProductSku(Number(values.categoryId));
+      if ("error" in result) {
+        setSkuGenerationError(result.error);
+        return;
+      }
+      setSkuTouched(true);
+      setValue("sku", result.sku);
+    });
   }
 
   const fieldError = (field: string) => state.fieldErrors?.[field];
   const categoryOptions = buildCategoryOptions(categories);
 
+  // onSubmit يدوي (يستدعي formAction مباشرة) بدل <form action={formAction}>
+  // عمداً: الربط المباشر بـaction فالـform يُفعِّل آلية React 19 الأصلية
+  // لـ"form actions"، التي تُصفِّر عناصر <select> إلى أول خيار فيها بعد
+  // اكتمال أي إجراء (نجح أو فشل) — بغض النظر عن كون بقية الحقول controlled.
+  // استدعاء formAction() مباشرة من معالج حدث عادي (مدعوم رسمياً من
+  // useActionState) يتجاوز تلك الآلية تماماً؛ isPending/state يبقيان يعملان
+  // بالضبط كما هما (نفس دالة formAction المُغلَّفة بـtransition داخلياً).
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    formAction(new FormData(e.currentTarget));
+  }
+
   return (
-    <form action={formAction} className="flex flex-col gap-3">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-3">
       <label className="text-sm">
         <span className="mb-1 block font-medium text-neutral-700">SKU *</span>
-        <input
-          name="sku"
-          required
-          maxLength={50}
-          dir="ltr"
-          defaultValue={product?.sku}
-          className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm font-mono focus:border-brand-turquoise focus:outline-none"
-        />
+        <div className="flex gap-2">
+          <input
+            name="sku"
+            required
+            maxLength={50}
+            dir="ltr"
+            value={values.sku}
+            onChange={(e) => {
+              setValue("sku", e.target.value);
+              setSkuTouched(true);
+            }}
+            className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm font-mono focus:border-brand-turquoise focus:outline-none"
+          />
+          {mode === "create" && (
+            <button
+              type="button"
+              onClick={handleGenerateSkuClick}
+              disabled={isGeneratingSku}
+              className="shrink-0 rounded-lg border border-neutral-300 px-3 py-2 text-xs font-semibold text-neutral-700 disabled:opacity-60"
+            >
+              {isGeneratingSku ? "…" : "توليد SKU"}
+            </button>
+          )}
+        </div>
+        {skuGenerationError && (
+          <span className="mt-1 block text-xs text-amber-700">{skuGenerationError}</span>
+        )}
         {fieldError("sku") && (
           <span className="mt-1 block text-xs text-red-600">{fieldError("sku")}</span>
         )}
@@ -76,7 +195,7 @@ export function ProductForm({
           name="nameAr"
           required
           maxLength={150}
-          defaultValue={product?.name_ar}
+          value={values.nameAr}
           onChange={(e) => handleNameArChange(e.target.value)}
           className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-turquoise focus:outline-none"
         />
@@ -92,7 +211,8 @@ export function ProductForm({
         <input
           name="nameFr"
           maxLength={150}
-          defaultValue={product?.name_fr ?? ""}
+          value={values.nameFr}
+          onChange={(e) => setValue("nameFr", e.target.value)}
           className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-turquoise focus:outline-none"
         />
       </label>
@@ -103,9 +223,9 @@ export function ProductForm({
           name="slug"
           required
           maxLength={100}
-          value={slug}
+          value={values.slug}
           onChange={(e) => {
-            setSlug(e.target.value);
+            setValue("slug", e.target.value);
             setSlugTouched(true);
           }}
           dir="ltr"
@@ -121,7 +241,8 @@ export function ProductForm({
         <select
           name="categoryId"
           required
-          defaultValue={product?.category_id ?? ""}
+          value={values.categoryId}
+          onChange={(e) => handleCategoryChange(e.target.value)}
           className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-turquoise focus:outline-none"
         >
           <option value="" disabled>
@@ -144,7 +265,8 @@ export function ProductForm({
           name="descriptionAr"
           maxLength={1000}
           rows={3}
-          defaultValue={product?.description_ar ?? ""}
+          value={values.descriptionAr}
+          onChange={(e) => setValue("descriptionAr", e.target.value)}
           className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-turquoise focus:outline-none"
         />
       </label>
@@ -155,7 +277,8 @@ export function ProductForm({
           name="technicalSpecs"
           maxLength={1000}
           rows={3}
-          defaultValue={product?.technical_specs ?? ""}
+          value={values.technicalSpecs}
+          onChange={(e) => setValue("technicalSpecs", e.target.value)}
           className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-turquoise focus:outline-none"
         />
       </label>
@@ -167,7 +290,8 @@ export function ProductForm({
             name="unitLabel"
             required
             maxLength={30}
-            defaultValue={product?.unit_label ?? "قطعة"}
+            value={values.unitLabel}
+            onChange={(e) => setValue("unitLabel", e.target.value)}
             className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-turquoise focus:outline-none"
           />
           {fieldError("unitLabel") && (
@@ -180,7 +304,8 @@ export function ProductForm({
           <select
             name="status"
             required
-            defaultValue={product?.status ?? "draft"}
+            value={values.status}
+            onChange={(e) => setValue("status", e.target.value)}
             className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-turquoise focus:outline-none"
           >
             {STATUS_OPTIONS.map((s) => (
@@ -200,7 +325,8 @@ export function ProductForm({
             type="number"
             min={1}
             required
-            defaultValue={product?.min_order_qty ?? 1}
+            value={values.minOrderQty}
+            onChange={(e) => setValue("minOrderQty", e.target.value)}
             className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-turquoise focus:outline-none"
           />
           {fieldError("minOrderQty") && (
@@ -215,7 +341,8 @@ export function ProductForm({
             type="number"
             min={1}
             required
-            defaultValue={product?.qty_increment ?? 1}
+            value={values.qtyIncrement}
+            onChange={(e) => setValue("qtyIncrement", e.target.value)}
             className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-turquoise focus:outline-none"
           />
           {fieldError("qtyIncrement") && (
@@ -233,7 +360,8 @@ export function ProductForm({
             min={0}
             step="0.01"
             required
-            defaultValue={product?.sale_price ?? ""}
+            value={values.salePrice}
+            onChange={(e) => setValue("salePrice", e.target.value)}
             className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-turquoise focus:outline-none"
           />
           {fieldError("salePrice") && (
@@ -248,7 +376,8 @@ export function ProductForm({
             type="number"
             min={0}
             required
-            defaultValue={product?.stock_quantity ?? 0}
+            value={values.stockQuantity}
+            onChange={(e) => setValue("stockQuantity", e.target.value)}
             className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-turquoise focus:outline-none"
           />
           {fieldError("stockQuantity") && (
@@ -266,7 +395,8 @@ export function ProductForm({
           type="number"
           min={0}
           step="0.01"
-          defaultValue={product?.purchase_price ?? ""}
+          value={values.purchasePrice}
+          onChange={(e) => setValue("purchasePrice", e.target.value)}
           className="w-full rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm focus:border-brand-turquoise focus:outline-none"
         />
         {fieldError("purchasePrice") && (

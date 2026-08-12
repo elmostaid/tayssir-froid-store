@@ -39,6 +39,91 @@ function parseProductForm(formData: FormData) {
   });
 }
 
+// يبحث عن الحرفين/الأحرف السابقة لأول "-رقم" فآخر SKU (مثلاً "TF-RF" من
+// "TF-RF-009") — يطابق فقط الصيغة المعتمَدة فعلياً على كل SKU حقيقي فالمتجر
+// (بادئة حروف-حروف، ثم رقم تسلسلي).
+const SKU_PREFIX_NUMBER_RE = /^([A-Za-z]+-[A-Za-z]+)-(\d+)$/;
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * توليد SKU فريد تلقائياً لمنتج جديد حسب تصنيفه — بلا حاجة للمستخدم لتخمين
+ * آخر رقم مستعمل. المنطق:
+ * 1) إن كان للتصنيف منتجات موجودة أصلاً بصيغة "بادئة-رقم" معتمَدة (مثل
+ *    TF-RF-009)، نُكمِل بنفس البادئة الأكثر استعمالاً فيه، بأول رقم تالٍ
+ *    للأكبر المُستعمَل فعلاً (فحص شامل على كل SKU فـ SKU فريد إجمالاً، وليس
+ *    فقط فنفس التصنيف — SKU نفسه عمود unique شامل على مستوى الجدول).
+ * 2) تصنيف بلا أي منتج بعد: بادئة تُشتَق من slug التصنيف نفسه (أول حرف من
+ *    كل كلمة، بحد أقصى 3 أحرف) — "TF-" + تلك الأحرف.
+ * 3) فحص uniqueness فعلي (isSkuTakenByOtherProduct) مع محاولات احتياطية
+ *    قليلة، دفاعاً عن أي تعارض نادر (منتج أُضيف بين قراءتنا وفحصنا) — الفحص
+ *    الحاسم والوحيد الملزم يبقى فـcreateProduct نفسها وقت الحفظ الفعلي.
+ */
+export async function generateProductSku(
+  categoryId: number
+): Promise<{ sku: string } | { error: string }> {
+  const admin = await getAdminUser();
+  if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+  if (!isOwnerAdmin(admin)) return { error: OWNER_ONLY_ERROR };
+
+  if (!Number.isInteger(categoryId) || categoryId < 1) {
+    return { error: "اختر تصنيفاً صحيحاً أولاً." };
+  }
+
+  const category = await sql<{ slug: string }[]>`
+    select slug from public.categories where id = ${categoryId} limit 1
+  `;
+  if (!category[0]) return { error: "التصنيف غير موجود." };
+
+  const categorySkus = await sql<{ sku: string }[]>`
+    select sku from public.products where category_id = ${categoryId}
+  `;
+
+  const prefixCounts = new Map<string, number>();
+  for (const row of categorySkus) {
+    const match = row.sku.match(SKU_PREFIX_NUMBER_RE);
+    if (match) {
+      prefixCounts.set(match[1], (prefixCounts.get(match[1]) ?? 0) + 1);
+    }
+  }
+
+  let prefix: string;
+  if (prefixCounts.size > 0) {
+    prefix = [...prefixCounts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  } else {
+    const code =
+      category[0].slug
+        .split("-")
+        .filter(Boolean)
+        .map((word) => word[0])
+        .join("")
+        .toUpperCase()
+        .slice(0, 3) || "GEN";
+    prefix = `TF-${code}`;
+  }
+
+  const existingWithPrefix = await sql<{ sku: string }[]>`
+    select sku from public.products where sku like ${prefix + "-%"}
+  `;
+  const prefixNumberRe = new RegExp(`^${escapeRegExp(prefix)}-(\\d+)$`);
+  let maxNumber = 0;
+  for (const row of existingWithPrefix) {
+    const match = row.sku.match(prefixNumberRe);
+    if (match) maxNumber = Math.max(maxNumber, parseInt(match[1], 10));
+  }
+
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    const candidate = `${prefix}-${String(maxNumber + attempt).padStart(3, "0")}`;
+    if (!(await isSkuTakenByOtherProduct(candidate))) {
+      return { sku: candidate };
+    }
+  }
+
+  return { error: "تعذّر توليد SKU فريد تلقائياً، الرجاء إدخاله يدوياً." };
+}
+
 export async function createProduct(
   _prevState: ProductFormState,
   formData: FormData
