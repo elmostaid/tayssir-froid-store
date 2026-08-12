@@ -1,8 +1,16 @@
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { sql } from "@/lib/db";
-import { createOrder } from "@/lib/orders/createOrder";
 import type { CreateOrderInput } from "@/lib/orders/types";
+
+// نتجسّس على sendCapiEvent (Meta Conversions API) دون التأثير على أي منطق
+// حقيقي: بلا هذا الموك، الدالة الحقيقية لا تفعل شيئاً أصلاً فبيئة الاختبار
+// (لا META_CONVERSIONS_API_ACCESS_TOKEN مضبوطاً) — نفس النتيجة تماماً لكل
+// الاختبارات الأخرى فهذا الملف، وهنا فقط نتحقق من متى/كيف تُستدعى.
+const sendCapiEventMock = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/pixel/capi", () => ({ sendCapiEvent: sendCapiEventMock }));
+
+const { createOrder } = await import("@/lib/orders/createOrder");
 
 // هذه اختبارات تكامل حقيقية تحتاج قاعدة بيانات حية (محلية أو حاوية CI).
 // كل منتجات المرحلة الأولى التجريبية (DEMO-001/002/003) وتصنيفاتها
@@ -59,6 +67,13 @@ beforeAll(async () => {
     (
       'TEST-FIXTURE-003', 'test-fixture-003', ${category.id}, 'منتج اختبار مؤقت 3',
       'قطعة', 1, 1, 90.00, 120.00, 30, 'published'
+    ),
+    (
+      -- مخزون كبير عمداً ومخصَّص فقط لاختبارات Meta CAPI (وصف منفصل أسفل
+      -- الملف): تلك الاختبارات لا يجب أن تتنافس على نفس مخزون TEST-FIXTURE-003
+      -- المحدود (30) مع بقية اختبارات هذا الملف.
+      'TEST-FIXTURE-CAPI', 'test-fixture-capi', ${category.id}, 'منتج اختبار CAPI',
+      'قطعة', 1, 1, 10.00, 20.00, 100000, 'published'
     )
     on conflict (sku) do nothing
   `;
@@ -68,7 +83,7 @@ afterAll(async () => {
   // تنظيف كل الطلبات التي أنشأتها هذه الاختبارات (order_items وسجل الحالة
   // يُحذَفان تلقائياً عبر on delete cascade)، ثم منتجات الاختبار المؤقتة.
   await sql`delete from public.orders where customer_phone like ${TEST_PHONE_PREFIX + "%"}`;
-  await sql`delete from public.products where sku in ('TEST-FIXTURE-001', 'TEST-FIXTURE-002', 'TEST-FIXTURE-003')`;
+  await sql`delete from public.products where sku in ('TEST-FIXTURE-001', 'TEST-FIXTURE-002', 'TEST-FIXTURE-003', 'TEST-FIXTURE-CAPI')`;
 });
 
 describe("createOrder — الحد الأدنى للطلبية", () => {
@@ -375,5 +390,87 @@ describe("createOrder — تأجيل احتساب التوصيل", () => {
     expect(rows[0].delivery_fee).toBeNull();
     expect(rows[0].final_total).toBeNull();
     expect(rows[0].status).toBe("new");
+  });
+});
+
+describe("createOrder — Meta Conversions API (Purchase) مرتبط بـPixel بنفس event_id", () => {
+  test("نجاح حقيقي: sendCapiEvent تُستدعى مرة واحدة، event_id = idempotencyKey نفسه، وبيانات المنتجات صحيحة", async () => {
+    sendCapiEventMock.mockClear();
+    const demoCapi = await getRawProduct("TEST-FIXTURE-CAPI");
+    const idempotencyKey = randomUUID();
+    const customer = baseCustomer();
+
+    const input: CreateOrderInput = {
+      items: [{ productId: demoCapi.id, variantId: null, quantity: 60 }], // 60*20=1200 >= 1000
+      customer,
+      idempotencyKey,
+    };
+
+    const result = await createOrder(input);
+    expect(result.ok).toBe(true);
+
+    expect(sendCapiEventMock).toHaveBeenCalledTimes(1);
+    const call = sendCapiEventMock.mock.calls[0][0];
+    expect(call.eventName).toBe("Purchase");
+    // نفس event_id بالضبط المُستعمَل من جهة المتصفح (Pixel) لنفس الطلب —
+    // شرط deduplication الصحيح بين Pixel وCAPI.
+    expect(call.eventId).toBe(idempotencyKey);
+    expect(call.customData.content_ids).toEqual(["TEST-FIXTURE-CAPI"]);
+    expect(call.customData.value).toBe(1200);
+    expect(call.customData.num_items).toBe(60);
+    expect(call.customData.currency).toBe("MAD");
+    expect(call.customData.content_type).toBe("product");
+  });
+
+  test("طلب فاشل (تحت الحد الأدنى): sendCapiEvent لا تُستدعى إطلاقاً", async () => {
+    sendCapiEventMock.mockClear();
+    const demoCapi = await getRawProduct("TEST-FIXTURE-CAPI");
+
+    const input: CreateOrderInput = {
+      items: [{ productId: demoCapi.id, variantId: null, quantity: 1 }], // 20 فقط، أقل من الحد الأدنى
+      customer: baseCustomer(),
+      idempotencyKey: randomUUID(),
+    };
+
+    const result = await createOrder(input);
+    expect(result.ok).toBe(false);
+    expect(sendCapiEventMock).not.toHaveBeenCalled();
+  });
+
+  test("إعادة إرسال بنفس idempotencyKey (ضغط مزدوج): sendCapiEvent تُستدعى مرة واحدة فقط، ليس مرتين", async () => {
+    sendCapiEventMock.mockClear();
+    const demoCapi = await getRawProduct("TEST-FIXTURE-CAPI");
+    const idempotencyKey = randomUUID();
+
+    const input: CreateOrderInput = {
+      items: [{ productId: demoCapi.id, variantId: null, quantity: 60 }],
+      customer: baseCustomer(),
+      idempotencyKey,
+    };
+
+    const first = await createOrder(input);
+    const second = await createOrder(input);
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(sendCapiEventMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("رقم الهاتف يُمرَّر بصيغة أرقام دولية خالصة (بلا +، بلا صفر بادئ) لـuser_data.phone", async () => {
+    sendCapiEventMock.mockClear();
+    const demoCapi = await getRawProduct("TEST-FIXTURE-CAPI");
+    const phone = nextTestPhone(); // 06XXXXXXXX
+
+    const input: CreateOrderInput = {
+      items: [{ productId: demoCapi.id, variantId: null, quantity: 60 }],
+      customer: { ...baseCustomer(), phone },
+      idempotencyKey: randomUUID(),
+    };
+
+    const result = await createOrder(input);
+    expect(result.ok).toBe(true);
+
+    const call = sendCapiEventMock.mock.calls[0][0];
+    expect(call.userData.phone).toBe(`212${phone.slice(1)}`);
   });
 });

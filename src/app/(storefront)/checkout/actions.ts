@@ -1,9 +1,30 @@
 "use server";
 
+import { headers, cookies } from "next/headers";
 import { createOrder } from "@/lib/orders/createOrder";
-import type { CreateOrderResult, CartItemInput } from "@/lib/orders/types";
+import type { CreateOrderResult, CartItemInput, CreateOrderRequestContext } from "@/lib/orders/types";
 
 export type CheckoutState = CreateOrderResult | { ok: null };
+
+// بيانات اختيارية بحتة لتحسين جودة مطابقة Meta CAPI (انظر createOrder.ts) —
+// أفضل مجهود فقط: أي فشل هنا (بيئة اختبار بلا سياق طلب حقيقي مثلاً) يُنتج
+// undefined بلا أي استثناء، ولا يؤثِّر إطلاقاً على إنشاء الطلب نفسه.
+async function readRequestContext(): Promise<CreateOrderRequestContext | undefined> {
+  try {
+    const headerList = await headers();
+    const cookieStore = await cookies();
+    const forwardedFor = headerList.get("x-forwarded-for");
+    return {
+      clientIpAddress: forwardedFor?.split(",")[0]?.trim() || headerList.get("x-real-ip") || undefined,
+      clientUserAgent: headerList.get("user-agent") || undefined,
+      fbp: cookieStore.get("_fbp")?.value,
+      fbc: cookieStore.get("_fbc")?.value,
+      eventSourceUrl: headerList.get("referer") || undefined,
+    };
+  } catch {
+    return undefined;
+  }
+}
 
 export async function submitOrder(
   _prevState: CheckoutState,
@@ -43,5 +64,6 @@ export async function submitOrder(
       notes: String(formData.get("notes") ?? "").trim() || null,
     },
     idempotencyKey: String(formData.get("idempotencyKey") ?? ""),
+    requestContext: await readRequestContext(),
   });
 }

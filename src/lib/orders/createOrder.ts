@@ -4,6 +4,8 @@ import { isValidMoroccanPhone, normalizePhone } from "@/lib/phone";
 import { isValidQuantity } from "@/lib/cart/cartMath";
 import { isRateLimited } from "@/lib/orders/rateLimit";
 import { notifyNewOrder } from "@/lib/notifications/notifyNewOrder";
+import { sendCapiEvent } from "@/lib/pixel/capi";
+import { toInternationalDigits } from "@/lib/phone";
 import { getSiteUrl } from "@/lib/siteUrl";
 import type { CatalogProduct, CatalogProductVariant } from "@/lib/types";
 import type {
@@ -386,6 +388,38 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
         itemsCount: lineItems.length,
         adminOrderUrl: `${base}/admin/orders/${result.id}`,
         pickingSlipUrl: `${base}/admin/orders/${result.id}/picking-slip.pdf`,
+      });
+
+      // Meta Conversions API — Purchase: نفس "أفضل مجهود" بالضبط (fire-and-
+      // forget، لا يرمي أبداً، ولا يؤثِّر على نتيجة الطلب). result.isNew وحده
+      // (وليس مجرد نجاح createOrder) يضمن إرسالها مرة واحدة فقط للطلب
+      // الحقيقي — إعادة محاولة بنفس idempotencyKey (ضغط مزدوج على الزر
+      // مثلاً) ترجع نفس الطلب الموجود بلا إرسال ثانٍ هنا (وبلا حتى حاجة
+      // لذلك: event_id ثابت = idempotencyKey نفسه يضمن أن Meta نفسها تعتبر
+      // أي إرسال مكرر بنفس القيمة نفس الحدث، وليس Purchase ثانياً).
+      void sendCapiEvent({
+        eventName: "Purchase",
+        eventId: input.idempotencyKey,
+        eventSourceUrl: input.requestContext?.eventSourceUrl,
+        userData: {
+          phone: toInternationalDigits(normalizedPhone),
+          clientIpAddress: input.requestContext?.clientIpAddress,
+          clientUserAgent: input.requestContext?.clientUserAgent,
+          fbp: input.requestContext?.fbp,
+          fbc: input.requestContext?.fbc,
+        },
+        customData: {
+          content_ids: lineItems.map((line) => line.skuSnapshot),
+          content_type: "product",
+          currency: "MAD",
+          value: subtotal,
+          num_items: lineItems.reduce((sum, line) => sum + line.quantity, 0),
+          contents: lineItems.map((line) => ({
+            id: line.skuSnapshot,
+            quantity: line.quantity,
+            item_price: line.unitPrice,
+          })),
+        },
       });
     }
 
