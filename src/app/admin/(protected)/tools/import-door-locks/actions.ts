@@ -16,11 +16,11 @@ export type DoorLockImportRowResult = {
 };
 
 export type DoorLockImportSummary = {
-  productsInserted: number;
-  productsAlreadyExisted: number;
-  imagesInserted: number;
-  imagesAlreadyExisted: number;
-  failures: number;
+  productsPresent: number;
+  productsTarget: number;
+  imagesPresent: number;
+  imagesTarget: number;
+  failures: { sku: string; reason: string }[];
 };
 
 export type DoorLockImportResult = {
@@ -121,12 +121,16 @@ export async function importDoorLocksBatch(): Promise<DoorLockImportResult> {
     }
   }
 
+  const imagesTarget = DOOR_LOCK_IMPORT_PRODUCTS.reduce((n, p) => n + p.images.length, 0);
   const summary: DoorLockImportSummary = {
-    productsInserted: rows.filter((r) => r.productOutcome === "inserted" && !r.error).length,
-    productsAlreadyExisted: rows.filter((r) => r.productOutcome === "already_existed" && !r.error).length,
-    imagesInserted: rows.reduce((n, r) => n + r.imagesInserted, 0),
-    imagesAlreadyExisted: rows.reduce((n, r) => n + r.imagesAlreadyExisted, 0),
-    failures: rows.filter((r) => r.error !== null).length,
+    // "Present" = المنتج/الصورة موجود الآن فعلياً فقاعدة البيانات (سواء أُدرج
+    // فهذا التشغيل أو كان موجوداً مسبقاً) — وليس فقط ما أُدرج فهذه المرة، حتى
+    // يعكس الرقم النهائي المطلوب "X/28" الحالة الحقيقية دائماً.
+    productsPresent: rows.filter((r) => !r.error).length,
+    productsTarget: DOOR_LOCK_IMPORT_PRODUCTS.length,
+    imagesPresent: rows.reduce((n, r) => n + r.imagesInserted + r.imagesAlreadyExisted, 0),
+    imagesTarget,
+    failures: rows.filter((r) => r.error !== null).map((r) => ({ sku: r.sku, reason: r.error! })),
   };
 
   revalidatePath("/admin/products");

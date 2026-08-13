@@ -98,9 +98,9 @@ describe("importDoorLocksBatch — إضافة الناقص فقط، بلا لم�
     const result = await importDoorLocksBatch();
     expect(result.error).toBeNull();
     expect(result.summary).not.toBeNull();
-    expect(result.summary!.productsInserted).toBe(4);
-    expect(result.summary!.productsAlreadyExisted).toBe(24);
-    expect(result.summary!.failures).toBe(0);
+    expect(result.summary!.productsPresent).toBe(28);
+    expect(result.summary!.productsTarget).toBe(28);
+    expect(result.summary!.failures).toEqual([]);
 
     for (const sku of MISSING_SKUS) {
       const row = result.rows.find((r) => r.sku === sku);
@@ -134,10 +134,10 @@ describe("importDoorLocksBatch — إضافة الناقص فقط، بلا لم�
     getAdminUserMock.mockResolvedValueOnce(ADMIN_USER);
     const result = await importDoorLocksBatch();
     expect(result.error).toBeNull();
-    expect(result.summary!.productsInserted).toBe(0);
-    expect(result.summary!.productsAlreadyExisted).toBe(28);
-    expect(result.summary!.imagesInserted).toBe(0);
-    expect(result.summary!.failures).toBe(0);
+    expect(result.summary!.productsPresent).toBe(28);
+    expect(result.summary!.imagesPresent).toBe(84);
+    expect(result.summary!.imagesTarget).toBe(84);
+    expect(result.summary!.failures).toEqual([]);
   });
 });
 
