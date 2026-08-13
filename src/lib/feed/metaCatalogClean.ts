@@ -105,7 +105,11 @@ export async function buildCleanCatalogExport(): Promise<CleanCatalogExportResul
   let brokenImageCount = 0;
 
   for (const product of products) {
-    const isPublished = product.status === "published" || product.status === "out_of_stock";
+    // category_is_active غائب فقط عن البيانات المحلية الاحتياطية
+    // (previewCatalog، لا تصنيفات مخفية فيها أصلاً) — نعتبره ظاهراً حينها.
+    const categoryVisible = product.category_is_active !== false;
+    const isPublished =
+      (product.status === "published" || product.status === "out_of_stock") && categoryVisible;
     if (!isPublished) {
       excludedProducts += 1;
       continue;

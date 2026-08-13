@@ -101,6 +101,34 @@ export async function updateCategory(
   redirect("/admin/categories");
 }
 
+// نشر/إخفاء سريع من قائمة التصنيفات (بدل فتح فورم التعديل الكامل) — يُعيد
+// استعمال نفس عمود is_active الموجود أصلاً (لا حقل جديد). التصنيف المخفي
+// يختفي فوراً من كل واجهات الموقع العامة (getCategories فـcatalog.ts تشترط
+// is_active=true أصلاً)، ولا يمسّ أي منتج أو تصنيف آخر. revalidatePath هنا
+// دفاعي فقط (الصفحات المتأثرة أصلاً force-dynamic بلا cache دائم)، عدا
+// sitemap.xml الذي كان يُبنى ثابتاً (انظر إصلاحه فsitemap.ts) فيحتاجه فعلاً.
+export async function toggleCategoryVisibility(
+  categoryId: number,
+  nextIsActive: boolean
+): Promise<{ error: string | null }> {
+  const admin = await getAdminUser();
+  if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+  if (!isOwnerAdmin(admin)) return { error: "هذا الإجراء مقصور على صاحب الحساب (Admin)." };
+
+  const rows = await sql<{ slug: string }[]>`
+    update public.categories set is_active = ${nextIsActive}
+    where id = ${categoryId}
+    returning slug
+  `;
+  if (!rows[0]) return { error: "التصنيف غير موجود." };
+
+  revalidatePath("/admin/categories");
+  revalidatePath("/");
+  revalidatePath(`/category/${rows[0].slug}`);
+  revalidatePath("/sitemap.xml");
+  return { error: null };
+}
+
 export async function deleteCategory(categoryId: number): Promise<{ error: string | null }> {
   const admin = await getAdminUser();
   if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };

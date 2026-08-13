@@ -115,11 +115,16 @@ export function CategoryForm({
         <input
           name="isActive"
           type="checkbox"
-          defaultChecked={category?.is_active ?? true}
+          defaultChecked={category?.is_active ?? false}
           className="h-4 w-4"
         />
-        <span className="font-medium text-neutral-700">ظاهر في الموقع</span>
+        <span className="font-medium text-neutral-700">منشور في الموقع</span>
       </label>
+      {mode === "create" && (
+        <p className="-mt-2 text-xs text-neutral-500">
+          التصنيفات الجديدة تُنشأ مخفية افتراضياً — انشرها من هنا أو لاحقاً من قائمة التصنيفات.
+        </p>
+      )}
 
       {state.error && (
         <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
