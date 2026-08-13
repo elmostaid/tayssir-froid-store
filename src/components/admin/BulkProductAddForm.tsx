@@ -1,8 +1,9 @@
 "use client";
 
 import { useRef, useState } from "react";
+import JSZip from "jszip";
 import type { AdminCategory } from "@/lib/queries/adminCategories";
-import { validateImageFile } from "@/lib/storage/imageValidation";
+import { validateImageFile, MAX_IMAGES_PER_PRODUCT } from "@/lib/storage/imageValidation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { createBulkProduct } from "@/app/admin/(protected)/products/bulkActions";
 import {
@@ -32,6 +33,28 @@ function buildCategoryOptions(categories: AdminCategory[]) {
   return options;
 }
 
+// أفضل تصنيف مطابق لنص حر (category_ar من ملف ZIP) — تخمين مبدئي فقط، يبقى
+// قابلاً للتغيير يدوياً دائماً فالقائمة المنسدلة قبل أي حفظ فعلي. لا يُنشئ
+// أي تصنيف جديد أبداً — فقط يقترح من القائمة الموجودة فعلاً.
+export function guessCategoryId(freeText: string, options: { id: number; label: string }[]): string {
+  const words = freeText
+    .split(/\s+/)
+    .map((w) => w.trim())
+    .filter((w) => w.length >= 3);
+  if (words.length === 0) return "";
+
+  let bestId: number | null = null;
+  let bestScore = 0;
+  for (const opt of options) {
+    const score = words.filter((w) => opt.label.includes(w)).length;
+    if (score > bestScore) {
+      bestScore = score;
+      bestId = opt.id;
+    }
+  }
+  return bestScore >= 2 && bestId !== null ? String(bestId) : "";
+}
+
 type RowImage = {
   clientId: string;
   file: File;
@@ -40,12 +63,14 @@ type RowImage = {
 
 type RowStatus = "idle" | "pending" | "success" | "duplicate" | "error";
 
-type Row = {
+export type Row = {
   clientId: string;
   nameAr: string;
   purchasePrice: string;
   salePrice: string;
   minOrderQtyOverride: string;
+  stockQuantity: string;
+  stockRequired: boolean;
   images: RowImage[];
   status: RowStatus;
   message: string | null;
@@ -59,11 +84,17 @@ function newRow(): Row {
     purchasePrice: "",
     salePrice: "",
     minOrderQtyOverride: "",
+    stockQuantity: "",
+    stockRequired: false,
     images: [],
     status: "idle",
     message: null,
     sku: null,
   };
+}
+
+export function isRowEmpty(row: Row): boolean {
+  return !row.nameAr.trim() && row.images.length === 0;
 }
 
 // يفصل النص الملصوق (من Excel/جدول) إلى أسطر، وكل سطر بفاصلة Tab (الافتراضي
@@ -84,6 +115,151 @@ function parsePastedRows(text: string): Row[] {
     rows.push(row);
   }
   return rows;
+}
+
+const EXT_TO_MIME: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+};
+
+function mimeFromFilename(name: string): string | null {
+  const ext = name.split(".").pop()?.toLowerCase();
+  return ext ? (EXT_TO_MIME[ext] ?? null) : null;
+}
+
+// مخطط products.json المتوقَّع فملف الدفعة (ZIP) — حقل واحد إجباري فعلياً
+// (name_ar)، البقية اختيارية ببدائل معقولة. لا نخترع أي قيمة سعر/كمية غير
+// موجودة صراحة فالملف؛ كمية مفقودة (stock: null/غائبة) تُترك فارغة وتُعلَّم
+// كخانة إجبارية يعمرها المدير بنفسه قبل الحفظ.
+export type ZipProductEntry = {
+  name_ar?: string;
+  model?: string;
+  purchase_price_mad?: number;
+  sale_price_mad?: number;
+  min_quantity?: number;
+  stock?: number | null;
+  category_ar?: string;
+  image_folder?: string;
+  primary_image?: string;
+  images?: string[];
+};
+
+export type ZipImportOutcome = {
+  rows: Row[];
+  categoryGuessId: string;
+  errors: string[];
+};
+
+export async function parseZipFile(
+  file: File,
+  categoryOptions: { id: number; label: string }[]
+): Promise<ZipImportOutcome> {
+  const errors: string[] = [];
+  const zip = await JSZip.loadAsync(file);
+
+  // products.json قد يكون فجذر الأرشيف أو داخل مجلد فرعي واحد (كل حزم
+  // العميل حتى الآن مبنية بمجلد جذر واحد يحوي كل شيء).
+  const jsonEntry = Object.values(zip.files).find(
+    (f) => !f.dir && f.name.toLowerCase().endsWith("products.json")
+  );
+  if (!jsonEntry) {
+    return { rows: [], categoryGuessId: "", errors: ["لم يُعثر على products.json داخل الملف."] };
+  }
+
+  let parsed: ZipProductEntry[];
+  try {
+    const text = await jsonEntry.async("text");
+    const data = JSON.parse(text);
+    if (!Array.isArray(data)) throw new Error("not an array");
+    parsed = data;
+  } catch {
+    return { rows: [], categoryGuessId: "", errors: ["products.json غير صالح (ليس مصفوفة JSON سليمة)."] };
+  }
+
+  // مجلد products.json نفسه (وليس جذر الـzip بالضرورة) هو الأساس الذي تُبنى
+  // عليه مسارات image_folder النسبية.
+  const jsonDir = jsonEntry.name.includes("/")
+    ? jsonEntry.name.slice(0, jsonEntry.name.lastIndexOf("/") + 1)
+    : "";
+
+  const rows: Row[] = [];
+  const categoryTexts: string[] = [];
+
+  for (const entry of parsed) {
+    const nameAr = (entry.name_ar ?? "").trim();
+    if (!nameAr) {
+      errors.push(`منتج بلا name_ar (model: ${entry.model ?? "؟"}) — تم تجاهله.`);
+      continue;
+    }
+
+    const row = newRow();
+    row.nameAr = nameAr;
+    row.purchasePrice =
+      typeof entry.purchase_price_mad === "number" ? String(entry.purchase_price_mad) : "";
+    row.salePrice = typeof entry.sale_price_mad === "number" ? String(entry.sale_price_mad) : "";
+    row.minOrderQtyOverride =
+      typeof entry.min_quantity === "number" ? String(entry.min_quantity) : "";
+
+    if (typeof entry.stock === "number") {
+      row.stockQuantity = String(entry.stock);
+      row.stockRequired = false;
+    } else {
+      row.stockQuantity = "";
+      row.stockRequired = true;
+    }
+
+    if (entry.category_ar) categoryTexts.push(entry.category_ar);
+
+    // الصور: نضمن أن primary_image فالمقدمة، ثم نأخذ أول MAX_IMAGES_PER_PRODUCT
+    // فقط — نفس حد الموقع، بلا اختراع أي ترتيب غير موجود فالملف.
+    const imageNames = Array.isArray(entry.images) ? [...entry.images] : [];
+    if (entry.primary_image && imageNames.includes(entry.primary_image)) {
+      const idx = imageNames.indexOf(entry.primary_image);
+      if (idx > 0) {
+        imageNames.splice(idx, 1);
+        imageNames.unshift(entry.primary_image);
+      }
+    }
+    const selectedImageNames = imageNames.slice(0, MAX_IMAGES_PER_PRODUCT);
+
+    for (const imgName of selectedImageNames) {
+      const folder = entry.image_folder ? `${entry.image_folder.replace(/\/$/, "")}/` : "";
+      const fullPath = `${jsonDir}${folder}${imgName}`;
+      const imgEntry = zip.file(fullPath);
+      if (!imgEntry) {
+        errors.push(`${nameAr}: تعذّر إيجاد الصورة ${imgName} (${fullPath}).`);
+        continue;
+      }
+      const mime = mimeFromFilename(imgName);
+      if (!mime) {
+        errors.push(`${nameAr}: صيغة صورة غير مدعومة (${imgName}).`);
+        continue;
+      }
+      try {
+        const blob = await imgEntry.async("blob");
+        const file = new File([blob], imgName, { type: mime });
+        const validationError = validateImageFile(file);
+        if (validationError) {
+          errors.push(`${nameAr} — ${imgName}: ${validationError}`);
+          continue;
+        }
+        row.images.push({ clientId: crypto.randomUUID(), file, previewUrl: URL.createObjectURL(file) });
+      } catch {
+        errors.push(`${nameAr}: فشل قراءة الصورة ${imgName}.`);
+      }
+    }
+
+    rows.push(row);
+  }
+
+  // أفضل تصنيف مقترَح: أكثر نص category_ar تكراراً بين المنتجات (عادة نفس
+  // التصنيف لكل الدفعة)، يبقى قابلاً للتغيير يدوياً قبل الحفظ دائماً.
+  const categoryGuessId =
+    categoryTexts.length > 0 ? guessCategoryId(categoryTexts[0], categoryOptions) : "";
+
+  return { rows, categoryGuessId, errors };
 }
 
 function RowImagePicker({
@@ -207,6 +383,10 @@ export function BulkProductAddForm({ categories }: { categories: AdminCategory[]
   const [pasteText, setPasteText] = useState("");
   const [showPaste, setShowPaste] = useState(false);
 
+  const [isImportingZip, setIsImportingZip] = useState(false);
+  const [zipErrors, setZipErrors] = useState<string[]>([]);
+  const zipInputRef = useRef<HTMLInputElement>(null);
+
   const [isSaving, setIsSaving] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [summary, setSummary] = useState<{ success: number; duplicate: number; failed: number } | null>(
@@ -230,13 +410,40 @@ export function BulkProductAddForm({ categories }: { categories: AdminCategory[]
     const parsed = parsePastedRows(pasteText);
     if (parsed.length === 0) return;
     setRows((prev) => {
-      // إن كان السطر الوحيد الحالي فارغاً تماماً، استبدله بدل تركه فارغاً بلا فائدة.
-      const base =
-        prev.length === 1 && !prev[0].nameAr.trim() && prev[0].images.length === 0 ? [] : prev;
+      const base = prev.length === 1 && isRowEmpty(prev[0]) ? [] : prev;
       return [...base, ...parsed];
     });
     setPasteText("");
     setShowPaste(false);
+  }
+
+  async function handleZipSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (zipInputRef.current) zipInputRef.current.value = "";
+    if (!file) return;
+
+    setFormError(null);
+    setZipErrors([]);
+    setIsImportingZip(true);
+    try {
+      const outcome = await parseZipFile(file, categoryOptions);
+      if (outcome.rows.length === 0) {
+        setZipErrors(
+          outcome.errors.length > 0 ? outcome.errors : ["لم يُعثر على أي منتج صالح داخل الملف."]
+        );
+        return;
+      }
+      setRows((prev) => {
+        const base = prev.length === 1 && isRowEmpty(prev[0]) ? [] : prev;
+        return [...base, ...outcome.rows];
+      });
+      if (outcome.categoryGuessId) setCategoryId(outcome.categoryGuessId);
+      setZipErrors(outcome.errors);
+    } catch {
+      setZipErrors(["تعذّر قراءة ملف ZIP. تأكد أنه ملف zip سليم."]);
+    } finally {
+      setIsImportingZip(false);
+    }
   }
 
   async function uploadRowImages(productId: number, images: RowImage[]): Promise<string | null> {
@@ -283,6 +490,17 @@ export function BulkProductAddForm({ categories }: { categories: AdminCategory[]
       return;
     }
 
+    // فحص مسبق: أي سطر كميته إجبارية (من ZIP بلا مخزون معروف) ولم تُملأ بعد
+    // يمنع بدء الدفعة بأكملها — لا نبدأ حفظاً جزئياً بينما كمية منتج ما زالت
+    // مجهولة، ولا نخترع رقماً بديلاً بصمت.
+    const missingStock = pending.filter((r) => r.stockRequired && !r.stockQuantity.trim());
+    if (missingStock.length > 0) {
+      setFormError(
+        `أدخل الكمية أولاً لهذه المنتجات قبل الحفظ: ${missingStock.map((r) => r.nameAr).join("، ")}`
+      );
+      return;
+    }
+
     setIsSaving(true);
     setProgress({ done: 0, total: pending.length });
     let successCount = rows.filter((r) => r.status === "success").length;
@@ -296,6 +514,7 @@ export function BulkProductAddForm({ categories }: { categories: AdminCategory[]
       const minOverride = row.minOrderQtyOverride.trim()
         ? Number(row.minOrderQtyOverride)
         : Number(minOrderQty);
+      const rowStock = row.stockQuantity.trim() ? Number(row.stockQuantity) : Number(stockQuantity);
 
       const result = await createBulkProduct({
         categoryId: Number(categoryId),
@@ -304,7 +523,7 @@ export function BulkProductAddForm({ categories }: { categories: AdminCategory[]
         salePrice: Number(row.salePrice || 0),
         minOrderQty: Number.isFinite(minOverride) && minOverride > 0 ? minOverride : 1,
         qtyIncrement: 1,
-        stockQuantity: Number(stockQuantity || 0),
+        stockQuantity: Number.isFinite(rowStock) && rowStock >= 0 ? rowStock : 0,
         status,
         descriptionAr: sharedDescription,
       });
@@ -334,6 +553,32 @@ export function BulkProductAddForm({ categories }: { categories: AdminCategory[]
 
   return (
     <div className="flex flex-col gap-4">
+      <div className="rounded-xl border-2 border-dashed border-brand-orange/50 bg-orange-50/40 p-4">
+        <h2 className="text-sm font-semibold text-neutral-800">استيراد دفعة منتجات (ZIP)</h2>
+        <p className="mt-1 text-xs text-neutral-500">
+          يقرأ الملف products.json وصوره مباشرة فالمتصفح ويعمر الأسطر أدناه تلقائياً — لا شيء يُحفظ
+          فقاعدة البيانات حتى تضغط &quot;حفظ الكل&quot;.
+        </p>
+        <input
+          ref={zipInputRef}
+          type="file"
+          accept=".zip,application/zip"
+          disabled={isImportingZip || isSaving}
+          onChange={handleZipSelected}
+          className="mt-3 w-full text-sm"
+        />
+        {isImportingZip && <p className="mt-2 text-xs text-neutral-500">جارٍ قراءة الملف…</p>}
+        {zipErrors.length > 0 && (
+          <div className="mt-2 flex flex-col gap-1">
+            {zipErrors.map((err, i) => (
+              <p key={i} className="text-xs text-amber-700">
+                {err}
+              </p>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="rounded-xl border border-neutral-200 bg-white p-4">
         <h2 className="text-sm font-semibold text-neutral-800">القيم المشتركة للدفعة</h2>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -371,7 +616,7 @@ export function BulkProductAddForm({ categories }: { categories: AdminCategory[]
           </label>
 
           <label className="text-sm">
-            <span className="mb-1 block font-medium text-neutral-700">الكمية (مؤقتة لكل المنتجات)</span>
+            <span className="mb-1 block font-medium text-neutral-700">الكمية الافتراضية (لأي سطر بلا كمية خاصة)</span>
             <input
               type="number"
               min={0}
@@ -446,6 +691,7 @@ export function BulkProductAddForm({ categories }: { categories: AdminCategory[]
       <div className="flex flex-col gap-3">
         {rows.map((row, index) => {
           const badge = STATUS_BADGE[row.status];
+          const stockMissing = row.stockRequired && !row.stockQuantity.trim();
           return (
             <div key={row.clientId} className="rounded-xl border border-neutral-200 bg-white p-3">
               <div className="flex items-center justify-between gap-2">
@@ -502,9 +748,29 @@ export function BulkProductAddForm({ categories }: { categories: AdminCategory[]
                   value={row.minOrderQtyOverride}
                   onChange={(e) => updateRow(row.clientId, { minOrderQtyOverride: e.target.value })}
                   disabled={isSaving || row.status === "success"}
-                  className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-turquoise focus:outline-none sm:col-span-2"
+                  className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-brand-turquoise focus:outline-none"
+                />
+                <input
+                  type="number"
+                  min={0}
+                  placeholder={
+                    row.stockRequired ? "الكمية * (مطلوبة، غير معروفة تلقائياً)" : `الكمية (افتراضي ${stockQuantity})`
+                  }
+                  value={row.stockQuantity}
+                  onChange={(e) => updateRow(row.clientId, { stockQuantity: e.target.value })}
+                  disabled={isSaving || row.status === "success"}
+                  className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none ${
+                    stockMissing
+                      ? "border-red-400 focus:border-red-500"
+                      : "border-neutral-300 focus:border-brand-turquoise"
+                  }`}
                 />
               </div>
+              {stockMissing && (
+                <p className="mt-1 text-xs font-semibold text-red-600">
+                  الكمية غير معروفة لهذا المنتج — أدخلها قبل الحفظ.
+                </p>
+              )}
 
               <div className="mt-2">
                 <RowImagePicker
