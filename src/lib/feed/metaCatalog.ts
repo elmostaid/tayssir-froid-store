@@ -47,6 +47,7 @@ export type AuditIssue = {
     | "GENERIC_DESCRIPTION"
     | "UNSUITABLE_PRIMARY_IMAGE"
     | "HIDDEN_STATUS"
+    | "HIDDEN_CATEGORY"
     | "ZERO_STOCK";
   detail: string;
   severity: "critical" | "high" | "medium" | "low" | "info";
@@ -98,7 +99,11 @@ export async function buildCatalogExport(): Promise<CatalogExportResult> {
   let excludedFromFeed = 0;
 
   for (const product of products) {
-    const isPublished = product.status === "published" || product.status === "out_of_stock";
+    // category_is_active غائب فقط عن البيانات المحلية الاحتياطية
+    // (previewCatalog، لا تصنيفات مخفية فيها أصلاً) — نعتبره ظاهراً حينها.
+    const categoryVisible = product.category_is_active !== false;
+    const isPublished =
+      (product.status === "published" || product.status === "out_of_stock") && categoryVisible;
     const unsuitableImage = UNSUITABLE_PRIMARY_IMAGE_SKUS.has(product.sku);
 
     if (product.status !== "published" && product.status !== "out_of_stock") {
@@ -108,6 +113,16 @@ export async function buildCatalogExport(): Promise<CatalogExportResult> {
         category_name_ar: product.category_name_ar,
         issue_type: "HIDDEN_STATUS",
         detail: `الحالة الحالية: ${product.status} — غير مُدرَج في الخلاصة (الخلاصة تضم فقط المنتجات المنشورة).`,
+        severity: "info",
+        included_in_feed: "no",
+      });
+    } else if (!categoryVisible) {
+      issues.push({
+        sku: product.sku,
+        name_ar: product.name_ar,
+        category_name_ar: product.category_name_ar,
+        issue_type: "HIDDEN_CATEGORY",
+        detail: "تصنيف المنتج مخفي من الموقع — غير مُدرَج في الخلاصة حتى يُنشَر التصنيف.",
         severity: "info",
         included_in_feed: "no",
       });

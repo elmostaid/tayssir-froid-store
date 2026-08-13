@@ -14,6 +14,7 @@ const hasDatabase = Boolean(process.env.DATABASE_URL);
 // صفحات الزبون.
 export type ExportProduct = Omit<CatalogProduct, "status"> & {
   status: "draft" | "published" | "archived" | "out_of_stock";
+  category_is_active: boolean;
 };
 
 // لأغراض التدقيق والتصدير (Meta Commerce Catalog) فقط: كل المنتجات بكل
@@ -40,7 +41,7 @@ export async function getAllProductsForExport(): Promise<ExportProduct[]> {
           order by pi.is_primary desc, pi.sort_order asc
           limit 1
         ) as primary_image_path,
-        p.status
+        p.status, c.is_active as category_is_active
       from public.products p
       join public.categories c on c.id = p.category_id
       order by p.id asc

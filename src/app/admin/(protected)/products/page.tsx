@@ -110,14 +110,22 @@ export default async function AdminProductsPage({ searchParams }: Props) {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-bold text-neutral-800">المنتجات</h1>
-        <Link
-          href="/admin/products/new"
-          className="rounded-full bg-brand-orange px-4 py-2 text-sm font-semibold text-white"
-        >
-          + منتج جديد
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/admin/products/bulk-new"
+            className="rounded-full border border-brand-orange px-4 py-2 text-sm font-semibold text-brand-orange"
+          >
+            + إضافة مجموعة منتجات
+          </Link>
+          <Link
+            href="/admin/products/new"
+            className="rounded-full bg-brand-orange px-4 py-2 text-sm font-semibold text-white"
+          >
+            + منتج جديد
+          </Link>
+        </div>
       </div>
 
       <form
