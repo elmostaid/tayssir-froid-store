@@ -4,10 +4,19 @@
 // البيانات — وليس اسمه، حتى يبقى الربط صحيحاً حتى لو تغيّر نص الاسم
 // لاحقاً. تصنيف واحد بلا صورة مخصَّصة بعد (البانيني) يستعمل الأيقونة
 // العامة (CategoryIcon) كما كان دائماً.
+//
+// صورتا "الأوتوماتيكية" و"نصف الأوتوماتيكية" تحديداً بصيغة .jpg وليس
+// .webp: ظهرتا كأيقونة "broken image" على هاتف أندرويد قديم حقيقي بينما كل
+// الصور الأخرى (.webp) تعمل بشكل طبيعي على نفس الهاتف — الفحص الثنائي أظهر
+// أن ملف "نصف الأوتوماتيكية" الأصلي كان WebP بحاوية VP8X الموسَّعة (تحمل
+// ملف تعريف ألوان ICC) بخلاف كل الصور الأخرى العاملة (حاوية VP8 البسيطة
+// فقط) — اختلاف بنيوي حقيقي فصيغة الترميز الداخلية، وليس مجرد الامتداد.
+// تحويلهما إلى JPEG أساسي (baseline) بدون ICC/EXIF يزيل هذا المتغيّر
+// كلياً (JPEG الأساسي مدعوم فكل جهاز/متصفح عملياً بلا استثناء تقريباً).
 export const CATEGORY_IMAGES: Record<string, string> = {
   "standard-washing-machine-parts": "/categories/standard-washing-machine-parts.webp",
-  "automatic-washing-machine-parts": "/categories/automatic-washing-machine-parts.webp",
-  "semi-automatic-washing-machine-parts": "/categories/semi-automatic-washing-machine-parts.webp",
+  "automatic-washing-machine-parts": "/categories/automatic-washing-machine-parts.jpg",
+  "semi-automatic-washing-machine-parts": "/categories/semi-automatic-washing-machine-parts.jpg",
   "refrigerator-spare-parts": "/categories/refrigerator-spare-parts.webp",
   "freezer-spare-parts": "/categories/freezer-spare-parts.webp",
   "split-ac-parts": "/categories/split-ac-parts.webp",
