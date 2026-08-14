@@ -6,9 +6,28 @@ import { toInternationalDigits } from "@/lib/phone";
 // (رقم واتساب المتجر) عبر getSettings()، من مصدر واحد فقط، حتى ينعكس أي
 // تعديل من /admin/settings فعلاً على كل هذه الروابط دون استثناء.
 
+// عمداً https://api.whatsapp.com/send وليس https://wa.me/<رقم>?text=... رغم
+// أن الاثنين يفتحان نفس المحادثة على الهاتف (wa.me أصلاً مجرد مُقصِّر روابط
+// يُعيد التوجيه إلى api.whatsapp.com/send نفسها) — على الحاسوب (بلا تطبيق
+// واتساب مُثبَّت)، wa.me يمرّ عبر إعادة توجيه إضافية نحو صفحة وسيطة
+// (api.whatsapp.com) قبل أن تفتح تلك الصفحة نفسها WhatsApp Web عبر زر
+// "Continuer vers WhatsApp Web" — وفي هذه القفزة الإضافية تحديداً (مشكلة
+// معروفة وموثَّقة كثيراً في تطبيقات الويب التي تستعمل روابط الدردشة
+// المباشرة)، يضيع "text" أحياناً فرابط WhatsApp Web الناتج رغم وصول "phone"
+// سليماً (المحادثة الصحيحة تُفتح، لكن خانة الكتابة فارغة). الرابط المباشر
+// إلى api.whatsapp.com/send، بنفس صيغة معاملات أداة "Click to Chat" الرسمية
+// من Meta (phone + text + type=phone_number + app_absent=0)، يتفادى هذه
+// القفزة الوسيطة تماماً ويعمل بنفس الموثوقية على تطبيق واتساب (أندرويد/
+// آيفون) وعلى WhatsApp Web، بلا أي تغيير على الرقم نفسه.
 export function buildWhatsAppLink(whatsappNumber: string, message: string): string {
   const digits = toInternationalDigits(whatsappNumber);
-  return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
+  const params = new URLSearchParams({
+    phone: digits,
+    text: message,
+    type: "phone_number",
+    app_absent: "0",
+  });
+  return `https://api.whatsapp.com/send/?${params.toString()}`;
 }
 
 export function buildProductWhatsAppLink(
@@ -32,11 +51,10 @@ export function buildCustomerWhatsAppLink(
   template: string,
   storeName: string
 ): string {
-  const digits = toInternationalDigits(customerPhone);
   const message = template
     .replaceAll("{orderNumber}", orderNumber)
     .replaceAll("{storeName}", storeName);
-  return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
+  return buildWhatsAppLink(customerPhone, message);
 }
 
 // رسالة طلب جاهزة عبر واتساب — تُستعمل كبديل مؤقت لإتمام الطلب عندما يكون
