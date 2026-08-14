@@ -2,11 +2,12 @@
 // محاطاً بقطع غياره حتى يفهم الزبون مباشرة أننا نبيع القطع وليس الجهاز
 // نفسه. مفتاح كل مُدخل هو slug التصنيف الحقيقي كما هو مُخزَّن فقاعدة
 // البيانات — وليس اسمه، حتى يبقى الربط صحيحاً حتى لو تغيّر نص الاسم
-// لاحقاً. تصنيفان بلا صورة مخصَّصة بعد (نصف الأوتوماتيكية والبانيني)
-// يستعملان الأيقونة العامة (CategoryIcon) كما كانا دائماً.
+// لاحقاً. تصنيف واحد بلا صورة مخصَّصة بعد (البانيني) يستعمل الأيقونة
+// العامة (CategoryIcon) كما كان دائماً.
 export const CATEGORY_IMAGES: Record<string, string> = {
   "standard-washing-machine-parts": "/categories/standard-washing-machine-parts.webp",
   "automatic-washing-machine-parts": "/categories/automatic-washing-machine-parts.webp",
+  "semi-automatic-washing-machine-parts": "/categories/semi-automatic-washing-machine-parts.webp",
   "refrigerator-spare-parts": "/categories/refrigerator-spare-parts.webp",
   "freezer-spare-parts": "/categories/freezer-spare-parts.webp",
   "split-ac-parts": "/categories/split-ac-parts.webp",
