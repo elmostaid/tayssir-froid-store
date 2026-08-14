@@ -18,12 +18,12 @@ import { formatMinOrderAmount } from "@/lib/format";
 // المنتجات والأسعار تأتي من قاعدة البيانات ويجب أن تكون محدَّثة دائماً.
 export const dynamic = "force-dynamic";
 
-function buildTrustPoints(minOrderAmountMad: number): string[] {
+export function buildTrustPoints(minOrderAmountMad: number): string[] {
   return [
-    `أقل طلب ${formatMinOrderAmount(minOrderAmountMad)}`,
+    `الحد الأدنى للطلب: ${formatMinOrderAmount(minOrderAmountMad)}`,
     "الدفع عند الاستلام بعد معاينة السلعة",
-    "التوصيل لجميع مدن المغرب",
-    "كلما زادت الكمية نقص الثمن",
+    "التوصيل لجميع مدن المغرب 24–48 ساعة",
+    "كلما زادت الكمية، كينقص الثمن",
   ];
 }
 
@@ -95,9 +95,13 @@ export default async function HomePage() {
             rel="noopener noreferrer"
             className="flex min-h-11 items-center justify-center gap-2 rounded-full bg-whatsapp px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-whatsapp-dark"
           >
-            تواصل عبر واتساب
+            محتاج مساعدة؟ طلب عبر واتساب
           </a>
         </div>
+
+        <p className="mt-3 text-xs text-neutral-600 sm:text-sm">
+          طريقة الطلب: اختار القطع ← زيدها للسلة ← صيفط الطلب فالواتساب
+        </p>
       </section>
 
       {categories.length > 0 && (
