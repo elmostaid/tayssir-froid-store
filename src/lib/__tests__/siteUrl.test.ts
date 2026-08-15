@@ -1,60 +1,45 @@
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test } from "vitest";
+import { getSiteUrl } from "@/lib/siteUrl";
 
-async function loadSiteUrl() {
-  vi.resetModules();
-  return import("@/lib/siteUrl");
-}
+const ORIGINAL_SITE_URL = process.env.SITE_URL;
 
-describe("getSiteUrl", () => {
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
+afterEach(() => {
+  if (ORIGINAL_SITE_URL === undefined) delete process.env.SITE_URL;
+  else process.env.SITE_URL = ORIGINAL_SITE_URL;
+});
 
-  test("SITE_URL غير مضبوط إطلاقاً -> null (بلا أي رابط مخترَع)", async () => {
-    vi.stubEnv("SITE_URL", "");
-    const { getSiteUrl } = await loadSiteUrl();
+// عطل الإنتاج الحقيقي: SITE_URL كان مضبوطاً بالخطأ بقيمة تشبه مقتطفاً من
+// DATABASE_URL ("postgres.vowhaasgwvbbxaxzdtzy" — بادئة اسم مستخدم مجمِّع
+// اتصالات Supabase)، فكان src/app/layout.tsx (الجذر، يُحمَّل مع كل صفحة)
+// يرمي "TypeError: Invalid URL" عند `new URL(siteUrl)`، فيُسقط بناء الموقع
+// بأكمله. getSiteUrl() يجب أن تتصرف كأن SITE_URL غير مضبوط إطلاقاً (null)
+// لأي قيمة لا تكون رابط http(s) صالحاً، بدل تمرير قيمة ستُسقط new URL لاحقاً.
+describe("getSiteUrl — لا يرجع أبداً قيمة قد تُسقط new URL(...) في layout.tsx", () => {
+  test("قيمة غير مضبوطة: يرجع null", () => {
+    delete process.env.SITE_URL;
     expect(getSiteUrl()).toBeNull();
   });
 
-  test("SITE_URL صحيح -> يُرجَع كما هو (بلا شرطة مائلة زائدة فالنهاية)", async () => {
-    vi.stubEnv("SITE_URL", "https://www.tayssirfroid.com/");
-    const { getSiteUrl } = await loadSiteUrl();
-    expect(getSiteUrl()).toBe("https://www.tayssirfroid.com");
-  });
-
-  // هذا الاختبار يحمي بالضبط العطل الحقيقي المُكتشَف فـProduction: SITE_URL
-  // مضبوط فعلياً (وليس فارغاً) بقيمة لا تصلح كرابط (مقطع من رابط قاعدة
-  // بيانات مصدره خارج هذا المستودع) — new URL() فـlayout.tsx كانت سترمي
-  // استثناءً يُسقِط next build بأكمله. الآن يجب أن تُرجع رابطاً احتياطياً
-  // ثابتاً بدل ذلك، بلا أي استثناء يخرج من الدالة إطلاقاً.
-  test("SITE_URL مضبوط بقيمة غير صالحة كرابط (مثال حقيقي: مقطع من رابط قاعدة بيانات) -> رابط احتياطي ثابت، بلا رمي أي استثناء", async () => {
-    vi.stubEnv("SITE_URL", "postgres.wowhaasgwbibxazcdtzy");
-    const { getSiteUrl } = await loadSiteUrl();
+  test("قيمة غير رابط صالح إطلاقاً (مقتطف من connection string): يرجع null بدل رمي استثناء", () => {
+    process.env.SITE_URL = "postgres.vowhaasgwvbbxaxzdtzy";
+    expect(getSiteUrl()).toBeNull();
     expect(() => getSiteUrl()).not.toThrow();
-    expect(getSiteUrl()).toBe("https://www.tayssirfroid.com");
   });
 
-  test("SITE_URL مضبوط بقيمة غير صالحة أخرى (بلا http(s)://) -> نفس الرابط الاحتياطي", async () => {
-    vi.stubEnv("SITE_URL", "not a real url at all");
-    const { getSiteUrl } = await loadSiteUrl();
-    expect(getSiteUrl()).toBe("https://www.tayssirfroid.com");
+  test("رابط صالح: يرجع نفس القيمة (بلا / نهائية)", () => {
+    process.env.SITE_URL = "https://tayssirfroid.com/";
+    expect(getSiteUrl()).toBe("https://tayssirfroid.com");
   });
 
-  // يضمن أن السطر الوحيد فكل المشروع الذي يستدعي new URL(siteUrl) مباشرة
-  // (src/app/layout.tsx) لن يتلقى أبداً قيمة غير صالحة بعد هذا الإصلاح —
-  // القيمة المُرجَعة (سواء الحقيقية أو الاحتياطية) صالحة دائماً كوسيط لـnew URL().
-  test("القيمة المُرجَعة (فكل الحالات غير null) تبقى دائماً قابلة للتمرير مباشرة إلى new URL() بلا استثناء", async () => {
-    for (const raw of [
-      "https://www.tayssirfroid.com",
-      "postgres.wowhaasgwbibxazcdtzy",
-      "not a real url at all",
-      "https://valid-example.com/",
-    ]) {
-      vi.stubEnv("SITE_URL", raw);
-      const { getSiteUrl } = await loadSiteUrl();
-      const value = getSiteUrl();
-      expect(value).not.toBeNull();
-      expect(() => new URL(value as string)).not.toThrow();
-    }
+  test("مخطط غير http(s) (مثل ftp://) يُعتبر غير صالح: يرجع null", () => {
+    process.env.SITE_URL = "ftp://example.com";
+    expect(getSiteUrl()).toBeNull();
+  });
+
+  test("قيمة صالحة تُستعمل فعلاً بنجاح داخل new URL(...) بدون رمي استثناء", () => {
+    process.env.SITE_URL = "https://tayssirfroid.com";
+    const siteUrl = getSiteUrl();
+    expect(siteUrl).not.toBeNull();
+    expect(() => new URL(siteUrl!)).not.toThrow();
   });
 });
