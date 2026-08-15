@@ -25,7 +25,35 @@ function getClient(): SqlClient {
     );
   }
 
-  const client = postgres(connectionString, {
+  let client: SqlClient;
+  try {
+    client = buildClient(connectionString);
+  } catch (err) {
+    // postgres() يتحقق من صيغة connectionString فوراً عند الإنشاء ويرمي
+    // TypeError خام (ERR_INVALID_URL) لو كانت القيمة موجودة لكن مشوَّهة
+    // (مثلاً مقتطف ناقص من رابط اتصال Supabase pooler، بلا "postgres://").
+    // هذا الاستثناء الخام هو ما كان يُسقط build/"Collecting page data"
+    // بأكمله لأي صفحة تُنفِّذ استعلاماً حقيقياً وقت البناء (/admin/reports
+    // كانت أول صفحة تصله فترتيب الفحص) — بدل رسالة عربية واضحة قابلة
+    // للالتقاط بنفس أسلوب حالة "غير معرَّف" أعلاه. لا نُغيّر هنا أي سلوك
+    // حقيقي وقت التشغيل (استعلام حقيقي بـconnectionString صحيح لم يتأثر
+    // إطلاقاً)، فقط نُترجم فشل الصياغة إلى نفس نوع الخطأ الآمن.
+    throw new Error(
+      `DATABASE_URL موجود لكن صيغته غير صالحة كرابط اتصال Postgres. تحقّق من القيمة فمتغيّرات البيئة (السبب الأصلي: ${
+        err instanceof Error ? err.message : String(err)
+      }).`
+    );
+  }
+
+  cachedClient = client;
+  if (process.env.NODE_ENV !== "production") {
+    globalThis.__tayssirSql = client;
+  }
+  return client;
+}
+
+function buildClient(connectionString: string): SqlClient {
+  return postgres(connectionString, {
     max: 5,
     idle_timeout: 20,
     // القيمة الافتراضية فـpostgres.js هي 30 ثانية — أطول من مهلة تنفيذ أي
@@ -78,12 +106,6 @@ function getClient(): SqlClient {
       },
     },
   });
-
-  cachedClient = client;
-  if (process.env.NODE_ENV !== "production") {
-    globalThis.__tayssirSql = client;
-  }
-  return client;
 }
 
 export const sql: SqlClient = new Proxy(function () {} as unknown as SqlClient, {

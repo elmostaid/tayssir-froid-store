@@ -39,20 +39,32 @@ export type ProfitSummary = {
   approximateProfitOrdersCount: number;
 };
 
-const ORDER_COGS_CTE = sql`
-  with order_cogs as (
-    select
-      oi.order_id,
-      sum(
-        oi.quantity * coalesce(oi.purchase_price_snapshot, pv.purchase_price_override, p.purchase_price, 0)
-      ) as cogs,
-      bool_and(oi.purchase_price_snapshot is not null) as has_full_snapshot
-    from public.order_items oi
-    left join public.products p on p.id = oi.product_id
-    left join public.product_variants pv on pv.id = oi.variant_id
-    group by oi.order_id
-  )
-`;
+// دالة (وليس ثابتاً على مستوى الوحدة) عمداً: sql`...` يستدعي getClient()
+// فوراً بمجرد التنفيذ (راجع db.ts — Proxy الـapply trap)، فلو كان هذا
+// ثابتاً مُحسَباً وقت تحميل الوحدة (module scope)، مجرد استيراد هذا الملف
+// (يحدث حتماً عند "Collecting page data" أثناء next build لأي صفحة تستورد
+// adminReports.ts) كان يفتح/يتحقق من DATABASE_URL وقت البناء لا وقت
+// التشغيل — بالضبط ما كان يُسقط build كامل الموقع بمجرد أن يكون
+// DATABASE_URL مضبوطاً بقيمة مشوَّهة فبيئة واحدة (Preview) فقط، رغم عدم
+// استدعاء أي دالة استعلام هنا فعلياً. الآن يُستدعى فقط داخل كل دالة تستعمله
+// وقت التنفيذ الحقيقي، مطابقاً لنفس افتراض "لا اتصال بقاعدة البيانات إلا
+// عند أول استعلام فعلي" الموثَّق فـdb.ts.
+function orderCogsCte() {
+  return sql`
+    with order_cogs as (
+      select
+        oi.order_id,
+        sum(
+          oi.quantity * coalesce(oi.purchase_price_snapshot, pv.purchase_price_override, p.purchase_price, 0)
+        ) as cogs,
+        bool_and(oi.purchase_price_snapshot is not null) as has_full_snapshot
+      from public.order_items oi
+      left join public.products p on p.id = oi.product_id
+      left join public.product_variants pv on pv.id = oi.variant_id
+      group by oi.order_id
+    )
+  `;
+}
 
 export async function getProfitSummary(): Promise<ProfitSummary> {
   const [row] = await sql<
@@ -69,7 +81,7 @@ export async function getProfitSummary(): Promise<ProfitSummary> {
       approximate_profit_orders_count: number;
     }[]
   >`
-    ${ORDER_COGS_CTE}
+    ${orderCogsCte()}
     select
       count(*) filter (where o.status = 'delivered')::int as delivered_orders_count,
       coalesce(sum(o.items_subtotal) filter (where o.status = 'delivered'), 0) as delivered_revenue,
@@ -135,7 +147,7 @@ export async function getDeliveredOrdersProfitBreakdown(
       has_full_snapshot: boolean | null;
     }[]
   >`
-    ${ORDER_COGS_CTE}
+    ${orderCogsCte()}
     select
       o.id, o.order_number, o.created_at, o.items_subtotal,
       coalesce(oc.cogs, 0) as cogs,
