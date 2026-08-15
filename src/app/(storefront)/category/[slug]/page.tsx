@@ -6,6 +6,7 @@ import {
   getProducts,
   type ProductSort,
 } from "@/lib/queries/catalog";
+import type { Category } from "@/lib/types";
 import { ProductCard } from "@/components/ProductCard";
 import { safeQuery } from "@/lib/safeQuery";
 import { ServiceUnavailable } from "@/components/ServiceUnavailable";
@@ -66,10 +67,14 @@ export default async function CategoryPage({ params, searchParams }: Props) {
   // فحص "غير موجود" يبقى بعدها كما كان تماماً. نفس السلوك بالضبط، فقط أسرع
   // تحت تدهور قاعدة البيانات (لا "تراكم" استعلامات متتالية).
   const [categoryResult, products, variantProductIds, settings] = await Promise.all([
-    getCategoryBySlug(slug).catch((error) => {
-      console.error("CategoryPage: تعذّر الاتصال بقاعدة البيانات", error);
-      return "SERVICE_UNAVAILABLE" as const;
-    }),
+    // .catch() وحده لا يحمي من تعليق (hang) بلا استجابة أصلاً — لا يرفض ولا
+    // ينجح، فلا catch يُفعَّل أبداً (نفس فجوة 504 الحقيقية المُوثَّقة فـ
+    // safeQuery.ts). safeQuery تضمن مهلة قصوى فعلية هنا أيضاً.
+    safeQuery<Category | null | "SERVICE_UNAVAILABLE">(
+      () => getCategoryBySlug(slug),
+      "SERVICE_UNAVAILABLE",
+      "category.getCategoryBySlug"
+    ),
     safeQuery(
       () => getProducts({ categorySlug: slug, limit: 100, query, sort }),
       [],
