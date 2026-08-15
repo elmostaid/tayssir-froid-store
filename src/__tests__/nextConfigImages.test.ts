@@ -1,14 +1,19 @@
 import { describe, expect, test } from "vitest";
 import nextConfig from "../../next.config";
 
-// حارس ضد فقدان unoptimized: true بالخطأ مستقبلاً — بدونه، مُحسِّن
-// /_next/image يعود لسلوكه الافتراضي (تحويل أي صورة إلى مخرَج WebP لأي
-// عميل يُصرِّح بدعمه عبر ترويسة Accept، بغض النظر عن صيغة الملف الأصلي)،
-// وهو بالضبط السبب المؤكَّد وراء ظهور بعض صور التصنيفات/المنتجات كأيقونة
-// "broken image" على هواتف حقيقية (آيفون وأندرويد أقدم) رغم أن الملفات
-// نفسها سليمة على القرص. انظر next.config.ts للتفاصيل الكاملة.
-describe("next.config images.unoptimized (توافق أقصى مع الهواتف/المتصفحات القديمة)", () => {
-  test("unoptimized مضبوط true — كل صورة تصل المتصفح بنفس صيغتها الأصلية دائماً، بلا أي إعادة ترميز خادم", () => {
-    expect(nextConfig.images?.unoptimized).toBe(true);
+// unoptimized: true جُرِّب سابقاً (commit 3099b0b) ثم أُلغي (راجع next.config.ts
+// للتاريخ الكامل): أوقف تذبذب صور متقطّعاً على بعض الهواتف، لكن بلا تصغير
+// خادم، صور PNG الأصلية الضخمة (متوسط ~1.5 ميغابايت) جعلت كل صفحة تصنيف
+// تنقل عشرات الميغابايتات — انقطاعات اتصال حقيقية لزبناء بتغطية ضعيفة، أثر
+// أوسع من العطل الأصلي. لهذا يجب أن يبقى محسِّن /_next/image فعّالاً
+// (unoptimized ليس true) — هذا الاختبار حارس ضد تفعيله مجدداً بالخطأ قبل
+// إتمام الحل طويل المدى (تحويل storage_path لنسخ JPEG خفيفة مسبقة الضغط).
+describe("next.config images.unoptimized (خفّة الصفحة على الشبكات الضعيفة)", () => {
+  test("unoptimized ليس true — محسِّن /_next/image يبقى فعّالاً لتصغير الصور تلقائياً", () => {
+    expect(nextConfig.images?.unoptimized).not.toBe(true);
+  });
+
+  test("minimumCacheTTL مرفوع — يقلّل تكرار إعادة توليد نفس الصورة من الصفر", () => {
+    expect(nextConfig.images?.minimumCacheTTL).toBeGreaterThan(60);
   });
 });
