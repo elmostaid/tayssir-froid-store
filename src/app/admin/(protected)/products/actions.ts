@@ -8,6 +8,7 @@ import { productSchema, variantSchema, productQuickEditSchema } from "@/lib/vali
 import { flattenZodErrors } from "@/lib/validation/zodErrors";
 import { isProductSlugTaken, isSkuTakenByOtherProduct } from "@/lib/queries/adminProducts";
 import { computeSkuPrefixForCategory, findMaxSkuNumber } from "@/lib/products/skuGeneration";
+import { revalidateCatalog } from "@/lib/queries/catalogCache";
 
 const OWNER_ONLY_ERROR = "هذا الإجراء مقصور على صاحب الحساب (Admin)." as const;
 
@@ -392,6 +393,7 @@ async function swapProductSortOrder(
   // كامل قائمة المنتجات فـلوحة الإدارة عند كل ضغطة (بطيء)، بينما الواجهة
   // الآن تُحدَّث فوراً من القيمة المُرجَعة أدناه بلا أي طلب إضافي.
   revalidatePath("/", "layout");
+  revalidateCatalog();
 
   return {
     error: null,
@@ -475,6 +477,7 @@ export async function moveProductToRank(
   `;
 
   revalidatePath("/", "layout");
+  revalidateCatalog();
 
   return { error: null, updated };
 }

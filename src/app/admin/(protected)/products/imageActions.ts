@@ -9,6 +9,7 @@ import { ALLOWED_IMAGE_TYPES, EXT_BY_TYPE, MAX_IMAGES_PER_PRODUCT } from "@/lib/
 import { deleteProductImageFile, isRemoteStorageConfigured } from "@/lib/storage/productImages";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/serviceRole";
 import { getProductImagesAdmin, type AdminProductImage } from "@/lib/queries/adminProducts";
+import { revalidateCatalog } from "@/lib/queries/catalogCache";
 
 const PRODUCT_IMAGES_BUCKET = "product-images";
 
@@ -174,6 +175,7 @@ export async function commitPrimaryImage(
   // بنفس النمط المعتمد فـsettings/actions.ts (revalidatePath("/", "layout"))
   // لتفادي أي عرض من ذاكرة تنقّل جانب العميل (client-side router cache).
   revalidatePath("/", "layout");
+  revalidateCatalog();
 
   return { error: null, success: true };
 }
@@ -238,6 +240,7 @@ export async function commitAdditionalImage(
   revalidatePath(`/admin/products/${productId}`);
   revalidatePath("/admin/products");
   revalidatePath("/", "layout");
+  revalidateCatalog();
   return { error: null, success: true };
 }
 
@@ -272,6 +275,7 @@ export async function deleteProductImage(
   revalidatePath(`/admin/products/${productId}`);
   revalidatePath("/admin/products");
   revalidatePath("/", "layout");
+  revalidateCatalog();
   return { error: null };
 }
 
@@ -315,6 +319,7 @@ export async function setPrimaryImage(
   revalidatePath(`/admin/products/${productId}`);
   revalidatePath("/admin/products");
   revalidatePath("/", "layout");
+  revalidateCatalog();
   return { error: null };
 }
 

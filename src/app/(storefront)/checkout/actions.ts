@@ -2,6 +2,7 @@
 
 import { headers, cookies } from "next/headers";
 import { createOrder } from "@/lib/orders/createOrder";
+import { revalidateCatalog } from "@/lib/queries/catalogCache";
 import type { CreateOrderResult, CartItemInput, CreateOrderRequestContext } from "@/lib/orders/types";
 
 export type CheckoutState = CreateOrderResult | { ok: null };
@@ -54,7 +55,7 @@ export async function submitOrder(
     };
   }
 
-  return createOrder({
+  const result = await createOrder({
     items,
     customer: {
       fullName: String(formData.get("fullName") ?? ""),
@@ -66,4 +67,16 @@ export async function submitOrder(
     idempotencyKey: String(formData.get("idempotencyKey") ?? ""),
     requestContext: await readRequestContext(),
   });
+
+  // كل طلب ناجح يُنقص المخزون فعلياً (createOrder يُحدِّث stock_quantity داخل
+  // معاملة). نُبطل ذاكرة الكتالوج فوراً حتى يرى الزبن التالي الكمية الصحيحة
+  // بدل كمية مُخزَّنة قديمة. ملاحظة: هذا يحسّن الدقة المعروضة فقط ولا يُعتمد
+  // عليه لمنع البيع الزائد — الحماية الحقيقية شرط "stock_quantity >= quantity"
+  // داخل UPDATE نفسه في createOrder، وهو يرفض أي طلب يتجاوز المتوفر مهما كان
+  // ما عُرض على الزبون.
+  if (result.ok) {
+    revalidateCatalog();
+  }
+
+  return result;
 }

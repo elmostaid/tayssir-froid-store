@@ -5,6 +5,7 @@ import { sql } from "@/lib/db";
 import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import { computeSkuPrefixForCategory, findMaxSkuNumber } from "@/lib/products/skuGeneration";
 import { PRODUCT_STATUSES } from "@/lib/validation/product";
+import { revalidateCatalog } from "@/lib/queries/catalogCache";
 
 const OWNER_ONLY_ERROR = "هذا الإجراء مقصور على صاحب الحساب (Admin)." as const;
 
@@ -131,6 +132,7 @@ export async function createBulkProduct(input: BulkProductInput): Promise<BulkPr
       if (inserted[0]) {
         revalidatePath("/admin/products");
         revalidatePath("/", "layout");
+        revalidateCatalog();
         return { outcome: "success", productId: inserted[0].id, sku, slug };
       }
       // لا صفّ أُدخل: تعارض حقيقي (سباق مع طلب آخر متزامن استهلك هذا الرقم

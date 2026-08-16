@@ -11,6 +11,7 @@ import {
   countProductsInCategory,
   isSlugTakenByOtherCategory,
 } from "@/lib/queries/adminCategories";
+import { revalidateCatalog } from "@/lib/queries/catalogCache";
 
 export type CategoryFormState = {
   error: string | null;
@@ -124,6 +125,7 @@ export async function toggleCategoryVisibility(
 
   revalidatePath("/admin/categories");
   revalidatePath("/");
+  revalidateCatalog();
   revalidatePath(`/category/${rows[0].slug}`);
   revalidatePath("/sitemap.xml");
   return { error: null };
