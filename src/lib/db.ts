@@ -2,6 +2,96 @@ import postgres from "postgres";
 
 type SqlClient = ReturnType<typeof postgres>;
 
+// حد زمني حقيقي لكل استعلام على مستوى العميل — أقصر من مهلة safeQuery
+// (15 ثانية) حتى يعمل هذا أولاً دائماً، وأطول قليلاً من statement_timeout
+// (8 ثوان) حتى لا يسبق مهلة الخادم في الحالة التي يعمل فيها الخادم فعلاً.
+const QUERY_HARD_TIMEOUT_MS = 10000;
+
+type CancellableQuery = {
+  then?: unknown;
+  cancel?: () => void;
+};
+
+/**
+ * السبب الجذري المُثبَت لانهيار الموقع تحت الضغط: safeQuery كان يستعمل
+ * Promise.race، وهي صيغة **تتخلّى** عن الاستعلام عند انتهاء المهلة ولا
+ * تُلغيه. postgres.js لا يعلم بذلك إطلاقاً — يبقى يعتبر الاتصال «مشغولاً
+ * باستعلام جارٍ» ولا يُعيده إلى المجمّع أبداً. مع كل مهلة يُحجز اتصال من
+ * أصل max حجزاً دائماً؛ وبعد max مهلات تكون نسخة الخادم قد فقدت مجمّعها
+ * بالكامل وهي **لا تزال ساخنة وتستقبل الزبناء**، فتنتهي كل طلباتها اللاحقة
+ * بالمهلة نفسها. هذا ما كان يجعل العطل «متقطّعاً»: نسخة مسمومة ترد بصفحة
+ * عطل وأخرى سليمة ترد بالصفحة كاملة، في نفس اللحظة وعلى نفس الرابط.
+ *
+ * الإصلاح هنا يربط كل استعلام بحد زمني يستدعي query.cancel() الحقيقي من
+ * postgres.js. هذه الدالة تُغطّي الحالتين معاً (راجع cancel() في
+ * node_modules/postgres/src/index.js):
+ *   - استعلام ما زال في طابور العميل ينتظر اتصالاً حراً (وهي حالتنا
+ *     بالضبط عند إشباع المجمّع): يُحذَف من الطابور ويُرفَض فوراً بـ57014.
+ *   - استعلام يُنفَّذ فعلاً على الخادم: يُفتح اتصال إلغاء حقيقي لإيقافه.
+ * في الحالتين يُرفَض الوعد فعلياً، فيُحرِّر postgres.js الاتصال ويعيده
+ * للمجمّع، ويلتقط catch الموجود أصلاً في safeQuery/catalog.ts الخطأ
+ * فيُرجع البيانات الاحتياطية كما كان مصمَّماً — بدل تسميم المجمّع.
+ *
+ * لماذا نُرقِّع then() بدل استدعائه مباشرة: postgres.js يستعمل نفس نوع
+ * Query لأجزاء الاستعلام (fragments) مثل sql`order by sale_price asc` في
+ * catalog.ts. هذه الأجزاء تُدمَج داخل استعلام آخر عبر `instanceof Query`
+ * وقراءة strings/args (types.js:110) ولا يُستدعى then() عليها أبداً.
+ * التسليح عند أول then()/catch() فقط يضمن أن الأجزاء لا تُسلَّح ولا
+ * تُنفَّذ كاستعلامات مستقلة — وهو ما كان سيحدث لو استدعينا then() مباشرة.
+ */
+function boundQueryLifetime<T>(query: T): T {
+  const pending = query as CancellableQuery | null;
+  if (
+    !pending ||
+    typeof pending.cancel !== "function" ||
+    typeof pending.then !== "function"
+  ) {
+    return query;
+  }
+
+  const originalThen = pending.then as (...args: unknown[]) => unknown;
+  const cancel = pending.cancel.bind(pending);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let armed = false;
+
+  const disarm = () => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = undefined;
+    }
+  };
+
+  const arm = () => {
+    if (armed) return;
+    armed = true;
+    timer = setTimeout(() => {
+      timer = undefined;
+      try {
+        cancel();
+      } catch {
+        // cancel() نفسه قد يفشل لو كان الاتصال قد مات أصلاً — لا يهم،
+        // المقصود ألا يبقى الاتصال محجوزاً، وهذا يتحقق في الحالتين.
+      }
+    }, QUERY_HARD_TIMEOUT_MS);
+
+    // تنظيف المؤقّت عند انتهاء الاستعلام نجاحاً أو فشلاً. نستعمل then
+    // الأصلي (قبل الترقيع) لتفادي أي تسلسل لا نهائي، وكلا المُعالِجَين
+    // يُعيد undefined فلا ينشأ رفض غير مُلتقَط من هذا الفرع.
+    Reflect.apply(originalThen, pending, [disarm, disarm]);
+  };
+
+  Object.defineProperty(pending, "then", {
+    configurable: true,
+    writable: true,
+    value: function patchedThen(...args: unknown[]) {
+      arm();
+      return Reflect.apply(originalThen, pending, args);
+    },
+  });
+
+  return query;
+}
+
 // نتفادى فتح اتصال جديد بقاعدة البيانات مع كل إعادة تحميل ساخنة (hot reload)
 // أثناء التطوير عبر تخزين العميل في global.
 declare global {
@@ -66,6 +156,12 @@ function buildClient(connectionString: string): SqlClient {
     // الحالة بالضبط. مهلة قصيرة هنا تضمن فشلاً سريعاً يُفعِّل ذلك التراجع
     // فعلياً بدل صفحة معلَّقة بلا أي رد.
     connect_timeout: 5,
+    // اتصال طويل العمر خلف pooler بنمط transaction قد يُصبح «قديماً» بصمت
+    // (الـpooler أعاد تدوير الاتصال الحقيقي خلفه، أو أُغلق من الطرف الآخر
+    // بلا إشعار). بلا سقف لعمر الاتصال، تبقى نسخة الخادم الساخنة تحاول
+    // استعمال اتصال ميت إلى الأبد. نصف ساعة سقف آمن: أطول بكثير من عمر أي
+    // طلب فعلي، وأقصر بكثير من عمر نسخة lambda ساخنة.
+    max_lifetime: 60 * 30,
     // ⚠️ connect_timeout يحدّ فقط من مدة الوصول إلى ReadyForQuery (فتح
     // اتصال TCP + مصافحة بروتوكول Postgres/المصادقة) — بمجرد اكتمال
     // الاتصال، لا يحدّ من مدة تنفيذ أي استعلام لاحق على الخادم إطلاقاً.
@@ -111,7 +207,12 @@ function buildClient(connectionString: string): SqlClient {
 export const sql: SqlClient = new Proxy(function () {} as unknown as SqlClient, {
   apply(_target, _thisArg, args) {
     const client = getClient();
-    return (client as unknown as (...a: unknown[]) => unknown)(...args);
+    // كل استعلام يمرّ من هنا (sql`...` في 47 ملفاً) يخرج مربوطاً بحد زمني
+    // يُلغيه فعلياً بدل تركه يحجز اتصالاً إلى الأبد. أجزاء الاستعلام
+    // (fragments) تمرّ من هنا أيضاً لكنها لا تُسلَّح لأنها لا تُنتظَر أبداً.
+    return boundQueryLifetime(
+      (client as unknown as (...a: unknown[]) => unknown)(...args)
+    );
   },
   get(_target, prop, receiver) {
     const client = getClient();
