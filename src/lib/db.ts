@@ -54,26 +54,7 @@ function getClient(): SqlClient {
 
 function buildClient(connectionString: string): SqlClient {
   return postgres(connectionString, {
-    // ⚠️ لماذا 1 وليس 5: كل instance من هذه الدالة الخادمية (كل Vercel
-    // Function منفصل) كان يقدر يفتح لحد 5 اتصالات حقيقية متوازية نحو
-    // Supabase Transaction Pooler (PgBouncer) بمفرده — صفحة واحدة (/ أو
-    // /category/[slug]) تُطلق 4 استعلامات متوازية عبر Promise.all، فتضخّم
-    // العدد بسرعة مع أي تزامن حقيقي بين عدة زوار (instances متعددة، كل
-    // واحد يطلب لحد 5). دليل حقيقي على أن هذا هو مصدر التعليق (وليس
-    // افتراضاً): 5 استعلامات غير مترابطة (تصنيفات/منتجات/متغيرات/إعدادات)
-    // توقفت معاً عند 15000ms بالضبط (مهلة safeQuery نفسها) — ليس عند 5000ms
-    // (connect_timeout) ولا 8000ms (statement_timeout)، مما يثبت أن التعطّل
-    // يحدث بعد نجاح الاتصال الظاهري (TCP+مصادقة مع الـpooler) لكن قبل وصول
-    // أي استعلام فعلياً لخادم Postgres — بالضبط سلوك PgBouncer حين تُنفَد
-    // اتصالاته الخلفية (backend slots): يقبل اتصال العميل فوراً ويُبقيه فـ
-    // طابور انتظار داخلي بلا أي مهلة افتراضية، فلا connect_timeout يتفعّل
-    // (الاتصال "نجح" ظاهرياً) ولا statement_timeout (Postgres لم ير الجلسة
-    // بعد). max: 1 هو الإعداد الموصى به رسمياً من Supabase نفسها لـpostgres.js
-    // خلف Transaction Pooler فبيئة serverless بالضبط لهذا السبب — يقلّص أقصى
-    // طلب اتصالات من كل instance بمقدار 5×. الأثر الجانبي: استعلامات الصفحة
-    // الواحدة تُنفَّذ تسلسلياً عبر اتصال واحد بدل التوازي (تأخير إضافي بسيط)،
-    // بدل فتح اتصالات متعددة قد تُضخِّم الضغط على الـpooler المشترك.
-    max: 1,
+    max: 5,
     idle_timeout: 20,
     // القيمة الافتراضية فـpostgres.js هي 30 ثانية — أطول من مهلة تنفيذ أي
     // Vercel Serverless Function عادةً (10 ثوان فـHobby). إذا كانت قاعدة
