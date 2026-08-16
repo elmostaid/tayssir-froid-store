@@ -283,33 +283,6 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       if (inserted.length > 0) {
         const orderId = inserted[0].id;
 
-        // الشرط الذَرّي "stock_quantity >= quantity" داخل UPDATE نفسه (يمنع
-        // أي سباق race condition بين طلبين متزامنين على نفس القطعة) بقي بلا
-        // أي تغيير، سطراً بسطر كما كان تماماً — هذا الجزء الحساس (مال حقيقي
-        // + سلامة المخزون) لم يُمسّ. التغيير الوحيد: إدخالات order_items
-        // وstock_movements كانت تُنفَّذ كـINSERT منفصل بعد كل سطر (2×N رحلة
-        // إضافية داخل نفس sql.begin() الذي يحجز الاتصال طوال مدته) — الآن
-        // تُجمَّع وتُدفَع دفعة واحدة بعد اكتمال حلقة الحجز، فلا تطول مدة
-        // إمساك الاتصال مع عدد أسطر الطلب.
-        const orderItemRows: {
-          order_id: number;
-          product_id: number;
-          variant_id: number | null;
-          product_name_snapshot: string;
-          sku_snapshot: string;
-          unit_price_snapshot: number;
-          quantity: number;
-          line_total: number;
-          purchase_price_snapshot: number | null;
-        }[] = [];
-        const stockMovementRows: {
-          product_id: number;
-          variant_id: number | null;
-          order_id: number;
-          quantity_delta: number;
-          reason: string;
-        }[] = [];
-
         for (const line of lineItems) {
           // حجز المخزون: إنقاص فوري وذَرّي (atomic) عند إنشاء الطلب — الشرط
           // "stock_quantity >= quantity" داخل UPDATE نفسه يمنع أي سباق (race
@@ -337,55 +310,26 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
             throw new Error("STOCK_CONFLICT");
           }
 
-          orderItemRows.push({
-            order_id: orderId,
-            product_id: line.productId,
-            variant_id: line.variantId,
-            product_name_snapshot: line.nameSnapshot,
-            sku_snapshot: line.skuSnapshot,
-            unit_price_snapshot: line.unitPrice,
-            quantity: line.quantity,
-            line_total: line.lineTotal,
-            purchase_price_snapshot: line.purchasePriceSnapshot,
-          });
-          stockMovementRows.push({
-            product_id: line.productId,
-            variant_id: line.variantId,
-            order_id: orderId,
-            quantity_delta: -line.quantity,
-            reason: "order_created",
-          });
+          await trx`
+            insert into public.order_items (
+              order_id, product_id, variant_id, product_name_snapshot,
+              sku_snapshot, unit_price_snapshot, quantity, line_total,
+              purchase_price_snapshot
+            ) values (
+              ${orderId}, ${line.productId}, ${line.variantId}, ${line.nameSnapshot},
+              ${line.skuSnapshot}, ${line.unitPrice}, ${line.quantity}, ${line.lineTotal},
+              ${line.purchasePriceSnapshot}
+            )
+          `;
+
+          await trx`
+            insert into public.stock_movements (
+              product_id, variant_id, order_id, quantity_delta, reason
+            ) values (
+              ${line.productId}, ${line.variantId}, ${orderId}, ${-line.quantity}, 'order_created'
+            )
+          `;
         }
-
-        // ⚠️ لا نكتب قائمة الأعمدة ولا كلمة "values" يدوياً هنا: postgres.js
-        // يكتشف أي كلمة مفتاحية SQL (insert/values/...) تسبق ${...} مباشرة
-        // فـtemplate الخام ويختار الأخيرة منها لبناء الاستعلام تلقائياً —
-        // كتابة "values" يدوياً بجانب استعمال sql(arrayOfObjects, ...cols)
-        // يجعله يستعمل مُنشئ values() بدل insert()، وvalues() يفترض أن أول
-        // عنصر مصفوفة (array) لا كائن (object) فيُعامل orderItemRows كسطر
-        // واحد بدل قائمة أسطر → "UNDEFINED_VALUE" (اكتُشف فعلياً أثناء
-        // الاختبار المحلي، وليس افتراضاً). insert into TABLE ${sql(rows,
-        // ...cols)} وحدها (بلا قائمة أعمدة ولا "values" يدويَين) هي الصيغة
-        // الصحيحة الموثَّقة رسمياً من postgres.js — تُولِّد قائمة الأعمدة
-        // وvalues(...) معاً تلقائياً.
-        await trx`
-          insert into public.order_items ${trx(
-            orderItemRows,
-            "order_id",
-            "product_id",
-            "variant_id",
-            "product_name_snapshot",
-            "sku_snapshot",
-            "unit_price_snapshot",
-            "quantity",
-            "line_total",
-            "purchase_price_snapshot"
-          )}
-        `;
-
-        await trx`
-          insert into public.stock_movements ${trx(stockMovementRows, "product_id", "variant_id", "order_id", "quantity_delta", "reason")}
-        `;
 
         await trx`
           insert into public.order_status_history (order_id, status, note)
