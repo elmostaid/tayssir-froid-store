@@ -1,0 +1,14 @@
+# يقرأه Lightning CSS (المحرّك الداخلي لـ@tailwindcss/postcss v4) تلقائياً
+# عبر حزمة browserslist — بدونه كان يعتمد على القيمة الافتراضية العامة لـ
+# browserslist نفسها ("> 0.5%, last 2 versions, Firefox ESR, not dead")، وهي
+# ضيقة أكثر من اللازم لزبائن حقيقيين على هواتف أندرويد أقدم (شائعة بكثرة فـ
+# هذا السوق). هذا لا يُنشئ ميزات جديدة ولا يُغيّر أي سلوك فالمتصفحات الحديثة
+# — فقط يوسّع نطاق الـfallback/prefixing التلقائي الذي يُنتجه Lightning CSS
+# أصلاً للمتصفحات الأقدم ضمن هذا النطاق.
+> 0.2%
+last 4 versions
+Firefox ESR
+not dead
+iOS >= 11
+Android >= 5
+Safari >= 11
