@@ -15,7 +15,7 @@ import { buildProductWhatsAppLink } from "@/lib/whatsapp";
 import { safeQuery } from "@/lib/safeQuery";
 import { AddToCartForm } from "@/components/AddToCartForm";
 import { ProductViewContentPixel } from "@/components/ProductViewContentPixel";
-import { ServiceUnavailable } from "@/components/ServiceUnavailable";
+import { ServiceUnavailableError } from "@/lib/serviceUnavailable";
 import { getSiteUrl } from "@/lib/siteUrl";
 
 export const dynamic = "force-dynamic";
@@ -62,7 +62,10 @@ export default async function ProductPage({ params }: Props) {
     product = await getProductBySlug(slug);
   } catch (error) {
     console.error("ProductPage: تعذّر الاتصال بقاعدة البيانات", error);
-    return <ServiceUnavailable />;
+    // نرمي بدل العرض المباشر: العرض كان يُرسل HTTP 200 مع صفحة عطل،
+    // فيبدو العطل نجاحاً لأي مراقبة ولمحركات البحث. الرمي يُنتج 5xx
+    // حقيقياً ويعرض error.tsx بنفس النص المعروض للزبون.
+    throw new ServiceUnavailableError("product");
   }
 
   if (!product) {

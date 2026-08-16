@@ -8,7 +8,12 @@ vi.mock("@/lib/auth/requireAdmin", async () => {
   );
   return { ...actual, getAdminUser: getAdminUserMock };
 });
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("next/cache", () => ({
+  revalidatePath: vi.fn(),
+  updateTag: vi.fn(),
+  // تمرير مباشر: لا تخزين مؤقّت في الاختبارات، فينفَّذ الاستعلام الحقيقي.
+  unstable_cache: (fn: unknown) => fn,
+}));
 vi.mock("next/navigation", async () => {
   const actual = await vi.importActual<typeof import("next/navigation")>("next/navigation");
   return { ...actual, redirect: vi.fn() };

@@ -23,7 +23,12 @@ vi.mock("@/lib/supabase/serviceRole", () => ({
   getSupabaseServiceRoleClient: getSupabaseServiceRoleClientMock,
 }));
 
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("next/cache", () => ({
+  revalidatePath: vi.fn(),
+  updateTag: vi.fn(),
+  // تمرير مباشر: لا تخزين مؤقّت في الاختبارات، فينفَّذ الاستعلام الحقيقي.
+  unstable_cache: (fn: unknown) => fn,
+}));
 
 const { createStaffAccount } = await import("@/app/admin/(protected)/users/actions");
 

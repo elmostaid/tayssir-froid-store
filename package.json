@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
+    "test:setup-db": "./scripts/setup-test-db.sh",
     "typecheck": "tsc --noEmit",
     "gen:meta-catalog-audit": "tsx scripts/gen-audit-report.ts",
     "validate:meta-feed": "tsx scripts/validate-meta-feed.ts"

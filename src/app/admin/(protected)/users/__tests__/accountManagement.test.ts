@@ -17,7 +17,12 @@ vi.mock("@/lib/supabase/serviceRole", () => ({
   getSupabaseServiceRoleClient: () => null,
 }));
 
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("next/cache", () => ({
+  revalidatePath: vi.fn(),
+  updateTag: vi.fn(),
+  // تمرير مباشر: لا تخزين مؤقّت في الاختبارات، فينفَّذ الاستعلام الحقيقي.
+  unstable_cache: (fn: unknown) => fn,
+}));
 
 const { updateAccountRole, disableAccount, enableAccount, deleteAccount } = await import(
   "@/app/admin/(protected)/users/actions"

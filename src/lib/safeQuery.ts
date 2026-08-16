@@ -1,3 +1,5 @@
+import { ServiceUnavailableError } from "@/lib/serviceUnavailable";
+
 // حد زمني صارم شامل حول كل استعلام صفحات الواجهة العامة — دليل حقيقي على
 // ضرورته (وليس افتراض): عطل 504 حقيقي متكرر على Vercel (FUNCTION_INVOCATION_
 // TIMEOUT، مدة تنفيذ ~300 ثانية بالضبط = سقف Vercel الأقصى، "External APIs:
@@ -55,6 +57,15 @@ export async function safeQuery<T>(
   try {
     return await Promise.race([run(), timeout]);
   } catch (error) {
+    // عدم توفّر قاعدة البيانات ليس حالة "تراجع بهدوء": تمريرها كقيمة
+    // احتياطية كان يُنتج صفحة رئيسية فارغة (بلا تصنيفات ولا منتجات) برمز
+    // HTTP 200 — أي متجر يبدو سليماً وهو معطّل. نُعيد رميها لتصل إلى
+    // error.tsx فيُرسَل 5xx حقيقي. أي خطأ آخر (مهلة هذا السباق، خطأ غير
+    // متوقّع في منطق غير متعلق بالقاعدة) يبقى يتراجع كما كان.
+    if (error instanceof ServiceUnavailableError) {
+      console.error(`safeQuery: الخدمة غير متوفرة (${context})`, error);
+      throw error;
+    }
     console.error(`safeQuery: تعذّر تنفيذ الاستعلام (${context})`, error);
     return fallback;
   } finally {

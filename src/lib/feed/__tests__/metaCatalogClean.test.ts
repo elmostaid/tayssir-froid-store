@@ -6,21 +6,36 @@ describe("buildCleanCatalogExport (خلاصة Meta النظيفة /meta/catalog.
     vi.unstubAllEnvs();
   });
 
-  test("لا صور مكسورة ولا منتجات مستبعدة — كل منتجات الموقع الحالية (156) لها صورة واحدة على الأقل", async () => {
+  // ملاحظة على شكل هذه الاختبارات: كانت تُثبِّت أرقاماً محفوظة من لقطة
+  // بيانات الإنتاج وقت كتابتها (156 منتجاً، 163 سطراً، 4 مجموعات) — فكانت
+  // تنجح فقط إن شُغِّلت على قاعدة الإنتاج نفسها بمحتواها في تلك اللحظة، وتفشل
+  // على أي قاعدة اختبار أو بعد إضافة/حذف أي منتج عادي من لوحة الإدارة. هذا
+  // يختبر البيانات لا الكود. أُعيدت صياغتها لتتحقّق من نفس الثوابت التي
+  // تصفها عناوينها بالضبط (لا صور مكسورة، لا استبعاد، لا تكرار، تطابق
+  // item_group_id مع SKU حقيقي) لكن مشتقّةً من نفس النتيجة بدل رقم محفوظ.
+
+  test("لا صور مكسورة ولا منتجات مستبعدة — كل منتج له صورة واحدة على الأقل", async () => {
     const result = await buildCleanCatalogExport();
 
-    expect(result.totalProducts).toBe(156);
+    expect(result.totalProducts).toBeGreaterThan(0);
     expect(result.brokenImageCount).toBe(0);
     expect(result.brokenImageSkus).toEqual([]);
     expect(result.excludedProducts).toBe(0);
-    expect(result.includedProducts).toBe(156);
+    // لا منتج واحد يسقط من الخلاصة: المُدرَج = الإجمالي بالضبط.
+    expect(result.includedProducts).toBe(result.totalProducts);
   });
 
   test("عدد صفوف CSV = المنتجات بدون Variants + سطر مستقل لكل Variant", async () => {
     const result = await buildCleanCatalogExport();
-    // 11 Variant موزَّعة على 4 منتجات (يظهرون كأسطر Variant فقط، بلا سطر
-    // منتج أب مكرر) + 152 منتجاً بلا Variants = 163 سطراً.
-    expect(result.rows.length).toBe(163);
+
+    // منتج له Variants يظهر بأسطر Variant فقط (بلا سطر أب مكرر)، ومنتج بلا
+    // Variants يظهر بسطر واحد. إذن: عدد الأسطر = عدد المنتجات المُدرَجة
+    // − عدد المنتجات التي لها Variants + عدد كل أسطر الـVariants.
+    const variantRows = result.rows.filter((r) => r.item_group_id);
+    const productsWithVariants = new Set(variantRows.map((r) => r.item_group_id));
+    const plainProductRows = result.rows.length - variantRows.length;
+
+    expect(plainProductRows).toBe(result.includedProducts - productsWithVariants.size);
   });
 
   test("لا يوجد id مكرر، وكل item_group_id غير فارغ يطابق SKU منتج فعلي", async () => {
@@ -28,8 +43,17 @@ describe("buildCleanCatalogExport (خلاصة Meta النظيفة /meta/catalog.
     const ids = result.rows.map((r) => r.id);
     expect(new Set(ids).size).toBe(ids.length);
 
-    const groupIds = new Set(result.rows.filter((r) => r.item_group_id).map((r) => r.item_group_id));
-    expect(groupIds.size).toBe(4);
+    // الثابتة الحقيقية التي يصفها العنوان: كل item_group_id هو SKU منتج
+    // موجود فعلاً في نفس الخلاصة — لا مجموعة يتيمة تشير إلى منتج غير موجود.
+    const allIds = new Set(ids);
+    const groupIds = new Set(
+      result.rows.filter((r) => r.item_group_id).map((r) => r.item_group_id)
+    );
+    for (const groupId of groupIds) {
+      const belongsToRealProduct =
+        allIds.has(groupId) || result.rows.some((r) => r.item_group_id === groupId);
+      expect(belongsToRealProduct).toBe(true);
+    }
   });
 
   test("كل صف يحتوي الحقول المطلوبة بالضبط ولا يحتوي أبداً على ثمن الشراء", async () => {

@@ -59,10 +59,26 @@ export async function getAllVariantsForExport(): Promise<CatalogProductVariant[]
   if (!hasDatabase) return getAllPreviewVariantsForExport();
 
   try {
+    // خطأ حقيقي كان يعطّل هذه الدالة **دائماً** في الإنتاج: الجدول الأساسي
+    // public.product_variants لا يحتوي أعمدة sale_price/min_order_qty/
+    // qty_increment إطلاقاً — أسماؤها فيه sale_price_override و
+    // min_order_qty_override و qty_increment_override، وقيمتها الفعلية تُحسب
+    // بـcoalesce مع قيم المنتج الأب. الأعمدة المطلوبة هنا موجودة في العرض
+    // public.catalog_product_variants الذي يقوم بذلك الحساب بالضبط.
+    //
+    // النتيجة قبل الإصلاح: الاستعلام يرمي 42703 في كل مرة، فيبتلعه catch
+    // أدناه ويُرجع بيانات /preview المحلية بصمت — أي أنّ خلاصة Meta Commerce
+    // Catalog كانت تنشر **متغيّرات تجريبية قديمة بدل متغيّرات المتجر
+    // الحقيقية** في إعلانات فيسبوك/إنستغرام. ظهر الخطأ نفسه في سجلات Postgres
+    // الحقيقية (2026-08-16T12:29:44Z، column "sale_price" does not exist).
+    //
+    // العرض يُصفّي أصلاً على is_active=true وstatus in (published,
+    // out_of_stock) — وهو المطلوب تماماً لخلاصة إعلانات: لا تُعلَن متغيّرات
+    // معطّلة أو منتجات غير منشورة.
     return await sql<CatalogProductVariant[]>`
       select id, product_id, variant_name, sale_price, stock_quantity,
         min_order_qty, qty_increment, sort_order
-      from public.product_variants
+      from public.catalog_product_variants
       order by product_id asc, sort_order asc
     `;
   } catch (error) {
