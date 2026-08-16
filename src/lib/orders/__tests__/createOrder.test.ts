@@ -236,6 +236,98 @@ describe("createOrder — منع الطلبات المكررة (idempotency)", (
   });
 });
 
+describe("createOrder — طلب متعدد الأسطر (batching للإدخالات)", () => {
+  test("طلب بعدة أسطر: كل order_items وstock_movements تُدرَج بالكامل وبقيم صحيحة", async () => {
+    const demo001 = await getRawProduct("TEST-FIXTURE-001"); // 18 درهم
+    const demo002 = await getRawProduct("TEST-FIXTURE-002"); // 25 درهم
+    const demo003 = await getRawProduct("TEST-FIXTURE-003"); // 120 درهم
+
+    const input: CreateOrderInput = {
+      items: [
+        { productId: demo001.id, variantId: null, quantity: 10 }, // 180
+        { productId: demo002.id, variantId: null, quantity: 10 }, // 250
+        { productId: demo003.id, variantId: null, quantity: 5 }, // 600 => المجموع 1030
+      ],
+      customer: baseCustomer(),
+      idempotencyKey: randomUUID(),
+    };
+
+    try {
+      const result = await createOrder(input);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      const items = await sql<{ sku_snapshot: string; quantity: number }[]>`
+        select oi.sku_snapshot, oi.quantity
+        from public.order_items oi
+        join public.orders o on o.id = oi.order_id
+        where o.public_reference = ${result.publicReference}
+        order by oi.sku_snapshot
+      `;
+      expect(items).toEqual([
+        { sku_snapshot: "TEST-FIXTURE-001", quantity: 10 },
+        { sku_snapshot: "TEST-FIXTURE-002", quantity: 10 },
+        { sku_snapshot: "TEST-FIXTURE-003", quantity: 5 },
+      ]);
+
+      const movements = await sql<{ product_id: number; quantity_delta: number; reason: string }[]>`
+        select sm.product_id, sm.quantity_delta, sm.reason
+        from public.stock_movements sm
+        join public.orders o on o.id = sm.order_id
+        where o.public_reference = ${result.publicReference}
+        order by sm.product_id
+      `;
+      expect(movements).toEqual([
+        { product_id: demo001.id, quantity_delta: -10, reason: "order_created" },
+        { product_id: demo002.id, quantity_delta: -10, reason: "order_created" },
+        { product_id: demo003.id, quantity_delta: -5, reason: "order_created" },
+      ]);
+    } finally {
+      // منتجات الاختبار مشتركة مع اختبارات أخرى فهذا الملف تعتمد على مخزون
+      // TEST-FIXTURE-003 المحدود (30) بأرقام مضبوطة مسبقاً — نُعيد كل مخزون
+      // استهلكناه هنا لتفادي التأثير على تلك الاختبارات الأخرى.
+      await sql`update public.products set stock_quantity = ${demo001.stock_quantity} where id = ${demo001.id}`;
+      await sql`update public.products set stock_quantity = ${demo002.stock_quantity} where id = ${demo002.id}`;
+      await sql`update public.products set stock_quantity = ${demo003.stock_quantity} where id = ${demo003.id}`;
+    }
+  });
+
+  test("تعارض مخزون على سطر غير أول يُلغي المعاملة كاملة — لا كتابة جزئية ولا نقص مخزون على الأسطر السابقة", async () => {
+    const demo001 = await getRawProduct("TEST-FIXTURE-001"); // مخزون كافٍ
+    const demo002Before = await getRawProduct("TEST-FIXTURE-002");
+    const idempotencyKey = randomUUID();
+
+    try {
+      // نُنقِص مخزون المنتج الثاني عمداً ليصبح أقل من الكمية المطلوبة —
+      // السطر الأول (TEST-FIXTURE-001) يُحجَز بنجاح قبل أن يفشل السطر الثاني.
+      await sql`update public.products set stock_quantity = 3 where id = ${demo002Before.id}`;
+
+      const input: CreateOrderInput = {
+        items: [
+          { productId: demo001.id, variantId: null, quantity: 10 }, // 180، ينجح أولاً
+          { productId: demo002Before.id, variantId: null, quantity: 10 }, // يطلب أكثر من المتوفر (3)
+        ],
+        customer: baseCustomer(),
+        idempotencyKey,
+      };
+
+      const result = await createOrder(input);
+      expect(result.ok).toBe(false);
+
+      const orders = await sql`select id from public.orders where idempotency_key = ${idempotencyKey}`;
+      expect(orders.length).toBe(0);
+
+      const demo001After = await getRawProduct("TEST-FIXTURE-001");
+      expect(demo001After.stock_quantity).toBe(demo001.stock_quantity);
+
+      const demo002After = await getRawProduct("TEST-FIXTURE-002");
+      expect(demo002After.stock_quantity).toBe(3);
+    } finally {
+      await sql`update public.products set stock_quantity = ${demo002Before.stock_quantity} where id = ${demo002Before.id}`;
+    }
+  });
+});
+
 describe("createOrder — حالة غير متوفر للطلب", () => {
   test("يرفض طلب منتج حالته out_of_stock حتى لو كان المخزون أكبر من صفر", async () => {
     const demo001 = await getRawProduct("TEST-FIXTURE-001");

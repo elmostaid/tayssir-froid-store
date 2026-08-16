@@ -150,26 +150,57 @@ async function restockOrderInternal(
         select product_id, variant_id, quantity from public.order_items where order_id = ${orderId}
       `;
 
-      for (const item of items) {
-        if (item.variant_id) {
-          await trx`
-            update public.product_variants set stock_quantity = stock_quantity + ${item.quantity}
-            where id = ${item.variant_id}
-          `;
-        } else if (item.product_id) {
-          await trx`
-            update public.products set stock_quantity = stock_quantity + ${item.quantity}
-            where id = ${item.product_id}
-          `;
-        }
+      // كان كل سطر (item) يُنفَّذ بـUPDATE+INSERT منفصلَين ومُنتظَرين بالتتالي
+      // (for...of معه await) — N سطر = 2×N رحلة ذهاب-إياب متتالية، كل واحدة
+      // تُبقي نفس اتصال sql.begin() الوحيد مشغولاً طوال مدتها. هذا يُطيل مدة
+      // إمساك هذا الاتصال بشكل يتناسب خطياً مع عدد أسطر الطلب، مما يزيد فرصة
+      // نفاد اتصالات الـpooler (Supabase Transaction Pooler) لاستعلامات أخرى
+      // غير مرتبطة أثناء انتظارها دورها. الآن كل تحديثات المخزون تُدفَع دفعة
+      // واحدة (UPDATE واحد لكل نوع + INSERT واحد للجميع)، فمدة إمساك الاتصال
+      // لا تعتمد على عدد الأسطر داخل نفس الطلب.
+      const variantItems = items.filter(
+        (item): item is typeof item & { variant_id: number } => item.variant_id != null
+      );
+      const productItems = items.filter(
+        (item): item is typeof item & { product_id: number } =>
+          item.variant_id == null && item.product_id != null
+      );
 
+      if (variantItems.length > 0) {
         await trx`
-          insert into public.stock_movements (
-            product_id, variant_id, order_id, quantity_delta, reason
-          ) values (
-            ${item.product_id}, ${item.variant_id}, ${orderId}, ${item.quantity},
-            ${RESTOCK_MOVEMENT_REASON[targetStatus]}
-          )
+          update public.product_variants as pv
+          set stock_quantity = pv.stock_quantity + update_data.qty::int
+          from (values ${trx(
+            variantItems.map((item) => [item.variant_id, item.quantity])
+          )}) as update_data(id, qty)
+          where pv.id = update_data.id::bigint
+        `;
+      }
+
+      if (productItems.length > 0) {
+        await trx`
+          update public.products as p
+          set stock_quantity = p.stock_quantity + update_data.qty::int
+          from (values ${trx(
+            productItems.map((item) => [item.product_id, item.quantity])
+          )}) as update_data(id, qty)
+          where p.id = update_data.id::bigint
+        `;
+      }
+
+      if (items.length > 0) {
+        const movementRows = items.map((item) => ({
+          product_id: item.product_id,
+          variant_id: item.variant_id,
+          order_id: orderId,
+          quantity_delta: item.quantity,
+          reason: RESTOCK_MOVEMENT_REASON[targetStatus],
+        }));
+        // ⚠️ لا قائمة أعمدة ولا "values" يدويَين هنا — انظر التعليق المطابق
+        // فـcreateOrder.ts (نفس الخطأ الحقيقي "UNDEFINED_VALUE" ونفس السبب
+        // بالضبط: كتابتهما يدوياً تُفعِّل مُنشئ postgres.js الخاطئ).
+        await trx`
+          insert into public.stock_movements ${trx(movementRows, "product_id", "variant_id", "order_id", "quantity_delta", "reason")}
         `;
       }
 
