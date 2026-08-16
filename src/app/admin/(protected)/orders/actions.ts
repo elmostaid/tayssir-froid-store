@@ -5,6 +5,7 @@ import { sql } from "@/lib/db";
 import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import { ORDER_STATUSES, type OrderStatus } from "@/lib/queries/adminOrders";
 import { RESTOCKING_STATUSES } from "@/lib/orders/orderStatus";
+import { revalidateCatalog } from "@/lib/queries/catalogCache";
 
 export type OrderActionState = { error: string | null };
 
@@ -199,5 +200,9 @@ async function restockOrderInternal(
 
   revalidatePath("/admin/orders");
   revalidatePath(`/admin/orders/${orderId}`);
+  // الإلغاء/الإرجاع يُعيد الكميات إلى المخزون فعلياً، فيتغيّر ما يراه الزبون
+  // (منتج نفد يعود متوفراً). بدون هذا يبقى معروضاً كنافد حتى تنتهي المهلة
+  // الاحتياطية.
+  revalidateCatalog();
   return { error: null };
 }

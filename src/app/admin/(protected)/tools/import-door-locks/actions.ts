@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { sql } from "@/lib/db";
 import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import { DOOR_LOCK_IMPORT_PRODUCTS } from "@/lib/doorLockImportBatch";
+import { revalidateCatalog } from "@/lib/queries/catalogCache";
 
 const OWNER_ONLY_ERROR = "هذا الإجراء مقصور على صاحب الحساب (Admin)." as const;
 
@@ -135,6 +136,7 @@ export async function importDoorLocksBatch(): Promise<DoorLockImportResult> {
 
   revalidatePath("/admin/products");
   revalidatePath("/", "layout");
+  revalidateCatalog();
 
   return { error: null, rows, summary };
 }

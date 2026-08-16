@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { sql } from "@/lib/db";
 import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
+import { revalidateCatalog } from "@/lib/queries/catalogCache";
 
 export type SettingsActionState = { error: string | null; success?: boolean };
 
@@ -75,6 +76,7 @@ export async function updateSettings(
   // (force-dynamic) أصلاً، فلا حاجة لـrevalidatePath لتحديثها — لكن نُنعشها
   // بأي حال حتى لا يبقى أي cache وسيط (مثل fetch cache افتراضي) قديماً.
   revalidatePath("/", "layout");
+  revalidateCatalog();
   revalidatePath("/admin/settings");
 
   return { error: null, success: true };

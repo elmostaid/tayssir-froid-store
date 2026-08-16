@@ -1,5 +1,7 @@
 import { cache } from "react";
+import { unstable_cache } from "next/cache";
 import { sql } from "@/lib/db";
+import { CATALOG_TAG, CATALOG_REVALIDATE_SECONDS } from "@/lib/queries/catalogCache";
 
 export type StoreSettings = {
   minOrderAmountMad: number;
@@ -42,10 +44,21 @@ export const FALLBACK_SETTINGS: StoreSettings = {
 // عدة — يقلّل عدد الاتصالات المتزامنة اللازمة لكل زيارة، وهو أحد أسباب
 // تراكم التأخير عند تدهور قاعدة البيانات (انظر db.ts لشرح statement_timeout،
 // السبب الجذري الأساسي للعطل).
-export const getSettings = cache(async (): Promise<StoreSettings> => {
-  const rows = await sql<{ key: string; value: unknown }[]>`
+// إضافة إلى cache() أعلاه (طلب واحد)، نُخزِّن النتيجة عبر الطلبات كلها:
+// هذا الاستعلام كان الأكثر تكراراً على الإطلاق في القاعدة (4,414 استدعاءً)
+// رغم أن جدول settings سبعة صفوف لا تتغيّر إلا حين يُعدّلها المدير. يشترك
+// في نفس وسم الكتالوج، فإجراء الإعدادات (الذي يستدعي revalidateCatalog)
+// يُظهر أي تعديل فوراً.
+const querySettings = unstable_cache(
+  async () => sql<{ key: string; value: unknown }[]>`
     select key, value from public.settings
-  `;
+  `,
+  ["store-settings"],
+  { tags: [CATALOG_TAG], revalidate: CATALOG_REVALIDATE_SECONDS }
+);
+
+export const getSettings = cache(async (): Promise<StoreSettings> => {
+  const rows = await querySettings();
   const map = new Map(rows.map((row) => [row.key, row.value]));
 
   return {

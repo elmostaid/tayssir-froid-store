@@ -1,6 +1,8 @@
 import { cache } from "react";
+import { unstable_cache } from "next/cache";
 import { sql } from "@/lib/db";
 import { safeQuery } from "@/lib/safeQuery";
+import { CATALOG_TAG, CATALOG_REVALIDATE_SECONDS } from "@/lib/queries/catalogCache";
 import type {
   Category,
   CatalogProduct,
@@ -46,6 +48,33 @@ export type { ProductSort };
 
 const hasDatabase = Boolean(process.env.DATABASE_URL);
 
+// cache() من React يُلغي التكرار داخل **الطلب الواحد** فقط — كل زائر جديد
+// كان يُعيد تنفيذ كل استعلامات الكتالوج من الصفر. مع صفحات force-dynamic
+// (وهي ضرورية هنا لأن صفحات التصنيف والبحث تقرأ searchParams)، هذا يعني أن
+// كل زيارة تفتح رحلة كاملة إلى قاعدة البيانات عبر الشبكة.
+//
+// unstable_cache يُخزِّن النتيجة **عبر الطلبات** وعلى مستوى الخادم كله، مع
+// وسم يُبطله فوراً عند أي تعديل من الإدارة (revalidateCatalog). النتيجة أن
+// موجة زيارات مفاجئة تُخدَّم كلها من الذاكرة باستعلام واحد فعلي بدل استعلام
+// لكل زائر — وهو ما يحمي سقف الاتصالات (60) من الامتلاء أصلاً بدل الاعتماد
+// على الإلغاء في db.ts كخط دفاع أخير.
+//
+// ملاحظة توثيقية: Next.js 16 يوصي بـ`use cache` مع Cache Components بدل
+// unstable_cache. لم نُفعِّل cacheComponents لأنه يُغيِّر نموذج التخزين
+// المؤقّت للتطبيق كله ويحوِّل كل بيانات ديناميكية غير مُخزَّنة إلى أخطاء —
+// هجرة تخصّها دورة عمل واختبار مستقلة. توثيق Next.js نفسه ينصّ على أن
+// unstable_cache يبقى يعمل كطبقة مستقلة، وهو المسار الموثَّق رسمياً
+// للمشاريع التي لم تُفعِّل Cache Components بعد.
+function cachedCatalogQuery<Args extends unknown[], Result>(
+  keyParts: string[],
+  run: (...args: Args) => Promise<Result>
+): (...args: Args) => Promise<Result> {
+  return unstable_cache(run, keyParts, {
+    tags: [CATALOG_TAG],
+    revalidate: CATALOG_REVALIDATE_SECONDS,
+  });
+}
+
 function logDbFallback(context: string, error: unknown) {
   console.error(
     `catalog.ts (${context}): فشل الاستعلام على قاعدة البيانات الحقيقية، استعمال البيانات المحلية الاحتياطية`,
@@ -67,6 +96,17 @@ function logEmptyFallback(context: string) {
 // — هذا أحد أسباب تراكم التأخير عند تدهور قاعدة البيانات (انظر التعليق
 // الكامل فـdb.ts عن statement_timeout للسبب الجذري الأساسي). لا تأثير على
 // دقة البيانات: نفس النتيجة بالضبط، فقط استعلام واحد فعلي بدل عدة.
+const queryCategories = cachedCatalogQuery(["catalog-categories"], async () => {
+  return sql<Category[]>`
+    select c.id, c.slug, c.name_ar, c.name_fr, c.description_ar, c.parent_id, c.sort_order
+    from public.catalog_categories c
+    where exists (
+      select 1 from public.catalog_products p where p.category_id = c.id
+    )
+    order by c.sort_order asc, c.name_ar asc
+  `;
+});
+
 export const getCategories = cache(async (): Promise<Category[]> => {
   if (!hasDatabase) return getPreviewCategories();
 
@@ -75,14 +115,7 @@ export const getCategories = cache(async (): Promise<Category[]> => {
     // غير المنشورة أصلاً لا تصل حتى إلى catalog_products)، بدون حذف التصنيف
     // نفسه من قاعدة البيانات — يبقى التصنيف موجوداً في لوحة الإدارة ويظهر
     // للزبون تلقائياً بمجرد نشر أول منتج فيه.
-    const rows = await sql<Category[]>`
-      select c.id, c.slug, c.name_ar, c.name_fr, c.description_ar, c.parent_id, c.sort_order
-      from public.catalog_categories c
-      where exists (
-        select 1 from public.catalog_products p where p.category_id = c.id
-      )
-      order by c.sort_order asc, c.name_ar asc
-    `;
+    const rows = await queryCategories();
     if (rows.length === 0) {
       logEmptyFallback("getCategories");
       return getPreviewCategories();
@@ -111,16 +144,23 @@ export async function getFilteredCategories(context: string): Promise<Category[]
 // App Router: لا تجميع تلقائي بين الاثنين لاستدعاءات SQL مباشرة كما يحدث
 // مع fetch()) — بدون هذا كانت كل زيارة لصفحة تصنيف تُنفِّذ نفس الاستعلام
 // مرتين. نفس النتيجة بالضبط، فقط استعلام واحد فعلي بدل اثنين.
-export const getCategoryBySlug = cache(async (slug: string): Promise<Category | null> => {
-  if (!hasDatabase) return getPreviewCategoryBySlug(slug);
-
-  try {
-    const rows = await sql<Category[]>`
+const queryCategoryBySlug = cachedCatalogQuery(
+  ["catalog-category-by-slug"],
+  async (slug: string) => {
+    return sql<Category[]>`
       select id, slug, name_ar, name_fr, description_ar, parent_id, sort_order
       from public.catalog_categories
       where slug = ${slug}
       limit 1
     `;
+  }
+);
+
+export const getCategoryBySlug = cache(async (slug: string): Promise<Category | null> => {
+  if (!hasDatabase) return getPreviewCategoryBySlug(slug);
+
+  try {
+    const rows = await queryCategoryBySlug(slug);
     if (rows.length === 0) {
       logEmptyFallback(`getCategoryBySlug(${slug})`);
       return getPreviewCategoryBySlug(slug);
@@ -131,6 +171,47 @@ export const getCategoryBySlug = cache(async (slug: string): Promise<Category | 
     return getPreviewCategoryBySlug(slug);
   }
 });
+
+async function runProductsQuery(
+  categorySlug: string | null,
+  limit: number,
+  sort: ProductSort,
+  pattern: string | null
+): Promise<CatalogProduct[]> {
+  // الترتيب الافتراضي ("الأحدث"): ترتيب المدير اليدوي داخل التصنيف
+  // (sort_order تصاعدياً) أولاً — أزرار "↑ طلّع"/"↓ هبّط" فـ/admin/products
+  // تُحدِّثه مباشرة — ثم created_at تنازلياً كـfallback ثابت عند تساوي
+  // sort_order (كل المنتجات القديمة تبدأ بقيم sort_order مختلفة أصلاً؛
+  // التساوي يحدث فقط لمنتجات جديدة لم تُرتَّب يدوياً بعد).
+  const orderBy =
+    sort === "price_asc"
+      ? sql`order by sale_price asc`
+      : sort === "price_desc"
+        ? sql`order by sale_price desc`
+        : sort === "name"
+          ? sql`order by name_ar asc`
+          : sql`order by sort_order asc, created_at desc`;
+
+  return sql<CatalogProduct[]>`
+    select * from public.catalog_products
+    where (${categorySlug}::text is null or category_slug = ${categorySlug})
+      and (
+        ${pattern}::text is null
+        or name_ar ilike ${pattern}
+        or name_fr ilike ${pattern}
+        or sku ilike ${pattern}
+        or description_ar ilike ${pattern}
+      )
+    ${orderBy}
+    limit ${limit}
+  `;
+}
+
+const queryProductsCached = cachedCatalogQuery(
+  ["catalog-products"],
+  async (categorySlug: string | null, limit: number, sort: ProductSort) =>
+    runProductsQuery(categorySlug, limit, sort, null)
+);
 
 export async function getProducts(
   options: {
@@ -146,33 +227,14 @@ export async function getProducts(
 
   try {
     const pattern = query?.trim() ? `%${query.trim()}%` : null;
-    // الترتيب الافتراضي ("الأحدث"): ترتيب المدير اليدوي داخل التصنيف
-    // (sort_order تصاعدياً) أولاً — أزرار "↑ طلّع"/"↓ هبّط" فـ/admin/products
-    // تُحدِّثه مباشرة — ثم created_at تنازلياً كـfallback ثابت عند تساوي
-    // sort_order (كل المنتجات القديمة تبدأ بقيم sort_order مختلفة أصلاً؛
-    // التساوي يحدث فقط لمنتجات جديدة لم تُرتَّب يدوياً بعد).
-    const orderBy =
-      sort === "price_asc"
-        ? sql`order by sale_price asc`
-        : sort === "price_desc"
-          ? sql`order by sale_price desc`
-          : sort === "name"
-            ? sql`order by name_ar asc`
-            : sql`order by sort_order asc, created_at desc`;
-
-    const rows = await sql<CatalogProduct[]>`
-      select * from public.catalog_products
-      where (${categorySlug ?? null}::text is null or category_slug = ${categorySlug ?? null})
-        and (
-          ${pattern}::text is null
-          or name_ar ilike ${pattern}
-          or name_fr ilike ${pattern}
-          or sku ilike ${pattern}
-          or description_ar ilike ${pattern}
-        )
-      ${orderBy}
-      limit ${limit}
-    `;
+    // نُخزِّن مؤقتاً فقط التصفّح العادي (تصنيف + ترتيب + حد) — وهو ما تراه
+    // الغالبية الساحقة من الزيارات ومفاتيحه محدودة العدد (13 تصنيفاً × 4
+    // ترتيبات). البحث بنص حر لا يُخزَّن إطلاقاً: مفاتيحه غير محدودة أصلاً
+    // (كل عبارة بحث مفتاح جديد)، فتخزينه يملأ الذاكرة ببيانات لن تُقرأ
+    // ثانيةً بدل أن يوفّر أي استعلام حقيقي.
+    const rows = pattern
+      ? await runProductsQuery(categorySlug ?? null, limit, sort, pattern)
+      : await queryProductsCached(categorySlug ?? null, limit, sort);
     if (rows.length === 0) {
       logEmptyFallback(`getProducts(category=${categorySlug ?? "-"}, query=${query ?? "-"})`);
       return getPreviewProducts({ categorySlug, limit, query, sort });
@@ -184,15 +246,20 @@ export async function getProducts(
   }
 }
 
+const queryProductBySlug = cachedCatalogQuery(
+  ["catalog-product-by-slug"],
+  async (slug: string) => sql<CatalogProduct[]>`
+    select * from public.catalog_products where slug = ${slug} limit 1
+  `
+);
+
 // مُغلَّفة بـcache() لنفس سبب getCategoryBySlug أعلاه بالضبط: صفحة المنتج
 // تستدعيها مرتين فعلياً (generateMetadata + مكوّن الصفحة).
 export const getProductBySlug = cache(async (slug: string): Promise<CatalogProduct | null> => {
   if (!hasDatabase) return getPreviewProductBySlug(slug);
 
   try {
-    const rows = await sql<CatalogProduct[]>`
-      select * from public.catalog_products where slug = ${slug} limit 1
-    `;
+    const rows = await queryProductBySlug(slug);
     if (rows.length === 0) {
       logEmptyFallback(`getProductBySlug(${slug})`);
       return getPreviewProductBySlug(slug);
@@ -204,15 +271,20 @@ export const getProductBySlug = cache(async (slug: string): Promise<CatalogProdu
   }
 });
 
+const queryProductCountsByCategory = cachedCatalogQuery(
+  ["catalog-product-counts"],
+  async () => sql<{ category_id: number; count: number }[]>`
+    select category_id, count(*)::int as count
+    from public.catalog_products
+    group by category_id
+  `
+);
+
 export async function getProductCountsByCategory(): Promise<Record<number, number>> {
   if (!hasDatabase) return getPreviewProductCountsByCategory();
 
   try {
-    const rows = await sql<{ category_id: number; count: number }[]>`
-      select category_id, count(*)::int as count
-      from public.catalog_products
-      group by category_id
-    `;
+    const rows = await queryProductCountsByCategory();
     if (rows.length === 0) {
       logEmptyFallback("getProductCountsByCategory");
       return getPreviewProductCountsByCategory();
@@ -256,13 +328,18 @@ export async function searchProducts(
   }
 }
 
+const queryProductIdsWithVariants = cachedCatalogQuery(
+  ["catalog-product-ids-with-variants"],
+  async () => sql<{ product_id: number }[]>`
+    select distinct product_id from public.catalog_product_variants
+  `
+);
+
 export async function getProductIdsWithVariants(): Promise<Set<number>> {
   if (!hasDatabase) return getPreviewProductIdsWithVariants();
 
   try {
-    const rows = await sql<{ product_id: number }[]>`
-      select distinct product_id from public.catalog_product_variants
-    `;
+    const rows = await queryProductIdsWithVariants();
     if (rows.length === 0) {
       logEmptyFallback("getProductIdsWithVariants");
       return getPreviewProductIdsWithVariants();
@@ -274,17 +351,22 @@ export async function getProductIdsWithVariants(): Promise<Set<number>> {
   }
 }
 
+const queryProductVariants = cachedCatalogQuery(
+  ["catalog-product-variants"],
+  async (productId: number) => sql<CatalogProductVariant[]>`
+    select * from public.catalog_product_variants
+    where product_id = ${productId}
+    order by sort_order asc
+  `
+);
+
 export async function getProductVariants(
   productId: number
 ): Promise<CatalogProductVariant[]> {
   if (!hasDatabase) return getPreviewProductVariants(productId);
 
   try {
-    const rows = await sql<CatalogProductVariant[]>`
-      select * from public.catalog_product_variants
-      where product_id = ${productId}
-      order by sort_order asc
-    `;
+    const rows = await queryProductVariants(productId);
     if (rows.length === 0) {
       const previewFallback = getPreviewProductVariants(productId);
       if (previewFallback.length > 0) {
@@ -301,17 +383,22 @@ export async function getProductVariants(
   }
 }
 
+const queryProductImages = cachedCatalogQuery(
+  ["catalog-product-images"],
+  async (productId: number) => sql<CatalogProductImage[]>`
+    select * from public.catalog_product_images
+    where product_id = ${productId}
+    order by is_primary desc, sort_order asc
+  `
+);
+
 export async function getProductImages(
   productId: number
 ): Promise<CatalogProductImage[]> {
   if (!hasDatabase) return getPreviewProductImages(productId);
 
   try {
-    const rows = await sql<CatalogProductImage[]>`
-      select * from public.catalog_product_images
-      where product_id = ${productId}
-      order by is_primary desc, sort_order asc
-    `;
+    const rows = await queryProductImages(productId);
     if (rows.length === 0) {
       const previewFallback = getPreviewProductImages(productId);
       if (previewFallback.length > 0) {
