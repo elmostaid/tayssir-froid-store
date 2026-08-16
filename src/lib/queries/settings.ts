@@ -1,7 +1,11 @@
 import { cache } from "react";
 import { unstable_cache } from "next/cache";
 import { sql } from "@/lib/db";
-import { CATALOG_TAG, CATALOG_REVALIDATE_SECONDS } from "@/lib/queries/catalogCache";
+import {
+  CATALOG_TAG,
+  CATALOG_REVALIDATE_SECONDS,
+  isMissingCacheContext,
+} from "@/lib/queries/catalogCache";
 
 export type StoreSettings = {
   minOrderAmountMad: number;
@@ -49,13 +53,27 @@ export const FALLBACK_SETTINGS: StoreSettings = {
 // رغم أن جدول settings سبعة صفوف لا تتغيّر إلا حين يُعدّلها المدير. يشترك
 // في نفس وسم الكتالوج، فإجراء الإعدادات (الذي يستدعي revalidateCatalog)
 // يُظهر أي تعديل فوراً.
-const querySettings = unstable_cache(
-  async () => sql<{ key: string; value: unknown }[]>`
-    select key, value from public.settings
-  `,
-  ["store-settings"],
-  { tags: [CATALOG_TAG], revalidate: CATALOG_REVALIDATE_SECONDS }
-);
+const runSettingsQuery = async () => sql<{ key: string; value: unknown }[]>`
+  select key, value from public.settings
+`;
+
+const cachedSettings = unstable_cache(runSettingsQuery, ["store-settings"], {
+  tags: [CATALOG_TAG],
+  revalidate: CATALOG_REVALIDATE_SECONDS,
+});
+
+// نفس المعالجة المشروحة في catalog.ts: خارج سياق Next.js (اختبارات التكامل،
+// سكريبتات tsx) لا يوجد مخزن مؤقّت، فننفّذ الاستعلام مباشرة بدل أن تسقط
+// العملية. createOrder يقرأ الإعدادات (cod_enabled، الحد الأدنى) فهذا المسار
+// يمرّ فعلياً في اختبارات الطلبات.
+async function querySettings() {
+  try {
+    return await cachedSettings();
+  } catch (error) {
+    if (isMissingCacheContext(error)) return runSettingsQuery();
+    throw error;
+  }
+}
 
 export const getSettings = cache(async (): Promise<StoreSettings> => {
   const rows = await querySettings();

@@ -9,7 +9,11 @@ vi.mock("@/lib/auth/requireAdmin", async () => {
   return { ...actual, getAdminUser: getAdminUserMock };
 });
 const revalidatePathMock = vi.fn();
-vi.mock("next/cache", () => ({ revalidatePath: revalidatePathMock }));
+vi.mock("next/cache", () => ({
+  revalidatePath: revalidatePathMock,
+  updateTag: vi.fn(),
+  unstable_cache: (fn: unknown) => fn,
+}));
 
 const { toggleCategoryVisibility } = await import(
   "@/app/admin/(protected)/categories/actions"

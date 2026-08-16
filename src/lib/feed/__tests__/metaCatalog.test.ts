@@ -31,12 +31,23 @@ describe("buildCatalogExport (Meta Commerce Catalog)", () => {
     }
   });
 
+  // كان هذا الاختبار يُثبِّت SKU بعينه ("TF-RF-083") وعدد Variants محفوظاً (3)
+  // من لقطة بيانات الإنتاج — فيفشل على أي قاعدة اختبار، وأيضاً لو حذف المدير
+  // Variant واحداً من ذلك المنتج بالذات. الثابتة الحقيقية التي يصفها العنوان
+  // لا علاقة لها بذلك المنتج: أي منتج له Variants يجب أن تكون كل أسطره
+  // مسبوقة بـSKU الأب. نتحقّق منها الآن على كل مجموعات الخلاصة.
   test("منتج فيه Variants يظهر بسطر مستقل لكل Variant مع item_group_id يساوي SKU المنتج", async () => {
     const result = await buildCatalogExport();
-    const capillaryRows = result.rows.filter((r) => r.item_group_id === "TF-RF-083");
-    expect(capillaryRows.length).toBe(3);
-    for (const row of capillaryRows) {
-      expect(row.id.startsWith("TF-RF-083-")).toBe(true);
+    const variantRows = result.rows.filter((r) => r.item_group_id);
+    const groups = new Set(variantRows.map((r) => r.item_group_id));
+
+    expect(groups.size).toBeGreaterThan(0);
+    for (const row of variantRows) {
+      expect(row.id.startsWith(`${row.item_group_id}-`)).toBe(true);
+    }
+    // كل مجموعة لها سطر واحد على الأقل (لا مجموعة فارغة).
+    for (const groupId of groups) {
+      expect(variantRows.some((r) => r.item_group_id === groupId)).toBe(true);
     }
   });
 

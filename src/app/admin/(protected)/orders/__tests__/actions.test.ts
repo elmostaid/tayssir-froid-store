@@ -12,7 +12,12 @@ vi.mock("@/lib/auth/requireAdmin", () => ({
   getAdminUser: vi.fn().mockResolvedValue({ id: "test-admin", email: "test-admin@local" }),
 }));
 
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("next/cache", () => ({
+  revalidatePath: vi.fn(),
+  updateTag: vi.fn(),
+  // تمرير مباشر: لا تخزين مؤقّت في الاختبارات، فينفَّذ الاستعلام الحقيقي.
+  unstable_cache: (fn: unknown) => fn,
+}));
 
 const { updateOrderStatus, cancelOrderAction } = await import("@/app/admin/(protected)/orders/actions");
 

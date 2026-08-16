@@ -9,7 +9,7 @@ import { formatMad } from "@/lib/format";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
 import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 import { safeQuery } from "@/lib/safeQuery";
-import { ServiceUnavailable } from "@/components/ServiceUnavailable";
+import { ServiceUnavailableError } from "@/lib/serviceUnavailable";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +29,10 @@ export default async function OrderSuccessPage({ params }: Props) {
     order = await getOrderByPublicReference(reference);
   } catch (error) {
     console.error("OrderSuccessPage: تعذّر الاتصال بقاعدة البيانات", error);
-    return <ServiceUnavailable />;
+    // نرمي بدل العرض المباشر: العرض كان يُرسل HTTP 200 مع صفحة عطل،
+    // فيبدو العطل نجاحاً لأي مراقبة ولمحركات البحث. الرمي يُنتج 5xx
+    // حقيقياً ويعرض error.tsx بنفس النص المعروض للزبون.
+    throw new ServiceUnavailableError("order");
   }
 
   if (!order) {

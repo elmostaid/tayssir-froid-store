@@ -10,7 +10,12 @@ vi.mock("@/lib/auth/requireAdmin", async () => {
   );
   return { ...actual, getAdminUser: getAdminUserMock };
 });
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("next/cache", () => ({
+  revalidatePath: vi.fn(),
+  updateTag: vi.fn(),
+  // تمرير مباشر: لا تخزين مؤقّت في الاختبارات، فينفَّذ الاستعلام الحقيقي.
+  unstable_cache: (fn: unknown) => fn,
+}));
 
 const getSupabaseServiceRoleClientMock = vi.fn();
 vi.mock("@/lib/supabase/serviceRole", () => ({

@@ -2,7 +2,12 @@ import { cache } from "react";
 import { unstable_cache } from "next/cache";
 import { sql } from "@/lib/db";
 import { safeQuery } from "@/lib/safeQuery";
-import { CATALOG_TAG, CATALOG_REVALIDATE_SECONDS } from "@/lib/queries/catalogCache";
+import { ServiceUnavailableError } from "@/lib/serviceUnavailable";
+import {
+  CATALOG_TAG,
+  CATALOG_REVALIDATE_SECONDS,
+  isMissingCacheContext,
+} from "@/lib/queries/catalogCache";
 import type {
   Category,
   CatalogProduct,
@@ -69,22 +74,51 @@ function cachedCatalogQuery<Args extends unknown[], Result>(
   keyParts: string[],
   run: (...args: Args) => Promise<Result>
 ): (...args: Args) => Promise<Result> {
-  return unstable_cache(run, keyParts, {
+  const cached = unstable_cache(run, keyParts, {
     tags: [CATALOG_TAG],
     revalidate: CATALOG_REVALIDATE_SECONDS,
   });
+
+  return async (...args: Args): Promise<Result> => {
+    try {
+      return await cached(...args);
+    } catch (error) {
+      // خارج سياق Next.js (اختبارات، سكريبتات tsx) لا يوجد مخزن مؤقّت أصلاً —
+      // ننفّذ الاستعلام مباشرة. أي خطأ آخر (فشل قاعدة بيانات حقيقي) يُعاد
+      // رميه ليلتقطه catch الموجود في الدالة المُستدعِية فتتراجع للبيانات
+      // الاحتياطية كما كان مصمَّماً.
+      if (isMissingCacheContext(error)) return run(...args);
+      throw error;
+    }
+  };
 }
 
-function logDbFallback(context: string, error: unknown) {
+// ⚠️ تغيير مقصود بعد عطل 16 غشت: كان أي فشل استعلام هنا يُرجع بيانات
+// /preview التجريبية بصمت وبرمز HTTP 200. تحقّقنا من الأثر عملياً بقاعدة
+// بيانات ميتة تماماً: الصفحة ردّت 200 بـ421 كيلوبايت و71 منتجاً، **كلها**
+// من src/lib/data/preview/products.json — أي أن الزبون كان يتصفّح منتجات
+// وأثماناً تجريبية ويمكنه أن يطلب عليها، بينما كل فحص توفّر يرى الموقع
+// سليماً. تعليق هذا الملف نفسه كان ينصّ على أن التراجع إجراء **مؤقّت** يجب
+// تضييقه قبل أي استعمال إنتاجي حقيقي — وهذا هو التضييق.
+//
+// الآن: مع DATABASE_URL مضبوط، فشل الاستعلام فشلٌ حقيقي يُرمى فتُرجع الصفحة
+// 5xx وتعرض error.tsx. التراجع لبيانات /preview يبقى فقط حين لا يوجد
+// DATABASE_URL إطلاقاً (نشر تجريبي/عرض بلا قاعدة) — وهو الفحص المُبكِّر في
+// أول كل دالة أدناه، فلا يصل التنفيذ إلى هنا أصلاً في تلك الحالة.
+function failQuery(context: string, error: unknown): never {
   console.error(
-    `catalog.ts (${context}): فشل الاستعلام على قاعدة البيانات الحقيقية، استعمال البيانات المحلية الاحتياطية`,
+    `catalog.ts (${context}): فشل الاستعلام على قاعدة البيانات الحقيقية`,
     error
   );
+  throw new ServiceUnavailableError(context);
 }
 
-function logEmptyFallback(context: string) {
-  console.error(
-    `catalog.ts (${context}): الاستعلام على قاعدة البيانات الحقيقية نجح لكنه أعاد صفر نتائج (على الأرجح migrations لم تُطبَّق بعد أو القاعدة لا تحتوي منتجات منشورة) — استعمال البيانات المحلية الاحتياطية مؤقتاً`
+// نتيجة فارغة ليست فشلاً: تصنيف بلا منتجات، أو بحث بلا نتائج، حالات صحيحة
+// وشائعة. كانت تُستبدَل ببيانات تجريبية، فيرى الزبون منتجات غير موجودة
+// فعلاً. الآن تُسجَّل فقط وتُعاد النتيجة الفارغة كما هي.
+function logEmptyResult(context: string) {
+  console.warn(
+    `catalog.ts (${context}): الاستعلام نجح وأعاد صفر نتائج`
   );
 }
 
@@ -117,13 +151,11 @@ export const getCategories = cache(async (): Promise<Category[]> => {
     // للزبون تلقائياً بمجرد نشر أول منتج فيه.
     const rows = await queryCategories();
     if (rows.length === 0) {
-      logEmptyFallback("getCategories");
-      return getPreviewCategories();
+      logEmptyResult("getCategories");
     }
     return rows;
   } catch (error) {
-    logDbFallback("getCategories", error);
-    return getPreviewCategories();
+    failQuery("getCategories", error);
   }
 });
 
@@ -162,13 +194,11 @@ export const getCategoryBySlug = cache(async (slug: string): Promise<Category | 
   try {
     const rows = await queryCategoryBySlug(slug);
     if (rows.length === 0) {
-      logEmptyFallback(`getCategoryBySlug(${slug})`);
-      return getPreviewCategoryBySlug(slug);
+      logEmptyResult(`getCategoryBySlug(${slug})`);
     }
     return rows[0];
   } catch (error) {
-    logDbFallback("getCategoryBySlug", error);
-    return getPreviewCategoryBySlug(slug);
+    failQuery("getCategoryBySlug", error);
   }
 });
 
@@ -236,13 +266,11 @@ export async function getProducts(
       ? await runProductsQuery(categorySlug ?? null, limit, sort, pattern)
       : await queryProductsCached(categorySlug ?? null, limit, sort);
     if (rows.length === 0) {
-      logEmptyFallback(`getProducts(category=${categorySlug ?? "-"}, query=${query ?? "-"})`);
-      return getPreviewProducts({ categorySlug, limit, query, sort });
+      logEmptyResult(`getProducts(category=${categorySlug ?? "-"}, query=${query ?? "-"})`);
     }
     return rows;
   } catch (error) {
-    logDbFallback("getProducts", error);
-    return getPreviewProducts({ categorySlug, limit, query, sort });
+    failQuery("getProducts", error);
   }
 }
 
@@ -261,13 +289,11 @@ export const getProductBySlug = cache(async (slug: string): Promise<CatalogProdu
   try {
     const rows = await queryProductBySlug(slug);
     if (rows.length === 0) {
-      logEmptyFallback(`getProductBySlug(${slug})`);
-      return getPreviewProductBySlug(slug);
+      logEmptyResult(`getProductBySlug(${slug})`);
     }
     return rows[0];
   } catch (error) {
-    logDbFallback("getProductBySlug", error);
-    return getPreviewProductBySlug(slug);
+    failQuery("getProductBySlug", error);
   }
 });
 
@@ -285,14 +311,10 @@ export async function getProductCountsByCategory(): Promise<Record<number, numbe
 
   try {
     const rows = await queryProductCountsByCategory();
-    if (rows.length === 0) {
-      logEmptyFallback("getProductCountsByCategory");
-      return getPreviewProductCountsByCategory();
-    }
+    if (rows.length === 0) logEmptyResult("getProductCountsByCategory");
     return Object.fromEntries(rows.map((r) => [r.category_id, r.count]));
   } catch (error) {
-    logDbFallback("getProductCountsByCategory", error);
-    return getPreviewProductCountsByCategory();
+    failQuery("getProductCountsByCategory", error);
   }
 }
 
@@ -318,13 +340,11 @@ export async function searchProducts(
       limit ${limit}
     `;
     if (rows.length === 0) {
-      logEmptyFallback(`searchProducts(${needle})`);
-      return searchPreviewProducts(needle, limit);
+      logEmptyResult(`searchProducts(${needle})`);
     }
     return rows;
   } catch (error) {
-    logDbFallback("searchProducts", error);
-    return searchPreviewProducts(needle, limit);
+    failQuery("searchProducts", error);
   }
 }
 
@@ -341,13 +361,11 @@ export async function getProductIdsWithVariants(): Promise<Set<number>> {
   try {
     const rows = await queryProductIdsWithVariants();
     if (rows.length === 0) {
-      logEmptyFallback("getProductIdsWithVariants");
-      return getPreviewProductIdsWithVariants();
+      logEmptyResult("getProductIdsWithVariants");
     }
     return new Set(rows.map((r) => r.product_id));
   } catch (error) {
-    logDbFallback("getProductIdsWithVariants", error);
-    return getPreviewProductIdsWithVariants();
+    failQuery("getProductIdsWithVariants", error);
   }
 }
 
@@ -368,18 +386,11 @@ export async function getProductVariants(
   try {
     const rows = await queryProductVariants(productId);
     if (rows.length === 0) {
-      const previewFallback = getPreviewProductVariants(productId);
-      if (previewFallback.length > 0) {
-        logEmptyFallback(`getProductVariants(${productId})`);
-        return previewFallback;
-      }
-      // منتج حقيقي بلا أي variant فعلاً (حالة صحيحة وشائعة) — لا داعي للتراجع.
-      return rows;
+      logEmptyResult(`getProductVariants(${productId})`);
     }
     return rows;
   } catch (error) {
-    logDbFallback("getProductVariants", error);
-    return getPreviewProductVariants(productId);
+    failQuery("getProductVariants", error);
   }
 }
 
@@ -400,17 +411,10 @@ export async function getProductImages(
   try {
     const rows = await queryProductImages(productId);
     if (rows.length === 0) {
-      const previewFallback = getPreviewProductImages(productId);
-      if (previewFallback.length > 0) {
-        logEmptyFallback(`getProductImages(${productId})`);
-        return previewFallback;
-      }
-      // منتج حقيقي بلا صور فعلاً — لا داعي للتراجع.
-      return rows;
+      logEmptyResult(`getProductImages(${productId})`);
     }
     return rows;
   } catch (error) {
-    logDbFallback("getProductImages", error);
-    return getPreviewProductImages(productId);
+    failQuery("getProductImages", error);
   }
 }

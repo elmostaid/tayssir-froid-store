@@ -37,3 +37,25 @@ export const CATALOG_REVALIDATE_SECONDS = 60;
 export function revalidateCatalog(): void {
   updateTag(CATALOG_TAG);
 }
+
+/**
+ * unstable_cache يتطلّب سياق تشغيل Next.js (incrementalCache) ويرمي
+ * "Invariant: incrementalCache missing in unstable_cache" خارجه. هذا يقع في
+ * سياقين حقيقيين في هذا المشروع:
+ *   - اختبارات Vitest (تستورد الاستعلامات مباشرة بلا خادم Next.js).
+ *   - سكريبتات tsx في scripts/ (gen-audit-report، validate-meta-feed).
+ * في الحالتين لا يوجد ما يُخزَّن أصلاً (عملية قصيرة العمر)، والتخزين المؤقّت
+ * تحسين أداء لا شرط صحّة — فالسلوك الصحيح هو تنفيذ الاستعلام مباشرة، لا
+ * إسقاط العملية بخطأ.
+ *
+ * نطابق على نصّ الثابتة (invariant) لأنّ Next.js لا يوفّر أي واجهة عامة
+ * للسؤال "هل نحن داخل سياق طلب؟". النطاق ضيّق عمداً: أي خطأ آخر يُعاد رميه
+ * كما هو، فلا نُخفي أخطاء قاعدة بيانات حقيقية خلف هذا المسار.
+ */
+export function isMissingCacheContext(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.message.includes("incrementalCache") &&
+    error.message.includes("unstable_cache")
+  );
+}

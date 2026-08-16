@@ -9,7 +9,7 @@ import {
 import type { Category } from "@/lib/types";
 import { ProductCard } from "@/components/ProductCard";
 import { safeQuery } from "@/lib/safeQuery";
-import { ServiceUnavailable } from "@/components/ServiceUnavailable";
+import { ServiceUnavailableError } from "@/lib/serviceUnavailable";
 import { getSiteUrl } from "@/lib/siteUrl";
 import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 
@@ -85,7 +85,10 @@ export default async function CategoryPage({ params, searchParams }: Props) {
   ]);
 
   if (categoryResult === "SERVICE_UNAVAILABLE") {
-    return <ServiceUnavailable />;
+    // نرمي بدل العرض المباشر: العرض كان يُرسل HTTP 200 مع صفحة عطل،
+    // فيبدو العطل نجاحاً لأي مراقبة ولمحركات البحث. الرمي يُنتج 5xx
+    // حقيقياً ويعرض error.tsx بنفس النص المعروض للزبون.
+    throw new ServiceUnavailableError("category");
   }
   const category = categoryResult;
   if (!category) {
