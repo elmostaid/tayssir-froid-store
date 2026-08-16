@@ -243,6 +243,37 @@ const queryProductsCached = cachedCatalogQuery(
     runProductsQuery(categorySlug, limit, sort, null)
 );
 
+// البحث بنص حرّ: مفاتيحه غير محدودة نظرياً، لذلك تُرك بلا تخزين مؤقّت أول
+// مرة. اختبار الضغط أظهر أن هذا هو **المسار الوحيد** الذي يسقط: عند 100
+// طلب متزامن، كل الصفحات المُخزَّنة (الرئيسية والتصنيفات الثلاثة) ردّت 200
+// في 1.0–1.9 ثانية، بينما 12 من 20 طلب بحث فشلت عند ~11 ثانية — أي أن
+// عشرين استعلام بحث متزامن غير مُخزَّن وحدها تكفي لإشباع نسخة Micro.
+//
+// الحل ليس إلغاء التخزين ولا قبوله بلا حدود، بل **تحديد المفاتيح**: نُطبِّع
+// عبارة البحث (قصّ، حروف صغيرة، توحيد المسافات) فتتقاسم الصياغات المختلفة
+// لنفس البحث مفتاحاً واحداً، ونرفض تخزين العبارات الطويلة جداً (نادرة
+// وغالباً آلية) فلا تتضخّم الذاكرة بمفاتيح تُقرأ مرة واحدة. مع مهلة 60
+// ثانية، أي عبارة شائعة تُخدَّم من الذاكرة وأي عبارة نادرة تنتهي بسرعة.
+const MAX_CACHEABLE_QUERY_LENGTH = 60;
+
+export function normalizeSearchQuery(raw: string): string {
+  return raw.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function isCacheableQuery(normalized: string): boolean {
+  return normalized.length > 0 && normalized.length <= MAX_CACHEABLE_QUERY_LENGTH;
+}
+
+const queryProductsSearchCached = cachedCatalogQuery(
+  ["catalog-products-search"],
+  async (
+    categorySlug: string | null,
+    limit: number,
+    sort: ProductSort,
+    normalizedQuery: string
+  ) => runProductsQuery(categorySlug, limit, sort, `%${normalizedQuery}%`)
+);
+
 export async function getProducts(
   options: {
     categorySlug?: string;
@@ -262,9 +293,12 @@ export async function getProducts(
     // ترتيبات). البحث بنص حر لا يُخزَّن إطلاقاً: مفاتيحه غير محدودة أصلاً
     // (كل عبارة بحث مفتاح جديد)، فتخزينه يملأ الذاكرة ببيانات لن تُقرأ
     // ثانيةً بدل أن يوفّر أي استعلام حقيقي.
-    const rows = pattern
-      ? await runProductsQuery(categorySlug ?? null, limit, sort, pattern)
-      : await queryProductsCached(categorySlug ?? null, limit, sort);
+    const normalized = normalizeSearchQuery(query ?? "");
+    const rows = !pattern
+      ? await queryProductsCached(categorySlug ?? null, limit, sort)
+      : isCacheableQuery(normalized)
+        ? await queryProductsSearchCached(categorySlug ?? null, limit, sort, normalized)
+        : await runProductsQuery(categorySlug ?? null, limit, sort, pattern);
     if (rows.length === 0) {
       logEmptyResult(`getProducts(category=${categorySlug ?? "-"}, query=${query ?? "-"})`);
     }
@@ -318,6 +352,29 @@ export async function getProductCountsByCategory(): Promise<Record<number, numbe
   }
 }
 
+async function runSearchQuery(
+  normalizedQuery: string,
+  limit: number
+): Promise<CatalogProduct[]> {
+  const pattern = `%${normalizedQuery}%`;
+  return sql<CatalogProduct[]>`
+    select * from public.catalog_products
+    where name_ar ilike ${pattern}
+      or name_fr ilike ${pattern}
+      or sku ilike ${pattern}
+      or description_ar ilike ${pattern}
+      or technical_specs ilike ${pattern}
+    order by created_at desc
+    limit ${limit}
+  `;
+}
+
+const querySearchCached = cachedCatalogQuery(
+  ["catalog-search"],
+  async (normalizedQuery: string, limit: number) =>
+    runSearchQuery(normalizedQuery, limit)
+);
+
 export async function searchProducts(
   query: string,
   limit = 60
@@ -328,17 +385,10 @@ export async function searchProducts(
   if (!hasDatabase) return searchPreviewProducts(needle, limit);
 
   try {
-    const pattern = `%${needle}%`;
-    const rows = await sql<CatalogProduct[]>`
-      select * from public.catalog_products
-      where name_ar ilike ${pattern}
-        or name_fr ilike ${pattern}
-        or sku ilike ${pattern}
-        or description_ar ilike ${pattern}
-        or technical_specs ilike ${pattern}
-      order by created_at desc
-      limit ${limit}
-    `;
+    const normalized = normalizeSearchQuery(needle);
+    const rows = isCacheableQuery(normalized)
+      ? await querySearchCached(normalized, limit)
+      : await runSearchQuery(normalized, limit);
     if (rows.length === 0) {
       logEmptyResult(`searchProducts(${needle})`);
     }
