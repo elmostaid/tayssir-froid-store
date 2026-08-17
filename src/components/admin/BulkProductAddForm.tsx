@@ -4,7 +4,8 @@ import { useRef, useState } from "react";
 import { BulkReviewPanel, type ReviewItem } from "@/components/admin/BulkReviewPanel";
 import JSZip from "jszip";
 import type { AdminCategory } from "@/lib/queries/adminCategories";
-import { validateImageFile, MAX_IMAGES_PER_PRODUCT } from "@/lib/storage/imageValidation";
+import { MAX_IMAGES_PER_PRODUCT } from "@/lib/storage/imageValidation";
+import { processImageForUpload } from "@/lib/storage/imageProcessing";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { createBulkProduct, previewBulkPlan, type BulkPreviewPlan } from "@/app/admin/(protected)/products/bulkActions";
 import {
@@ -240,13 +241,20 @@ export async function parseZipFile(
       }
       try {
         const blob = await imgEntry.async("blob");
-        const file = new File([blob], imgName, { type: mime });
-        const validationError = validateImageFile(file);
-        if (validationError) {
-          errors.push(`${nameAr} — ${imgName}: ${validationError}`);
+        // صور ZIP تمرّ من نفس معالجة صور الهاتف بالضبط — مصدر واحد للحقيقة،
+        // فلا يوجد مسار ثانٍ يرفع صوراً ضخمة أو بصيغة غير JPEG.
+        const processed = await processImageForUpload(
+          new File([blob], imgName, { type: mime })
+        );
+        if (!processed.ok) {
+          errors.push(`${nameAr} — ${imgName}: ${processed.error}`);
           continue;
         }
-        row.images.push({ clientId: crypto.randomUUID(), file, previewUrl: URL.createObjectURL(file) });
+        row.images.push({
+          clientId: crypto.randomUUID(),
+          file: processed.file,
+          previewUrl: URL.createObjectURL(processed.file),
+        });
       } catch {
         errors.push(`${nameAr}: فشل قراءة الصورة ${imgName}.`);
       }
@@ -275,22 +283,36 @@ function RowImagePicker({
   const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
 
-  function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  // كل صورة تمرّ من processImageForUpload قبل أن تدخل السطر: تصغير، تطبيق
+  // اتجاه EXIF، خلفية بيضاء للشفافية، ثم JPEG بلا ميتاداتا. المعاينة تعرض
+  // الملف المعالَج نفسه، فما تراه هو ما سيُرفع بالضبط.
+  async function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     if (inputRef.current) inputRef.current.value = "";
     if (files.length === 0) return;
 
     setError(null);
-    const validated: RowImage[] = [];
-    for (const file of files) {
-      const validationError = validateImageFile(file);
-      if (validationError) {
-        setError(validationError);
-        continue;
+    setIsProcessing(true);
+    try {
+      const accepted: RowImage[] = [];
+      for (const file of files) {
+        const result = await processImageForUpload(file);
+        if (!result.ok) {
+          setError(result.error);
+          continue;
+        }
+        accepted.push({
+          clientId: crypto.randomUUID(),
+          file: result.file,
+          previewUrl: URL.createObjectURL(result.file),
+        });
       }
-      validated.push({ clientId: crypto.randomUUID(), file, previewUrl: URL.createObjectURL(file) });
+      if (accepted.length > 0) onChange([...row.images, ...accepted]);
+    } finally {
+      setIsProcessing(false);
     }
-    onChange([...row.images, ...validated]);
   }
 
   function removeImage(clientId: string) {
@@ -310,10 +332,11 @@ function RowImagePicker({
         type="file"
         accept="image/jpeg,image/png,image/webp"
         multiple
-        disabled={disabled}
+        disabled={disabled || isProcessing}
         onChange={handleFiles}
         className="w-full text-xs"
       />
+      {isProcessing && <p className="text-xs text-neutral-500">جارٍ تجهيز الصور…</p>}
       {error && <p className="text-xs text-red-600">{error}</p>}
       {row.images.length > 0 && (
         <div className="flex flex-wrap gap-2">

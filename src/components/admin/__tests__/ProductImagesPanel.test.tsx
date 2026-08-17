@@ -3,6 +3,27 @@ import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import type { AdminProductImage } from "@/lib/queries/adminProducts";
 import type { ImageActionState, UploadTargetState } from "@/app/admin/(protected)/products/imageActions";
 
+// canvas وcreateImageBitmap غير متوفّرين في jsdom، ومعالجة الصور لها ملف
+// اختبار مستقل (imageProcessing.test.ts) يغطي التصغير والاتجاه والتعرّف على
+// النوع. هنا نُحاكي العقد فقط: نفس فحوص الحجم، ونُعيد الملف كما هو — فيبقى
+// هذا الملف مركّزاً على مسار الرفع لا على معالجة البكسلات.
+vi.mock("@/lib/storage/imageProcessing", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/storage/imageProcessing")>(
+    "@/lib/storage/imageProcessing"
+  );
+  return {
+    ...actual,
+    processImageForUpload: async (file: File) => {
+      if (file.size === 0) return { ok: false as const, error: "الملف فارغ." };
+      if (file.size > actual.MAX_UPLOAD_INPUT_BYTES) {
+        return { ok: false as const, error: "حجم الصورة كبير جداً (12 ميغابايت كحد أقصى)." };
+      }
+      return { ok: true as const, file, width: 800, height: 600, bytes: file.size };
+    },
+  };
+});
+
+
 const uploadToSignedUrlMock = vi.fn<
   (path: string, token: string, fileBody: File) => Promise<{ data: { path: string } | null; error: unknown }>
 >(async () => ({ data: { path: "x" }, error: null }));
@@ -133,7 +154,7 @@ describe("ProductImagesPanel — كارت صور المنتج فـ/admin/product
     expect(screen.queryByRole("button", { name: "حفظ" })).toBeNull();
   });
 
-  test("بعد اختيار ملف لتغيير الصورة الرئيسية، يظهر زر 'حفظ' ومعاينة", () => {
+  test("بعد اختيار ملف لتغيير الصورة الرئيسية، يظهر زر 'حفظ' ومعاينة", async () => {
     renderPanel([PRIMARY]);
     const fileInputs = document.querySelectorAll('input[type="file"]');
     const replaceInput = fileInputs[0] as HTMLInputElement;
@@ -141,7 +162,9 @@ describe("ProductImagesPanel — كارت صور المنتج فـ/admin/product
     const file = new File(["x"], "new.png", { type: "image/png" });
     fireEvent.change(replaceInput, { target: { files: [file] } });
 
-    expect(screen.getByRole("button", { name: "حفظ" })).toBeTruthy();
+    // اختيار الملف صار غير متزامن (يمرّ من معالجة الصورة أولاً) — ننتظر ظهور
+    // الزر بدل التحقق فوراً.
+    await vi.waitFor(() => expect(screen.getByRole("button", { name: "حفظ" })).toBeTruthy());
     expect(screen.getByAltText("معاينة الصورة الجديدة")).toBeTruthy();
   });
 
@@ -154,6 +177,8 @@ describe("ProductImagesPanel — كارت صور المنتج فـ/admin/product
 
     const file = new File(["x".repeat(2_000_000)], "phone-photo.jpg", { type: "image/jpeg" });
     fireEvent.change(replaceInput, { target: { files: [file] } });
+
+    await vi.waitFor(() => screen.getByRole("button", { name: "حفظ" }));
 
     const saveButton = screen.getByRole("button", { name: "حفظ" });
     fireEvent.click(saveButton);
@@ -187,6 +212,7 @@ describe("ProductImagesPanel — كارت صور المنتج فـ/admin/product
 
     const file = new File(["x"], "new.png", { type: "image/png" });
     fireEvent.change(replaceInput, { target: { files: [file] } });
+    await vi.waitFor(() => screen.getByRole("button", { name: "حفظ" }));
     fireEvent.click(screen.getByRole("button", { name: "حفظ" }));
 
     await vi.waitFor(() => expect(screen.getByText(/تعذّر رفع الصورة/)).toBeTruthy());
@@ -217,6 +243,7 @@ describe("ProductImagesPanel — كارت صور المنتج فـ/admin/product
     const fileInputs = document.querySelectorAll('input[type="file"]');
     const file = new File(["x"], "new.png", { type: "image/png" });
     fireEvent.change(fileInputs[0], { target: { files: [file] } });
+    await vi.waitFor(() => screen.getByRole("button", { name: "حفظ" }));
     fireEvent.click(screen.getByRole("button", { name: "حفظ" }));
 
     await vi.waitFor(() => expect(screen.getByText("رفع الصور غير مُفعَّل حالياً.")).toBeTruthy());
@@ -252,15 +279,18 @@ describe("ProductImagesPanel — كارت صور المنتج فـ/admin/product
     expect(commitPrimaryUploadAction).not.toHaveBeenCalled();
   });
 
-  test("اختيار ملف كبير جداً (>5MB) لتغيير الصورة الرئيسية: يُرفَض فوراً فالمتصفح، بلا أي طلب رابط رفع", async () => {
+  // حد الإدخال صار 12 ميغابايت (صور الهواتف 3–5 ميغابايت تُقبل ثم تُصغَّر)،
+  // فالرفض يبدأ فوق ذلك.
+  test("اختيار ملف كبير جداً (>12MB) لتغيير الصورة الرئيسية: يُرفَض فوراً فالمتصفح، بلا أي طلب رابط رفع", async () => {
     const { createUploadTargetAction } = renderPanel([PRIMARY]);
     const fileInputs = document.querySelectorAll('input[type="file"]');
     const replaceInput = fileInputs[0] as HTMLInputElement;
 
-    const tooLarge = new File([new Uint8Array(6 * 1024 * 1024)], "huge.png", { type: "image/png" });
+    const tooLarge = new File([new Uint8Array(13 * 1024 * 1024)], "huge.png", { type: "image/png" });
     fireEvent.change(replaceInput, { target: { files: [tooLarge] } });
 
-    expect(screen.getByText(/حجم الصورة كبير جداً/)).toBeTruthy();
+    // الرفض صار بعد قراءة الملف (غير متزامن) — ننتظر ظهور الرسالة.
+    await vi.waitFor(() => expect(screen.getByText(/حجم الصورة كبير جداً/)).toBeTruthy());
     expect(screen.queryByRole("button", { name: "حفظ" })).toBeNull();
     expect(createUploadTargetAction).not.toHaveBeenCalled();
     expect(uploadToSignedUrlMock).not.toHaveBeenCalled();

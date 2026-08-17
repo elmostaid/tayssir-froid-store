@@ -1,4 +1,25 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+// canvas وcreateImageBitmap غير متوفّرين في jsdom، ومعالجة الصور لها ملف
+// اختبار مستقل (imageProcessing.test.ts) يغطي التصغير والاتجاه والتعرّف على
+// النوع. هنا نُحاكي العقد فقط: نفس فحوص الحجم، ونُعيد الملف كما هو — فيبقى
+// هذا الملف مركّزاً على مسار الرفع لا على معالجة البكسلات.
+vi.mock("@/lib/storage/imageProcessing", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/storage/imageProcessing")>(
+    "@/lib/storage/imageProcessing"
+  );
+  return {
+    ...actual,
+    processImageForUpload: async (file: File) => {
+      if (file.size === 0) return { ok: false as const, error: "الملف فارغ." };
+      if (file.size > actual.MAX_UPLOAD_INPUT_BYTES) {
+        return { ok: false as const, error: "حجم الصورة كبير جداً (12 ميغابايت كحد أقصى)." };
+      }
+      return { ok: true as const, file, width: 800, height: 600, bytes: file.size };
+    },
+  };
+});
+
 import JSZip from "jszip";
 import {
   parseZipFile,
