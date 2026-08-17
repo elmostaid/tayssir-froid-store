@@ -9,6 +9,7 @@ import {
 import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 import { ProductCard } from "@/components/ProductCard";
 import { CategoryIcon } from "@/components/CategoryIcon";
+import { HowToOrder } from "@/components/HowToOrder";
 import { getCategoryImage } from "@/lib/categoryImages";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
 import { safeQuery } from "@/lib/safeQuery";
@@ -103,6 +104,10 @@ export default async function HomePage() {
           طريقة الطلب: اختار القطع ← زيدها للسلة ← صيفط الطلب فالواتساب
         </p>
       </section>
+
+      {/* شرح طريقة الطلب — بعد الهيرو مباشرة وقبل التصنيفات. مكوّن خادم
+          بلا JavaScript ولا صور، فلا أثر له على زمن التحميل. */}
+      <HowToOrder />
 
       {categories.length > 0 && (
         <section id="categories" className="mt-8 scroll-mt-20">

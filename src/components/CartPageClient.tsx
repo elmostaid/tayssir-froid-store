@@ -191,7 +191,14 @@ export function CartPageClient({ minOrderAmountMad }: { minOrderAmountMad: numbe
           </div>
         )}
 
-        <div className="mt-4 flex flex-col gap-2 sm:flex-row-reverse">
+        {/* طمأنة قصيرة قبل زر إتمام الطلب: الخطوة التالية واضحة وما بقاش
+            على الزبون غير يعمّر معلوماته. نص فقط — لا تغيير في منطق السلة
+            ولا في إتمام الطلب ولا في رابط واتساب. */}
+        <p className="mt-4 rounded-lg bg-brand-turquoise-tint px-3 py-2 text-sm leading-relaxed text-neutral-700">
+          ساليت الاختيار؟ كمّل معلوماتك ورسل الطلب لواتساب، وحنا نتكلفو بالباقي ✅
+        </p>
+
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row-reverse">
           {meetsMinimum ? (
             <Link
               href="/checkout"
