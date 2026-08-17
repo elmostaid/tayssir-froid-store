@@ -5,7 +5,7 @@ import { useActionState } from "react";
 import Image from "next/image";
 import { resolveImageUrl } from "@/lib/images";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { validateImageFile } from "@/lib/storage/imageValidation";
+import { processImageForUpload } from "@/lib/storage/imageProcessing";
 import type { AdminProductImage } from "@/lib/queries/adminProducts";
 import type { ImageActionState, UploadTargetState } from "@/app/admin/(protected)/products/imageActions";
 
@@ -147,19 +147,24 @@ function UploadForm({
   const [isPending, startTransition] = useTransition();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+  // نفس المعالجة المستعملة في كل مسارات الرفع الأخرى (تصغير، اتجاه EXIF،
+  // خلفية بيضاء، ثم JPEG بلا ميتاداتا) — الملف المحفوظ في الحالة هو
+  // المعالَج، فما يُرفع لاحقاً هو ما عُولج بالضبط.
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = e.target.files?.[0] ?? null;
     setState(initialState);
-    if (selected) {
-      const validationError = validateImageFile(selected);
-      if (validationError) {
-        setState({ error: validationError });
-        if (fileInputRef.current) fileInputRef.current.value = "";
-        setFile(null);
-        return;
-      }
+    if (!selected) {
+      setFile(null);
+      return;
     }
-    setFile(selected);
+    const processed = await processImageForUpload(selected);
+    if (!processed.ok) {
+      setState({ error: processed.error });
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      setFile(null);
+      return;
+    }
+    setFile(processed.file);
   }
 
   function handleUpload(e: React.MouseEvent<HTMLButtonElement>) {

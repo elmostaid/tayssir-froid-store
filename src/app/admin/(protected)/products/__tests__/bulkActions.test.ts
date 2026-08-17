@@ -25,6 +25,7 @@ const STAFF_USER = { id: "test-staff-bulk", email: "staff@local", role: "staff" 
 let emptyCategoryId: number;
 let prefixedCategoryId: number;
 let raceCategoryId: number;
+let autoNameCategoryId: number;
 
 function baseInput(overrides: Partial<Parameters<typeof createBulkProduct>[0]> = {}) {
   return {
@@ -70,10 +71,19 @@ beforeAll(async () => {
     returning id
   `;
   raceCategoryId = c3.id;
+
+  // تصنيف مستقل لاختبارات الاسم التلقائي: إنشاء منتجات فيه لا يزحزح ترقيم
+  // SKU الذي تتحقّق منه الاختبارات الأخرى في تصنيفاتها.
+  const [c4] = await sql<{ id: number }[]>`
+    insert into public.categories (slug, name_ar, is_active)
+    values ('test-fixture-bulkadd-autoname', 'تصنيف اختبار الاسم التلقائي', true)
+    returning id
+  `;
+  autoNameCategoryId = c4.id;
 });
 
 afterAll(async () => {
-  await sql`delete from public.products where sku like 'TBX-%' or sku like 'TF-TFB%'`;
+  await sql`delete from public.products where sku like 'TBX-%' or sku like 'TF-TFB%' or sku like 'TF-TFA%'`;
   await sql`delete from public.categories where slug like 'test-fixture-bulkadd-%'`;
 });
 
@@ -86,9 +96,9 @@ describe("createBulkProduct — صلاحيات", () => {
 });
 
 describe("createBulkProduct — تحقق من صحة المدخلات", () => {
-  test("اسم فارغ: خطأ واضح", async () => {
+  test("اسم طويل جداً: خطأ واضح", async () => {
     getAdminUserMock.mockResolvedValueOnce(ADMIN_USER);
-    const result = await createBulkProduct(baseInput({ nameAr: "   " }));
+    const result = await createBulkProduct(baseInput({ nameAr: "ا".repeat(151) }));
     expect(result.outcome).toBe("error");
   });
 
@@ -126,8 +136,10 @@ describe("createBulkProduct — تصنيف بلا أي منتج بعد", () => {
       { description_ar: string; purchase_price: string; status: string }[]
     >`select description_ar, purchase_price, status from public.products where id = ${result.productId}`;
     expect(rows[0].description_ar).toContain("وصف مشترك للدفعة");
+    // القالب الآمن الجديد (descriptionTemplates.ts) — نفس الغرض بصياغة أوسع
+    // طلبها صاحب المتجر: مقارنة القطعة قبل الطلب، بلا اختراع أي مواصفة.
     expect(rows[0].description_ar).toContain(
-      "المرجو مقارنة شكل القطعة، الفيشة، عدد الأطراف ومواضع التثبيت مع القطعة الأصلية قبل الطلب."
+      "قطعة غيار مخصصة للاستبدال. يرجى مقارنة شكل القطعة، الفيشة، الأطراف، القياسات ومواضع التثبيت مع القطعة الأصلية قبل الطلب."
     );
     expect(rows[0].purchase_price).toBe("50.00");
     expect(rows[0].status).toBe("published");
@@ -208,6 +220,69 @@ describe("createBulkProduct — أمان تحت التزامن الحقيقي", 
     expect(resultB.outcome).toBe("success");
     if (resultA.outcome === "success" && resultB.outcome === "success") {
       expect(resultA.sku).not.toBe(resultB.sku);
+    }
+  });
+});
+
+// صاحب المتجر لم يعد مضطراً لكتابة اسم لكل قطعة: يضيف الصور والأثمنة فقط،
+// والنظام يولّد الاسم من اسم التصنيف ورقم تسلسلي — بلا أي ماركة أو موديل
+// جهاز مخترع.
+describe("createBulkProduct — الاسم التلقائي", () => {
+  test("اسم فارغ: يُولَّد من اسم التصنيف + رقم تسلسلي", async () => {
+    getAdminUserMock.mockResolvedValueOnce(ADMIN_USER);
+    const result = await createBulkProduct(
+      baseInput({ categoryId: autoNameCategoryId, nameAr: "   " })
+    );
+    expect(result.outcome).toBe("success");
+    if (result.outcome !== "success") return;
+    expect(result.nameAr).toBe("تصنيف اختبار الاسم التلقائي - موديل 01");
+  });
+
+  test("الدفعة التالية تُكمِل الترقيم ولا تعيد 01 (وإلا رُفضت كمكرَّرة)", async () => {
+    getAdminUserMock.mockResolvedValueOnce(ADMIN_USER);
+    const second = await createBulkProduct(
+      baseInput({ categoryId: autoNameCategoryId, nameAr: "" })
+    );
+    expect(second.outcome).toBe("success");
+    if (second.outcome !== "success") return;
+    expect(second.nameAr).toBe("تصنيف اختبار الاسم التلقائي - موديل 02");
+  });
+
+  test("autoNameIndex يفصل منتجات نفس الدفعة قبل أن يلتزم أولها", async () => {
+    getAdminUserMock.mockResolvedValue(ADMIN_USER);
+    const [a, b] = await Promise.all([
+      createBulkProduct(baseInput({ categoryId: autoNameCategoryId, nameAr: "", autoNameIndex: 0 })),
+      createBulkProduct(baseInput({ categoryId: autoNameCategoryId, nameAr: "", autoNameIndex: 1 })),
+    ]);
+    expect(a.outcome).toBe("success");
+    expect(b.outcome).toBe("success");
+    if (a.outcome !== "success" || b.outcome !== "success") return;
+    expect(a.nameAr).not.toBe(b.nameAr);
+  });
+
+  test("اسم مكتوب من صاحب المتجر يُستعمل كما هو بلا توليد", async () => {
+    getAdminUserMock.mockResolvedValueOnce(ADMIN_USER);
+    const result = await createBulkProduct(
+      baseInput({ categoryId: autoNameCategoryId, nameAr: "بولي LG رأس غليظ" })
+    );
+    expect(result.outcome).toBe("success");
+    if (result.outcome !== "success") return;
+    expect(result.nameAr).toBe("بولي LG رأس غليظ");
+  });
+
+  test("الوصف التلقائي يُحفَظ ولا يخترع أي مواصفة", async () => {
+    getAdminUserMock.mockResolvedValueOnce(ADMIN_USER);
+    const result = await createBulkProduct(
+      baseInput({ categoryId: autoNameCategoryId, nameAr: "منتج وصف" })
+    );
+    expect(result.outcome).toBe("success");
+    if (result.outcome !== "success") return;
+    const [row] = await sql<{ description_ar: string }[]>`
+      select description_ar from public.products where id = ${result.productId}
+    `;
+    expect(row.description_ar).toContain("قطعة غيار مخصصة للاستبدال");
+    for (const brand of ["LG", "Samsung", "Haier"]) {
+      expect(row.description_ar).not.toContain(brand);
     }
   });
 });

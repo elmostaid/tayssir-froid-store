@@ -4,7 +4,7 @@ import { useRef, useState, useTransition } from "react";
 import Image from "next/image";
 import { resolveImageUrl } from "@/lib/images";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { validateImageFile } from "@/lib/storage/imageValidation";
+import { processImageForUpload } from "@/lib/storage/imageProcessing";
 import type { AdminProductImage } from "@/lib/queries/adminProducts";
 import type { ImageActionState, UploadTargetState } from "@/app/admin/(protected)/products/imageActions";
 
@@ -99,21 +99,31 @@ export function ProductImagesPanel({
   const [isReplacePending, startReplaceTransition] = useTransition();
   const replaceInputRef = useRef<HTMLInputElement>(null);
 
-  function handleReplaceFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+  // نفس معالجة صفحة الإضافة الجماعية بالضبط: الصورة الرئيسية والإضافية
+  // تمران من processImageForUpload، فلا يوجد مسار يرفع ملفاً غير معالَج.
+  async function handleReplaceFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = e.target.files?.[0] ?? null;
     setReplaceResult(null);
-    if (selected) {
-      const validationError = validateImageFile(selected);
-      if (validationError) {
-        setReplaceResult({ error: validationError });
-        if (replaceInputRef.current) replaceInputRef.current.value = "";
-        return;
-      }
+    if (!selected) {
+      setReplaceFile(null);
+      setReplacePreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+      return;
     }
-    setReplaceFile(selected);
+
+    const processed = await processImageForUpload(selected);
+    if (!processed.ok) {
+      setReplaceResult({ error: processed.error });
+      if (replaceInputRef.current) replaceInputRef.current.value = "";
+      return;
+    }
+
+    setReplaceFile(processed.file);
     setReplacePreviewUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
-      return selected ? URL.createObjectURL(selected) : null;
+      return URL.createObjectURL(processed.file);
     });
   }
 
@@ -154,15 +164,14 @@ export function ProductImagesPanel({
     if (!selected) return;
     setAddResult(null);
 
-    const validationError = validateImageFile(selected);
-    if (validationError) {
-      setAddResult({ error: validationError });
-      if (addInputRef.current) addInputRef.current.value = "";
-      return;
-    }
-
     startAddTransition(async () => {
-      const result = await uploadFileDirectly(selected, (objectPath) =>
+      const processed = await processImageForUpload(selected);
+      if (!processed.ok) {
+        setAddResult({ error: processed.error });
+        if (addInputRef.current) addInputRef.current.value = "";
+        return;
+      }
+      const result = await uploadFileDirectly(processed.file, (objectPath) =>
         commitAdditionalUploadAction(objectPath, null)
       );
       setAddResult(result);

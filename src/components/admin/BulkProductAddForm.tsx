@@ -1,11 +1,13 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { BulkReviewPanel, type ReviewItem } from "@/components/admin/BulkReviewPanel";
 import JSZip from "jszip";
 import type { AdminCategory } from "@/lib/queries/adminCategories";
-import { validateImageFile, MAX_IMAGES_PER_PRODUCT } from "@/lib/storage/imageValidation";
+import { MAX_IMAGES_PER_PRODUCT } from "@/lib/storage/imageValidation";
+import { processImageForUpload } from "@/lib/storage/imageProcessing";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { createBulkProduct } from "@/app/admin/(protected)/products/bulkActions";
+import { createBulkProduct, previewBulkPlan, type BulkPreviewPlan } from "@/app/admin/(protected)/products/bulkActions";
 import {
   createImageUploadTarget,
   commitPrimaryImage,
@@ -239,13 +241,20 @@ export async function parseZipFile(
       }
       try {
         const blob = await imgEntry.async("blob");
-        const file = new File([blob], imgName, { type: mime });
-        const validationError = validateImageFile(file);
-        if (validationError) {
-          errors.push(`${nameAr} — ${imgName}: ${validationError}`);
+        // صور ZIP تمرّ من نفس معالجة صور الهاتف بالضبط — مصدر واحد للحقيقة،
+        // فلا يوجد مسار ثانٍ يرفع صوراً ضخمة أو بصيغة غير JPEG.
+        const processed = await processImageForUpload(
+          new File([blob], imgName, { type: mime })
+        );
+        if (!processed.ok) {
+          errors.push(`${nameAr} — ${imgName}: ${processed.error}`);
           continue;
         }
-        row.images.push({ clientId: crypto.randomUUID(), file, previewUrl: URL.createObjectURL(file) });
+        row.images.push({
+          clientId: crypto.randomUUID(),
+          file: processed.file,
+          previewUrl: URL.createObjectURL(processed.file),
+        });
       } catch {
         errors.push(`${nameAr}: فشل قراءة الصورة ${imgName}.`);
       }
@@ -274,22 +283,36 @@ function RowImagePicker({
   const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
 
-  function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  // كل صورة تمرّ من processImageForUpload قبل أن تدخل السطر: تصغير، تطبيق
+  // اتجاه EXIF، خلفية بيضاء للشفافية، ثم JPEG بلا ميتاداتا. المعاينة تعرض
+  // الملف المعالَج نفسه، فما تراه هو ما سيُرفع بالضبط.
+  async function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     if (inputRef.current) inputRef.current.value = "";
     if (files.length === 0) return;
 
     setError(null);
-    const validated: RowImage[] = [];
-    for (const file of files) {
-      const validationError = validateImageFile(file);
-      if (validationError) {
-        setError(validationError);
-        continue;
+    setIsProcessing(true);
+    try {
+      const accepted: RowImage[] = [];
+      for (const file of files) {
+        const result = await processImageForUpload(file);
+        if (!result.ok) {
+          setError(result.error);
+          continue;
+        }
+        accepted.push({
+          clientId: crypto.randomUUID(),
+          file: result.file,
+          previewUrl: URL.createObjectURL(result.file),
+        });
       }
-      validated.push({ clientId: crypto.randomUUID(), file, previewUrl: URL.createObjectURL(file) });
+      if (accepted.length > 0) onChange([...row.images, ...accepted]);
+    } finally {
+      setIsProcessing(false);
     }
-    onChange([...row.images, ...validated]);
   }
 
   function removeImage(clientId: string) {
@@ -309,10 +332,11 @@ function RowImagePicker({
         type="file"
         accept="image/jpeg,image/png,image/webp"
         multiple
-        disabled={disabled}
+        disabled={disabled || isProcessing}
         onChange={handleFiles}
         className="w-full text-xs"
       />
+      {isProcessing && <p className="text-xs text-neutral-500">جارٍ تجهيز الصور…</p>}
       {error && <p className="text-xs text-red-600">{error}</p>}
       {row.images.length > 0 && (
         <div className="flex flex-wrap gap-2">
@@ -393,6 +417,12 @@ export function BulkProductAddForm({ categories }: { categories: AdminCategory[]
     null
   );
   const [formError, setFormError] = useState<string | null>(null);
+
+  // شاشة المراجعة: تُفتح قبل الحفظ وتعرض ما سيحدث فعلاً (اسم نهائي، أثمنة،
+  // مخزون، وصف). لا تكتب شيئاً — الحفظ لا يقع إلا بضغط زر التأكيد داخلها.
+  const [reviewPlan, setReviewPlan] = useState<BulkPreviewPlan | null>(null);
+  const [isReviewing, setIsReviewing] = useState(false);
+  const [isPreparingReview, setIsPreparingReview] = useState(false);
 
   function updateRow(clientId: string, patch: Partial<Row>) {
     setRows((prev) => prev.map((r) => (r.clientId === clientId ? { ...r, ...patch } : r)));
@@ -476,6 +506,81 @@ export function BulkProductAddForm({ categories }: { categories: AdminCategory[]
     return null;
   }
 
+  /** الأسطر التي سيحاول الحفظ إنشاءها (اسم أو ثمن بيع أو صور). */
+  function pendingRows() {
+    return rows.filter(
+      (r) =>
+        r.status !== "success" &&
+        (r.nameAr.trim() || r.salePrice.trim() || r.images.length > 0)
+    );
+  }
+
+  function rowProblems(row: Row): string[] {
+    const problems: string[] = [];
+    const price = Number(row.salePrice);
+    if (!row.salePrice.trim() || !Number.isFinite(price) || price <= 0) {
+      problems.push("ثمن البيع ناقص أو غير صالح.");
+    }
+    if (row.stockRequired && !row.stockQuantity.trim()) {
+      problems.push("الكمية مطلوبة لهذا المنتج ولم تُملأ.");
+    }
+    return problems;
+  }
+
+  /** يفتح شاشة المراجعة بعد حساب الأسماء المولَّدة والوصف من الخادم. */
+  async function handleOpenReview() {
+    setFormError(null);
+    if (!categoryId) {
+      setFormError("اختر تصنيفاً أولاً.");
+      return;
+    }
+    const pending = pendingRows();
+    if (pending.length === 0) {
+      setFormError("أضف منتجاً واحداً على الأقل (صور أو ثمن بيع أو اسم).");
+      return;
+    }
+
+    setIsPreparingReview(true);
+    try {
+      const autoCount = pending.filter((r) => !r.nameAr.trim()).length;
+      const plan = await previewBulkPlan(Number(categoryId), autoCount, sharedDescription);
+      if (plan.error) {
+        setFormError(plan.error);
+        return;
+      }
+      setReviewPlan(plan);
+      setIsReviewing(true);
+    } catch {
+      setFormError("تعذّر تحضير المراجعة. حاول مرة أخرى.");
+    } finally {
+      setIsPreparingReview(false);
+    }
+  }
+
+  function buildReviewItems(): ReviewItem[] {
+    const pending = pendingRows();
+    const autoNames = reviewPlan?.autoNames ?? [];
+    let autoIndex = 0;
+    return pending.map((row) => {
+      const isAutoName = !row.nameAr.trim();
+      const finalName = isAutoName
+        ? autoNames[autoIndex++] ?? "(اسم تلقائي)"
+        : row.nameAr.trim();
+      return {
+        clientId: row.clientId,
+        finalName,
+        isAutoName,
+        purchasePrice: row.purchasePrice.trim(),
+        salePrice: row.salePrice.trim(),
+        stock: row.stockQuantity.trim() || stockQuantity,
+        minOrderQty: row.minOrderQtyOverride.trim() || minOrderQty,
+        imagePreviewUrl: row.images[0]?.previewUrl ?? null,
+        imageCount: row.images.length,
+        problems: rowProblems(row),
+      };
+    });
+  }
+
   async function handleSaveAll() {
     setFormError(null);
     if (!categoryId) {
@@ -484,9 +589,15 @@ export function BulkProductAddForm({ categories }: { categories: AdminCategory[]
     }
     // فقط الأسطر التي لم تنجح بعد (success نهائية دائماً) — retry آمن لا
     // يُعيد إنشاء منتجات نجحت سابقاً.
-    const pending = rows.filter((r) => r.status !== "success" && r.nameAr.trim());
+    // سطر جاهز للحفظ = فيه اسم أو ثمن بيع أو صور. الاسم لم يعد شرطاً: الأسطر
+    // بلا اسم تأخذ اسماً مولَّداً من التصنيف عند الحفظ.
+    const pending = rows.filter(
+      (r) =>
+        r.status !== "success" &&
+        (r.nameAr.trim() || r.salePrice.trim() || r.images.length > 0)
+    );
     if (pending.length === 0) {
-      setFormError("أضف سطراً واحداً على الأقل باسم منتج.");
+      setFormError("أضف منتجاً واحداً على الأقل (صور أو ثمن بيع أو اسم).");
       return;
     }
 
@@ -519,6 +630,11 @@ export function BulkProductAddForm({ categories }: { categories: AdminCategory[]
       const result = await createBulkProduct({
         categoryId: Number(categoryId),
         nameAr: row.nameAr,
+        // ترتيب هذا السطر بين الأسطر بلا اسم فقط — حتى يأخذ كل واحد رقماً
+        // مختلفاً في نفس الدفعة.
+        autoNameIndex: pending
+          .slice(0, i)
+          .filter((r) => !r.nameAr.trim()).length,
         purchasePrice: row.purchasePrice.trim() ? Number(row.purchasePrice) : null,
         salePrice: Number(row.salePrice || 0),
         minOrderQty: Number.isFinite(minOverride) && minOverride > 0 ? minOverride : 1,
@@ -529,7 +645,7 @@ export function BulkProductAddForm({ categories }: { categories: AdminCategory[]
       });
 
       if (result.outcome === "success") {
-        let message: string | null = `SKU: ${result.sku}`;
+        let message: string | null = `${result.nameAr} — SKU: ${result.sku}`;
         if (row.images.length > 0) {
           const uploadError = await uploadRowImages(result.productId, row.images);
           if (uploadError) message = `${message} — ${uploadError}`;
@@ -549,6 +665,8 @@ export function BulkProductAddForm({ categories }: { categories: AdminCategory[]
 
     setSummary({ success: successCount, duplicate: duplicateCount, failed: failedCount });
     setIsSaving(false);
+    // نخرج من شاشة المراجعة بعد الحفظ ليرى صاحب المتجر نتيجة كل سطر مباشرة.
+    setIsReviewing(false);
   }
 
   return (
@@ -715,7 +833,7 @@ export function BulkProductAddForm({ categories }: { categories: AdminCategory[]
 
               <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <input
-                  placeholder="اسم المنتج أو رقم الموديل *"
+                  placeholder="اسم المنتج (اختياري — يُولَّد تلقائياً إذا تركته فارغاً)"
                   value={row.nameAr}
                   onChange={(e) => updateRow(row.clientId, { nameAr: e.target.value })}
                   disabled={isSaving || row.status === "success"}
@@ -822,14 +940,27 @@ export function BulkProductAddForm({ categories }: { categories: AdminCategory[]
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={handleSaveAll}
-        disabled={isSaving}
-        className="rounded-full bg-brand-orange px-6 py-3 text-sm font-semibold text-white disabled:opacity-60"
-      >
-        {isSaving ? "جارٍ الحفظ…" : "حفظ الكل"}
-      </button>
+      {isReviewing ? (
+        <BulkReviewPanel
+          items={buildReviewItems()}
+          plan={reviewPlan}
+          categoryLabel={
+            categoryOptions.find((o) => String(o.id) === categoryId)?.label ?? "—"
+          }
+          isSaving={isSaving}
+          onBack={() => setIsReviewing(false)}
+          onConfirm={handleSaveAll}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={handleOpenReview}
+          disabled={isSaving || isPreparingReview}
+          className="rounded-full bg-brand-orange px-6 py-3 text-sm font-semibold text-white disabled:opacity-60"
+        >
+          {isPreparingReview ? "جارٍ التحضير…" : "مراجعة ثم إضافة المجموعة"}
+        </button>
+      )}
     </div>
   );
 }

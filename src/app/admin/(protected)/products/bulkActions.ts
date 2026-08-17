@@ -4,20 +4,31 @@ import { revalidatePath } from "next/cache";
 import { sql } from "@/lib/db";
 import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import { computeSkuPrefixForCategory, findMaxSkuNumber } from "@/lib/products/skuGeneration";
+import {
+  buildAutoProductName,
+  findMaxAutoNameNumber,
+  getCategoryName,
+} from "@/lib/products/autoProductName";
+import { buildProductDescription } from "@/lib/products/descriptionTemplates";
 import { PRODUCT_STATUSES } from "@/lib/validation/product";
 import { revalidateCatalog } from "@/lib/queries/catalogCache";
 
 const OWNER_ONLY_ERROR = "هذا الإجراء مقصور على صاحب الحساب (Admin)." as const;
 
-// التنبيه المطلوب يُلحَق تلقائياً بوصف كل منتج يُضاف عبر "إضافة مجموعة
-// منتجات" — بالإضافة إلى وصف مشترك اختياري يكتبه المدير مرة واحدة للدفعة
-// كلها (مثلاً وصف تقني عام لهذه المجموعة).
-const COMPATIBILITY_NOTICE =
-  "المرجو مقارنة شكل القطعة، الفيشة، عدد الأطراف ومواضع التثبيت مع القطعة الأصلية قبل الطلب.";
-
 export type BulkProductInput = {
   categoryId: number;
+  /**
+   * اسم المنتج كما كتبه صاحب المتجر. فارغ = يُولَّد تلقائياً من اسم التصنيف
+   * ورقم تسلسلي (انظر autoProductName.ts) — صاحب المتجر لا يُجبَر على كتابة
+   * اسم لكل قطعة.
+   */
   nameAr: string;
+  /**
+   * ترتيب هذا المنتج داخل الدفعة (يبدأ من 0). يُستعمل فقط عند توليد الاسم
+   * تلقائياً، ليأخذ كل منتج في نفس الدفعة رقماً مختلفاً حتى قبل أن يلتزم
+   * سابقه في القاعدة.
+   */
+  autoNameIndex?: number;
   purchasePrice: number | null;
   salePrice: number;
   minOrderQty: number;
@@ -28,7 +39,7 @@ export type BulkProductInput = {
 };
 
 export type BulkProductResult =
-  | { outcome: "success"; productId: number; sku: string; slug: string }
+  | { outcome: "success"; productId: number; sku: string; slug: string; nameAr: string }
   | { outcome: "duplicate"; reason: string }
   | { outcome: "error"; error: string };
 
@@ -36,8 +47,8 @@ function validateBulkInput(input: BulkProductInput): string | null {
   if (!Number.isInteger(input.categoryId) || input.categoryId < 1) {
     return "اختر تصنيفاً صحيحاً.";
   }
+  // الاسم لم يعد إجبارياً: الفارغ يُولَّد تلقائياً لاحقاً من اسم التصنيف.
   const nameAr = input.nameAr.trim();
-  if (!nameAr) return "اسم المنتج أو رقم الموديل إجباري.";
   if (nameAr.length > 150) return "الاسم طويل جداً (150 حرفاً كحد أقصى).";
   if (!Number.isFinite(input.salePrice) || input.salePrice < 0) return "ثمن البيع غير صالح.";
   if (
@@ -88,7 +99,17 @@ export async function createBulkProduct(input: BulkProductInput): Promise<BulkPr
   const validationError = validateBulkInput(input);
   if (validationError) return { outcome: "error", error: validationError };
 
-  const nameAr = input.nameAr.trim();
+  // اسم فارغ = يُولَّد الآن من اسم التصنيف ورقم تسلسلي يُكمِل ما هو موجود
+  // فعلاً (لا يبدأ من 01 في كل دفعة، وإلا رُفضت كل دفعة تالية كمكرَّرة).
+  // autoNameIndex يفصل منتجات نفس الدفعة عن بعضها قبل أن يلتزم أولها.
+  let nameAr = input.nameAr.trim();
+  let categoryName: string | null = null;
+  if (!nameAr) {
+    categoryName = await getCategoryName(input.categoryId);
+    if (!categoryName) return { outcome: "error", error: "التصنيف غير موجود." };
+    const base = await findMaxAutoNameNumber(input.categoryId, categoryName);
+    nameAr = buildAutoProductName(categoryName, base + 1 + (input.autoNameIndex ?? 0));
+  }
 
   const existing = await sql<{ id: number }[]>`
     select id from public.products
@@ -105,10 +126,10 @@ export async function createBulkProduct(input: BulkProductInput): Promise<BulkPr
 
   const baseNumber = await findMaxSkuNumber(prefix);
 
-  const sharedNotice = input.descriptionAr.trim();
-  const description = sharedNotice
-    ? `${sharedNotice}\n\n${COMPATIBILITY_NOTICE}`
-    : COMPATIBILITY_NOTICE;
+  const [categoryRow] = await sql<{ slug: string }[]>`
+    select slug from public.categories where id = ${input.categoryId} limit 1
+  `;
+  const description = buildProductDescription(input.descriptionAr, categoryRow?.slug ?? null);
 
   for (let attempt = 1; attempt <= 10; attempt++) {
     const sku = `${prefix}-${String(baseNumber + attempt).padStart(3, "0")}`;
@@ -133,7 +154,7 @@ export async function createBulkProduct(input: BulkProductInput): Promise<BulkPr
         revalidatePath("/admin/products");
         revalidatePath("/", "layout");
         revalidateCatalog();
-        return { outcome: "success", productId: inserted[0].id, sku, slug };
+        return { outcome: "success", productId: inserted[0].id, sku, slug, nameAr };
       }
       // لا صفّ أُدخل: تعارض حقيقي (سباق مع طلب آخر متزامن استهلك هذا الرقم
       // بين قراءتنا والإدخال) — نجرّب الرقم التالي.
@@ -143,4 +164,59 @@ export async function createBulkProduct(input: BulkProductInput): Promise<BulkPr
   }
 
   return { outcome: "error", error: "تعذّر توليد SKU فريد بعد عدة محاولات. حاول مرة أخرى." };
+}
+
+export type BulkPreviewPlan = {
+  error?: string;
+  categoryName?: string;
+  categorySlug?: string;
+  description?: string;
+  /** أسماء ستُولَّد تلقائياً للأسطر بلا اسم، بترتيبها داخل الدفعة. */
+  autoNames?: string[];
+  /** أول SKU ستأخذه الدفعة، لعرضه في شاشة المراجعة. */
+  firstSku?: string;
+};
+
+/**
+ * يحسب — بلا أي كتابة في قاعدة البيانات — ما الذي سيحدث فعلاً عند الحفظ:
+ * الأسماء التي ستُولَّد تلقائياً، أول SKU، والوصف النهائي. تستعمله شاشة
+ * المراجعة قبل الحفظ حتى يرى صاحب المتجر النتيجة الحقيقية لا تخميناً.
+ *
+ * قراءة فقط: لا insert ولا update ولا حجز أرقام. لو أضاف مدير آخر منتجاً في
+ * نفس اللحظة قد يتقدّم الترقيم فعلياً عند الحفظ — وهذا مقبول لأن التوليد
+ * النهائي يقع في createBulkProduct نفسه، وهو المصدر الوحيد للحقيقة.
+ */
+export async function previewBulkPlan(
+  categoryId: number,
+  autoNameCount: number,
+  sharedDescription: string
+): Promise<BulkPreviewPlan> {
+  const admin = await getAdminUser();
+  if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+  if (!isOwnerAdmin(admin)) return { error: OWNER_ONLY_ERROR };
+  if (!Number.isInteger(categoryId) || categoryId < 1) return { error: "اختر تصنيفاً صحيحاً." };
+
+  const [category] = await sql<{ name_ar: string; slug: string }[]>`
+    select name_ar, slug from public.categories where id = ${categoryId} limit 1
+  `;
+  if (!category) return { error: "التصنيف غير موجود." };
+
+  const base = await findMaxAutoNameNumber(categoryId, category.name_ar);
+  const autoNames = Array.from({ length: Math.max(0, autoNameCount) }, (_, i) =>
+    buildAutoProductName(category.name_ar, base + 1 + i)
+  );
+
+  const prefixResult = await computeSkuPrefixForCategory(categoryId);
+  const firstSku =
+    "error" in prefixResult
+      ? undefined
+      : `${prefixResult.prefix}-${String((await findMaxSkuNumber(prefixResult.prefix)) + 1).padStart(3, "0")}`;
+
+  return {
+    categoryName: category.name_ar,
+    categorySlug: category.slug,
+    description: buildProductDescription(sharedDescription, category.slug),
+    autoNames,
+    firstSku,
+  };
 }
