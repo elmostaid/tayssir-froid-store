@@ -10,6 +10,7 @@ import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 import { ProductCard } from "@/components/ProductCard";
 import { CategoryIcon } from "@/components/CategoryIcon";
 import { HowToOrder } from "@/components/HowToOrder";
+import { LoadMoreProducts } from "@/components/LoadMoreProducts";
 import { getCategoryImage } from "@/lib/categoryImages";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
 import { safeQuery } from "@/lib/safeQuery";
@@ -27,6 +28,9 @@ export function buildTrustPoints(minOrderAmountMad: number): string[] {
     "كلما زادت الكمية، كينقص الثمن",
   ];
 }
+
+// حجم الدفعة الواحدة في شبكة "جميع المنتجات" بالصفحة الرئيسية.
+export const HOME_PAGE_SIZE = 16;
 
 // ترتيب ثابت مطلوب لقسم التصنيفات فالصفحة الرئيسية: الثلاجات، ثم المكيفات
 // سبليت، ثم الغسالات العادية. أي تصنيف آخر (لو ظهر مستقبلاً) يبقى بعدها
@@ -51,12 +55,21 @@ export default async function HomePage() {
   const [categoriesRaw, productCounts, products, variantProductIds, settings] = await Promise.all([
     getFilteredCategories("home.getCategories"),
     safeQuery(() => getProductCountsByCategory(), {}, "home.getProductCountsByCategory"),
-    safeQuery(() => getProducts({ limit: 12 }), [], "home.getProducts"),
+    // نطلب عنصراً زائداً واحداً لنعرف هل توجد دفعة تالية، بدل استعلام عدّ
+    // منفصل. الزائد يُقتطع قبل العرض.
+    safeQuery(() => getProducts({ limit: HOME_PAGE_SIZE + 1 }), [], "home.getProducts"),
     safeQuery(() => getProductIdsWithVariants(), new Set<number>(), "home.getProductIdsWithVariants"),
     safeQuery(() => getSettings(), FALLBACK_SETTINGS, "home.getSettings"),
   ]);
 
   const categories = sortHomeCategories(categoriesRaw);
+
+  // الصفحة الرئيسية تعرض الآن كل التصنيفات معاً (للزبون الذي يفضّل التصفّح
+  // بلا دخول لتصنيف)، لكن على دفعات: أول HOME_PAGE_SIZE منتجاً فقط تُصيَّر مع
+  // الصفحة، والباقي عند الطلب. تحميل الكتالوج كله دفعة واحدة كان سيُثقل
+  // الصفحة على الهاتف ويكبّر HTML بلا داعٍ.
+  const hasMoreProducts = products.length > HOME_PAGE_SIZE;
+  const firstPage = hasMoreProducts ? products.slice(0, HOME_PAGE_SIZE) : products;
 
   const whatsappLink = buildWhatsAppLink(
     settings.whatsappNumber,
@@ -99,10 +112,6 @@ export default async function HomePage() {
             محتاج مساعدة؟ طلب عبر واتساب
           </a>
         </div>
-
-        <p className="mt-3 text-xs text-neutral-600 sm:text-sm">
-          طريقة الطلب: اختار القطع ← زيدها للسلة ← صيفط الطلب فالواتساب
-        </p>
       </section>
 
       {/* شرح طريقة الطلب — بعد الهيرو مباشرة وقبل التصنيفات. مكوّن خادم
@@ -160,24 +169,31 @@ export default async function HomePage() {
 
       <section className="mt-8">
         <h2 className="border-r-4 border-brand-turquoise pr-3 text-lg font-bold text-neutral-800">
-          أحدث المنتجات
+          جميع المنتجات
         </h2>
-        {products.length === 0 ? (
+        {firstPage.length === 0 ? (
           <p className="mt-3 text-sm text-neutral-500">
             لا توجد منتجات منشورة بعد.
           </p>
         ) : (
-          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-            {products.map((product) => (
-              <ProductCard
-                key={product.id}
-                product={product}
-                imageUrl={product.primary_image_path}
-                hasVariants={variantProductIds.has(product.id)}
-                whatsappNumber={settings.whatsappNumber}
-              />
-            ))}
-          </div>
+          <>
+            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+              {firstPage.map((product) => (
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  imageUrl={product.primary_image_path}
+                  hasVariants={variantProductIds.has(product.id)}
+                  whatsappNumber={settings.whatsappNumber}
+                />
+              ))}
+            </div>
+            <LoadMoreProducts
+              initialOffset={firstPage.length}
+              pageSize={HOME_PAGE_SIZE}
+              initialHasMore={hasMoreProducts}
+            />
+          </>
         )}
       </section>
     </div>
