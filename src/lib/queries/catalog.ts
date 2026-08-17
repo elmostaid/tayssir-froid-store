@@ -206,7 +206,8 @@ async function runProductsQuery(
   categorySlug: string | null,
   limit: number,
   sort: ProductSort,
-  pattern: string | null
+  pattern: string | null,
+  offset: number
 ): Promise<CatalogProduct[]> {
   // الترتيب الافتراضي ("الأحدث"): ترتيب المدير اليدوي داخل التصنيف
   // (sort_order تصاعدياً) أولاً — أزرار "↑ طلّع"/"↓ هبّط" فـ/admin/products
@@ -234,13 +235,14 @@ async function runProductsQuery(
       )
     ${orderBy}
     limit ${limit}
+    offset ${offset}
   `;
 }
 
 const queryProductsCached = cachedCatalogQuery(
   ["catalog-products"],
-  async (categorySlug: string | null, limit: number, sort: ProductSort) =>
-    runProductsQuery(categorySlug, limit, sort, null)
+  async (categorySlug: string | null, limit: number, sort: ProductSort, offset: number) =>
+    runProductsQuery(categorySlug, limit, sort, null, offset)
 );
 
 // البحث بنص حرّ: مفاتيحه غير محدودة نظرياً، لذلك تُرك بلا تخزين مؤقّت أول
@@ -270,8 +272,9 @@ const queryProductsSearchCached = cachedCatalogQuery(
     categorySlug: string | null,
     limit: number,
     sort: ProductSort,
-    normalizedQuery: string
-  ) => runProductsQuery(categorySlug, limit, sort, `%${normalizedQuery}%`)
+    normalizedQuery: string,
+    offset: number
+  ) => runProductsQuery(categorySlug, limit, sort, `%${normalizedQuery}%`, offset)
 );
 
 export async function getProducts(
@@ -280,9 +283,13 @@ export async function getProducts(
     limit?: number;
     query?: string;
     sort?: ProductSort;
+    // إزاحة لتصفّح المنتجات على دفعات ("عرض المزيد" فالصفحة الرئيسية) بدل
+    // تحميل الكتالوج كله دفعة واحدة. القيمة الافتراضية 0، فكل مستدعٍ قديم
+    // يبقى بنفس سلوكه بالضبط.
+    offset?: number;
   } = {}
 ): Promise<CatalogProduct[]> {
-  const { categorySlug, limit = 60, query, sort = "newest" } = options;
+  const { categorySlug, limit = 60, query, sort = "newest", offset = 0 } = options;
 
   if (!hasDatabase) return getPreviewProducts({ categorySlug, limit, query, sort });
 
@@ -295,10 +302,10 @@ export async function getProducts(
     // ثانيةً بدل أن يوفّر أي استعلام حقيقي.
     const normalized = normalizeSearchQuery(query ?? "");
     const rows = !pattern
-      ? await queryProductsCached(categorySlug ?? null, limit, sort)
+      ? await queryProductsCached(categorySlug ?? null, limit, sort, offset)
       : isCacheableQuery(normalized)
-        ? await queryProductsSearchCached(categorySlug ?? null, limit, sort, normalized)
-        : await runProductsQuery(categorySlug ?? null, limit, sort, pattern);
+        ? await queryProductsSearchCached(categorySlug ?? null, limit, sort, normalized, offset)
+        : await runProductsQuery(categorySlug ?? null, limit, sort, pattern, offset);
     if (rows.length === 0) {
       logEmptyResult(`getProducts(category=${categorySlug ?? "-"}, query=${query ?? "-"})`);
     }
