@@ -206,3 +206,62 @@ async function restockOrderInternal(
   revalidateCatalog();
   return { error: null };
 }
+
+export type DeleteOrderResult =
+  | { error: null; orderNumber: string }
+  | { error: string };
+
+/**
+ * حذف طلب نهائياً من لوحة الإدارة — مقصور على Owner/Admin.
+ *
+ * لماذا حذف واحد يكفي: فحصنا المفاتيح الأجنبية الفعلية على قاعدتَي Preview
+ * والإنتاج (متطابقتان تماماً)، والسلوك معرَّف أصلاً في المخطَّط:
+ *   order_items.order_id          → ON DELETE CASCADE   (تُحذف معه)
+ *   order_status_history.order_id → ON DELETE CASCADE   (يُحذف معه)
+ *   stock_movements.order_id      → ON DELETE SET NULL  (يبقى، ويفقد الربط)
+ * فلا نكتب حذفاً يدوياً بالترتيب — ذلك يكرّر منطقاً تضمنه القاعدة أصلاً،
+ * وينكسر بصمت لو أُضيف جدول مرتبط جديد لاحقاً. ولا حاجة لأي migration.
+ *
+ * ⚠️ ملاحظة عمل مهمة: حركات المخزون تبقى محفوظة عمداً (SET NULL) لأنها سجل
+ * جرد، لكن **الحذف لا يُرجِع الكمية إلى المخزون**. إرجاع الكمية يقع فقط عند
+ * "إلغاء" أو "إرجاع" الطلب (restockOrderInternal أعلاه). فإن كان المطلوب
+ * استرجاع المخزون، يُلغى الطلب أولاً ثم يُحذف.
+ *
+ * المعاملة هنا ليست تجميلاً: نقفل الصف (for update) ونتحقّق من وجوده داخل
+ * نفس المعاملة قبل الحذف، فإما أن يتم كل شيء أو لا شيء — لا حذف جزئي مهما
+ * تزامنت الطلبات.
+ */
+export async function deleteOrder(orderId: number): Promise<DeleteOrderResult> {
+  const admin = await getAdminUser();
+  if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+  if (!isOwnerAdmin(admin)) {
+    return { error: "هذا الإجراء مقصور على صاحب الحساب (Admin)." };
+  }
+  if (!Number.isInteger(orderId) || orderId < 1) {
+    return { error: "رقم الطلب غير صالح." };
+  }
+
+  let orderNumber: string;
+  try {
+    orderNumber = await sql.begin(async (trx) => {
+      const [order] = await trx<{ order_number: string }[]>`
+        select order_number from public.orders where id = ${orderId} for update
+      `;
+      if (!order) throw new Error("ORDER_NOT_FOUND");
+
+      await trx`delete from public.orders where id = ${orderId}`;
+      return order.order_number;
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "ORDER_NOT_FOUND") {
+      return { error: "الطلب غير موجود (ربما حُذف مسبقاً)." };
+    }
+    console.error("deleteOrder: خطأ غير متوقع", error);
+    return { error: "تعذّر حذف الطلب حالياً بسبب مشكلة تقنية. لم يُحذف أي شيء." };
+  }
+
+  // مسارات الإدارة فقط — لا علاقة للطلبات بذاكرة الكتالوج، فلا نمسّها.
+  revalidatePath("/admin/orders");
+  revalidatePath(`/admin/orders/${orderId}`);
+  return { error: null, orderNumber };
+}
