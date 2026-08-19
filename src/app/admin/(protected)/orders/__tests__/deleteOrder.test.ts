@@ -46,7 +46,7 @@ async function makeOrder(): Promise<{ id: number; orderNumber: string }> {
       notes: null,
     },
     idempotencyKey: randomUUID(),
-    requestContext: null,
+    requestContext: undefined,
   });
   if (!result.ok) throw new Error("fixture order failed: " + JSON.stringify(result.errors));
   const [row] = await sql<{ id: number; order_number: string }[]>`
