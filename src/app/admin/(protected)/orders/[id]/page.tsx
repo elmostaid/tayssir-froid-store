@@ -13,6 +13,7 @@ import { OrderStatusForm } from "@/components/admin/OrderStatusForm";
 import { OrderNoteForm } from "@/components/admin/OrderNoteForm";
 import { DeliveryFeeForm } from "@/components/admin/DeliveryFeeForm";
 import { CopyBonButton } from "@/components/admin/CopyBonButton";
+import { DeleteOrderButton } from "@/components/admin/DeleteOrderButton";
 import { CopyDeliveryInfoButton } from "@/components/admin/CopyDeliveryInfoButton";
 import { buildCustomerWhatsAppLink } from "@/lib/whatsapp";
 import { toInternationalDigits } from "@/lib/phone";
@@ -201,6 +202,23 @@ export default async function AdminOrderDetailPage({ params }: Props) {
           <OrderNoteForm orderId={order.id} />
         </div>
       </div>
+
+      {/* حذف نهائي — مقصور على Owner/Admin، ومفصول في قسم خاص بإطار أحمر
+          حتى لا يُضغط بالخطأ بجوار الإجراءات العادية. الصلاحية تُفحص من
+          جديد داخل deleteOrder نفسه. */}
+      {isOwnerAdmin(admin) && (
+        <div className="mt-4 rounded-xl border border-red-200 bg-white p-4">
+          <h2 className="text-sm font-semibold text-red-700">حذف الطلب</h2>
+          <p className="mt-1 text-xs text-neutral-600">
+            يحذف الطلب وكل سطوره وسجل حالاته نهائياً. لا يمكن التراجع. حركات
+            المخزون تبقى محفوظة في السجل، لكن الحذف لا يُرجع الكمية إلى
+            المخزون — إن أردت إرجاعها، ألغِ الطلب أولاً ثم احذفه.
+          </p>
+          <div className="mt-3">
+            <DeleteOrderButton orderId={order.id} orderNumber={order.orderNumber} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

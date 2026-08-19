@@ -10,14 +10,14 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "الطلبات" };
 
 type Props = {
-  searchParams: Promise<{ q?: string; status?: string; city?: string; from?: string; to?: string }>;
+  searchParams: Promise<{ q?: string; status?: string; city?: string; from?: string; to?: string; deleted?: string }>;
 };
 
 export default async function AdminOrdersPage({ searchParams }: Props) {
   const admin = await getAdminUser();
   if (!admin) redirect("/admin/login");
 
-  const { q, status, city, from, to } = await searchParams;
+  const { q, status, city, from, to, deleted } = await searchParams;
   const validStatus = ORDER_STATUSES.includes(status as OrderStatus) ? (status as OrderStatus) : undefined;
 
   const orders = await listAdminOrders({
@@ -31,6 +31,14 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
   return (
     <div>
       <h1 className="text-xl font-bold text-neutral-800">الطلبات</h1>
+
+      {/* رسالة نجاح بعد حذف طلب — القائمة أدناه مُعاد جلبها أصلاً
+          (force-dynamic + revalidatePath)، فما يظهر هنا هو الحالة بعد الحذف. */}
+      {deleted && (
+        <p className="mt-3 rounded-lg bg-green-50 px-3 py-2 text-sm font-semibold text-green-800">
+          تم حذف الطلب <span dir="ltr">{deleted}</span> نهائياً.
+        </p>
+      )}
 
       <form action="/admin/orders" method="GET" className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         <input
