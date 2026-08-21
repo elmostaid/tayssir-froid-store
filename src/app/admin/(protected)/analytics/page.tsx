@@ -3,6 +3,7 @@ import Link from "next/link";
 import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import { formatMad } from "@/lib/format";
 import {
+  getAbandonedCarts,
   getAnalyticsByBrowser,
   getAnalyticsByDevice,
   getAnalyticsDaily,
@@ -11,7 +12,10 @@ import {
   getOrdersDaily,
   getOrdersTotals,
   rate,
+  REPORT_TIME_ZONE,
+  type AbandonedCartRow,
 } from "@/lib/queries/adminAnalytics";
+import { getSettings } from "@/lib/queries/settings";
 import {
   RANGE_LABELS,
   RANGE_PRESETS,
@@ -40,6 +44,65 @@ const DEVICE_LABELS: Record<string, string> = {
   tablet: "لوحي",
   desktop: "حاسوب",
 };
+
+const EVENT_LABELS: Record<string, string> = {
+  session_start: "دخل الموقع",
+  landing_page_view: "صفحة الهبوط",
+  product_view: "شاهد منتجاً",
+  add_to_cart: "أضاف للسلة",
+  cart_view: "فتح السلة",
+  begin_checkout: "فتح Checkout",
+  purchase: "اشترى",
+};
+
+/** مدة مقروءة بلمحة: «3د 12ث» لا 192000 مللي ثانية. */
+function duration(seconds: number): string {
+  if (seconds <= 0) return "—";
+  if (seconds < 60) return `${seconds}ث`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  if (minutes < 60) return rest ? `${minutes}د ${rest}ث` : `${minutes}د`;
+  return `${Math.floor(minutes / 60)}س ${minutes % 60}د`;
+}
+
+const dateTimeFormat = new Intl.DateTimeFormat("en-GB", {
+  timeZone: REPORT_TIME_ZONE,
+  day: "2-digit",
+  month: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
+function whenLocal(iso: string): string {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? "—" : dateTimeFormat.format(date);
+}
+
+/** المصدر كما يُعرض: الحملة أدقّ من المصدر، والإحالة آخر ما نلجأ إليه. */
+function sourceLabel(row: AbandonedCartRow): string {
+  const parts = [row.utmSource, row.utmCampaign].filter(Boolean);
+  if (parts.length > 0) return parts.join(" · ");
+  return row.referrerHost ?? "مباشر";
+}
+
+/**
+ * عدد المنتجات المختلفة يعتمد على product_id في حدث الإضافة. أحداث قديمة
+ * جداً (قبل أن يحمل الحدث المنتج) تصل بصفر رغم وجود كميات — نعرضها شرطة
+ * بدل صفر يوهم أن السلة كانت فارغة.
+ */
+function productsLabel(row: AbandonedCartRow): string {
+  if (row.distinctProducts === 0 && row.totalUnits > 0) return "—";
+  return num(row.distinctProducts);
+}
+
+function YesNo({ yes }: { yes: boolean }) {
+  return (
+    <span className={yes ? "font-semibold text-brand-turquoise-dark" : "text-neutral-400"}>
+      {yes ? "نعم" : "لا"}
+    </span>
+  );
+}
 
 function pct(value: number): string {
   return `${value.toFixed(value >= 10 ? 0 : 1)}%`;
@@ -216,15 +279,21 @@ export default async function AdminAnalyticsPage({
   const { range: rangeParam, from, to } = await searchParams;
   const range = resolveRange(rangeParam, from, to);
 
-  const [totals, orders, daily, ordersDaily, sources, devices, browsers] = await Promise.all([
-    getAnalyticsTotals(range),
-    getOrdersTotals(range),
-    getAnalyticsDaily(range),
-    getOrdersDaily(range),
-    getAnalyticsSources(range),
-    getAnalyticsByDevice(range),
-    getAnalyticsByBrowser(range),
-  ]);
+  // الحدّ الأدنى يأتي من الإعدادات: لو غيّرتَه غداً، يتبعه قسم السلات
+  // المتروكة من تلقاء نفسه بلا لمس أي كود.
+  const settings = await getSettings();
+
+  const [totals, orders, daily, ordersDaily, sources, devices, browsers, abandoned] =
+    await Promise.all([
+      getAnalyticsTotals(range),
+      getOrdersTotals(range),
+      getAnalyticsDaily(range),
+      getOrdersDaily(range),
+      getAnalyticsSources(range),
+      getAnalyticsByDevice(range),
+      getAnalyticsByBrowser(range),
+      getAbandonedCarts(range, settings.minOrderAmountMad),
+    ]);
 
   const ordersByDay = new Map(ordersDaily.map((row) => [row.day, row]));
   const days = [...new Set([...daily.map((d) => d.day), ...ordersDaily.map((d) => d.day)])].sort(
@@ -381,6 +450,180 @@ export default async function AdminAnalyticsPage({
               width={rate(orders.orders, totals.sessions)}
             />
           </div>
+
+          <SectionTitle note={`كل جلسة أضافت للسلة ولم يُسجَّل لها شراء. الحد الأدنى المعتمد: ${formatMad(settings.minOrderAmountMad)} — من الإعدادات، لا مكتوباً في الكود.`}>
+            السلات المتروكة
+          </SectionTitle>
+
+          {abandoned.summary.abandoned === 0 ? (
+            <div className="mt-3 rounded-xl border border-dashed border-neutral-300 bg-white p-6 text-center">
+              <p className="text-sm font-semibold text-neutral-700">لا توجد سلة متروكة في هذه الفترة</p>
+              <p className="mt-1 text-xs text-neutral-500">
+                إمّا أن كل من أضاف للسلة أتمّ طلبه، أو لم يُضف أحد للسلة أصلاً.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* الخلاصة في جملة واحدة — هذا ما يُقرأ على الهاتف قبل أي جدول. */}
+              <p className="mt-3 rounded-xl border border-brand-orange/30 bg-brand-orange-tint p-3 text-sm leading-relaxed text-neutral-800">
+                <span className="font-bold">{num(abandoned.summary.abandoned)}</span> شخصاً أضافوا
+                للسلة ولم يشتروا:{" "}
+                <span className="font-bold">{num(abandoned.summary.stoppedBelowMinimum)}</span>{" "}
+                توقّفوا تحت {formatMad(settings.minOrderAmountMad)}،{" "}
+                <span className="font-bold">{num(abandoned.summary.reachedMinimumNoCheckout)}</span>{" "}
+                بلغوا الحد الأدنى ولم يفتحوا Checkout، و
+                <span className="font-bold">{num(abandoned.summary.reachedCheckoutNoPurchase)}</span>{" "}
+                فتحوا Checkout ولم يشتروا.
+              </p>
+
+              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+                <StatCard
+                  label="أضافوا ولم يشتروا"
+                  value={num(abandoned.summary.abandoned)}
+                  hint="أشخاص (جلسات فريدة)"
+                  accent="orange"
+                />
+                <StatCard
+                  label={`توقّفوا تحت ${formatMad(settings.minOrderAmountMad)}`}
+                  value={num(abandoned.summary.stoppedBelowMinimum)}
+                  hint="لم يفتحوا Checkout"
+                />
+                <StatCard
+                  label="بلغوا الحد الأدنى"
+                  value={num(abandoned.summary.reachedMinimumNoCheckout)}
+                  hint="ولم يفتحوا Checkout"
+                />
+                <StatCard
+                  label="فتحوا Checkout"
+                  value={num(abandoned.summary.reachedCheckoutNoPurchase)}
+                  hint="ولم يشتروا"
+                  accent="orange"
+                />
+                <StatCard
+                  label="القيمة المتروكة"
+                  value={formatMad(abandoned.summary.abandonedValueMad)}
+                  hint="مجموع آخر قيم تلك السلات"
+                  compact
+                />
+              </div>
+
+              {/* تحذير الدقّة: يظهر فقط حين يوجد فارق تتبّع حقيقي. */}
+              {purchaseGap > 0 && (
+                <p className="mt-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">
+                  انتبه: هناك {num(purchaseGap)} طلباً حقيقياً بلا حدث شراء مُسجَّل في هذه الفترة، فقد
+                  يظهر حتى {num(purchaseGap)} من هؤلاء هنا وهم قد اشتروا فعلاً. جدول الطلبات يبقى
+                  المرجع النهائي — لا نُعوّض الفارق ولا نخترع حدثاً.
+                </p>
+              )}
+
+              {/* الهاتف: بطاقة لكل سلة. */}
+              <div className="mt-3 flex flex-col gap-2 lg:hidden">
+                {abandoned.rows.map((row, index) => (
+                  <div key={index} className="rounded-xl border border-neutral-200 bg-white p-3">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-base font-bold tabular-nums text-brand-orange">
+                        {formatMad(row.lastCartValueMad)}
+                      </span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                          row.meetsMinimum
+                            ? "bg-brand-turquoise-tint text-brand-turquoise-dark"
+                            : "bg-neutral-100 text-neutral-600"
+                        }`}
+                      >
+                        {row.meetsMinimum ? "بلغ الحد الأدنى" : "تحت الحد الأدنى"}
+                      </span>
+                    </div>
+                    <div className="mt-2 grid grid-cols-3 gap-2 border-t border-neutral-100 pt-2">
+                      <MiniStat label="منتجات مختلفة" value={productsLabel(row)} />
+                      <MiniStat label="مجموع الكميات" value={num(row.totalUnits)} />
+                      <MiniStat label="مدة الجلسة" value={duration(row.sessionSeconds)} />
+                      <MiniStat label="فتح السلة" value={row.sawCart ? "نعم" : "لا"} muted={!row.sawCart} />
+                      <MiniStat
+                        label="Checkout"
+                        value={row.reachedCheckout ? "نعم" : "لا"}
+                        muted={!row.reachedCheckout}
+                      />
+                      <MiniStat label="آخر حدث" value={EVENT_LABELS[row.lastEvent] ?? row.lastEvent} />
+                    </div>
+                    <p className="mt-2 border-t border-neutral-100 pt-2 text-[11px] leading-snug text-neutral-500">
+                      {sourceLabel(row)} · {DEVICE_LABELS[row.deviceType ?? ""] ?? "جهاز غير معروف"} ·{" "}
+                      {BROWSER_LABELS[row.browser ?? ""] ?? "متصفح غير معروف"} ·{" "}
+                      <span dir="ltr">{whenLocal(row.lastAt)}</span>
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              {/* الحاسوب: جدول كامل. */}
+              <div className="mt-3 hidden overflow-x-auto rounded-xl border border-neutral-200 bg-white lg:block">
+                <table className="w-full min-w-[62rem] text-sm">
+                  <thead className="bg-neutral-50 text-xs text-neutral-600">
+                    <tr>
+                      <th className="px-3 py-2 text-right font-semibold">آخر قيمة السلة</th>
+                      <th className="px-3 py-2 text-right font-semibold">الحد الأدنى</th>
+                      <th className="px-3 py-2 text-right font-semibold">منتجات مختلفة</th>
+                      <th className="px-3 py-2 text-right font-semibold">مجموع الكميات</th>
+                      <th className="px-3 py-2 text-right font-semibold">فتح السلة</th>
+                      <th className="px-3 py-2 text-right font-semibold">Checkout</th>
+                      <th className="px-3 py-2 text-right font-semibold">آخر حدث</th>
+                      <th className="px-3 py-2 text-right font-semibold">مدة الجلسة</th>
+                      <th className="px-3 py-2 text-right font-semibold">المصدر / الحملة</th>
+                      <th className="px-3 py-2 text-right font-semibold">الجهاز</th>
+                      <th className="px-3 py-2 text-right font-semibold">المتصفح</th>
+                      <th className="px-3 py-2 text-right font-semibold">آخر نشاط</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {abandoned.rows.map((row, index) => (
+                      <tr key={index} className="border-t border-neutral-100">
+                        <td className="px-3 py-2 tabular-nums font-bold text-brand-orange">
+                          {formatMad(row.lastCartValueMad)}
+                        </td>
+                        <td className="px-3 py-2">
+                          <span
+                            className={
+                              row.meetsMinimum
+                                ? "font-semibold text-brand-turquoise-dark"
+                                : "text-neutral-500"
+                            }
+                          >
+                            {row.meetsMinimum ? "بلغه" : "تحته"}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 tabular-nums">{productsLabel(row)}</td>
+                        <td className="px-3 py-2 tabular-nums">{num(row.totalUnits)}</td>
+                        <td className="px-3 py-2">
+                          <YesNo yes={row.sawCart} />
+                        </td>
+                        <td className="px-3 py-2">
+                          <YesNo yes={row.reachedCheckout} />
+                        </td>
+                        <td className="px-3 py-2">{EVENT_LABELS[row.lastEvent] ?? row.lastEvent}</td>
+                        <td className="px-3 py-2 tabular-nums">{duration(row.sessionSeconds)}</td>
+                        <td className="px-3 py-2">{sourceLabel(row)}</td>
+                        <td className="px-3 py-2 text-neutral-500">
+                          {DEVICE_LABELS[row.deviceType ?? ""] ?? "—"}
+                        </td>
+                        <td className="px-3 py-2 text-neutral-500">
+                          {BROWSER_LABELS[row.browser ?? ""] ?? "—"}
+                        </td>
+                        <td className="px-3 py-2 tabular-nums text-neutral-500" dir="ltr">
+                          {whenLocal(row.lastAt)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <p className="mt-2 text-[11px] leading-relaxed text-neutral-500">
+                لا يحمل هذا القسم أي اسم أو هاتف أو عنوان — القياس الداخلي لا يخزّن شيئاً من ذلك
+                أصلاً. «آخر قيمة السلة» هي ما بلغته السلة عند آخر إضافة؛ لا نرصد حذف منتج منها.
+                {abandoned.truncated && ` معروضة أكبر ${num(abandoned.rows.length)} سلة قيمةً فقط.`}
+              </p>
+            </>
+          )}
 
           <SectionTitle note="هذا الجدول يجيب عن السؤال: هل انخفضت الطلبات بسبب قلّة الزوّار أم بسبب مرحلة بعينها؟">
             حسب اليوم

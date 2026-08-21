@@ -83,6 +83,43 @@ export type AnalyticsBreakdownRow = {
   purchaseEvents: number;
 };
 
+/** صفّ واحد = جلسة واحدة أضافت للسلة ولم تشترِ. لا يحمل أي بيانات شخصية. */
+export type AbandonedCartRow = {
+  /** آخر قيمة سلة سجّلها القياس في تلك الجلسة (لا الأكبر). */
+  lastCartValueMad: number;
+  distinctProducts: number;
+  totalUnits: number;
+  meetsMinimum: boolean;
+  sawCart: boolean;
+  reachedCheckout: boolean;
+  lastEvent: string;
+  sessionSeconds: number;
+  utmSource: string | null;
+  utmCampaign: string | null;
+  referrerHost: string | null;
+  deviceType: string | null;
+  browser: string | null;
+  /** وقت آخر حدث (ISO) — يُعرض بتوقيت المغرب. */
+  lastAt: string;
+};
+
+export type AbandonedCartsSummary = {
+  /** كل الجلسات التي أضافت للسلة ولم تشترِ. مجموع الفئات الثلاث أدناه. */
+  abandoned: number;
+  stoppedBelowMinimum: number;
+  reachedMinimumNoCheckout: number;
+  reachedCheckoutNoPurchase: number;
+  /** مجموع آخر قيم تلك السلات — ما تُرك على الطاولة. */
+  abandonedValueMad: number;
+};
+
+export type AbandonedCarts = {
+  summary: AbandonedCartsSummary;
+  rows: AbandonedCartRow[];
+  /** true إذا بلغ عدد الصفوف الحدّ، أي أن القائمة مقصوصة. */
+  truncated: boolean;
+};
+
 // كل الأرقام تصل من Postgres كنصوص (bigint/numeric)، فنُوحّد التحويل هنا مرة
 // واحدة بدل تكرار Number(...) في كل حقل.
 function n(value: unknown): number {
@@ -303,6 +340,113 @@ export function getAnalyticsByDevice(range: AnalyticsRange): Promise<AnalyticsBr
 
 export function getAnalyticsByBrowser(range: AnalyticsRange): Promise<AnalyticsBreakdownRow[]> {
   return breakdownBy("browser", range);
+}
+
+/**
+ * السلات المتروكة: كل جلسة أضافت للسلة ولم يُسجَّل لها شراء.
+ *
+ * ثلاثة قرارات تستحقّ التوضيح:
+ *
+ * 1) **«آخر قيمة» لا «أكبر قيمة».** cart_value في كل حدث إضافة هو مجموع
+ *    السلة بعد تلك الإضافة، فآخر حدث يحمل الحصيلة النهائية. أخذ الأكبر كان
+ *    سيُبالغ لو حذف الزبون شيئاً — وإن كنا لا نرصد الحذف أصلاً (لا يوجد
+ *    حدث remove_from_cart)، فالرقم يبقى «ما بلغته السلة»، لا جردَ سلةٍ حيّة.
+ *
+ * 2) **الحد الأدنى يأتي من الإعدادات لا مكتوباً في الكود.** لو غيّرتَ الحد
+ *    غداً من 1000 إلى 1200، يتبعه هذا القسم من تلقاء نفسه.
+ *
+ * 3) **الفئات الثلاث حصرية وجامعة**، فمجموعها يساوي العدد الكلي دائماً:
+ *    من فتح Checkout يُحسب هناك مهما كانت سلته، ومن لم يفتحه يُقسَّم على
+ *    الحد الأدنى. بلا هذا الترتيب يظهر الشخص الواحد في خانتين فتنكسر الجمعة.
+ *
+ * وأخيراً: الجلسة التي ضاع حدث شرائها ستظهر هنا خطأً. اللوحة تعرض فوق
+ * القسم فارقَ التتبّع إن وُجد، فلا يُقرأ الرقم على أنه يقين.
+ */
+export async function getAbandonedCarts(
+  range: AnalyticsRange,
+  minOrderAmountMad: number,
+  limit = 100
+): Promise<AbandonedCarts> {
+  const [row] = await sql<Record<string, unknown>[]>`
+    with per_session as (
+      select
+        session_id,
+        max(occurred_at)                                        as last_at,
+        coalesce(max(session_ms), 0)                            as session_ms,
+        bool_or(event_name = 'cart_view')                       as saw_cart,
+        bool_or(event_name = 'begin_checkout')                  as reached_checkout,
+        bool_or(event_name = 'purchase')                        as bought,
+        count(*) filter (where event_name = 'add_to_cart')      as add_events,
+        count(distinct product_id) filter (
+          where event_name = 'add_to_cart' and product_id is not null
+        )                                                       as distinct_products,
+        coalesce(sum(quantity) filter (where event_name = 'add_to_cart'), 0) as total_units,
+        (array_agg(cart_value order by occurred_at desc, id desc) filter (
+          where event_name = 'add_to_cart' and cart_value is not null
+        ))[1]                                                   as last_cart_value,
+        (array_agg(event_name order by occurred_at desc, id desc))[1] as last_event,
+        -- ثابتة داخل الجلسة (تُلتقط عند صفحة الهبوط وتُعاد مع كل حدث)، لكننا
+        -- نُجمّعها بـmax لا نضعها في group by: الضمانة المطلوبة هنا صفّ واحد
+        -- لكل جلسة مهما حدث، وأي قيمة شاذّة واحدة كانت ستشطر الجلسة صفّين.
+        max(utm_source)                                         as utm_source,
+        max(utm_campaign)                                       as utm_campaign,
+        max(referrer_host)                                      as referrer_host,
+        max(device_type)                                        as device_type,
+        max(browser)                                            as browser
+      from public.analytics_events
+      where occurred_at >= ${range.from} and occurred_at < ${range.to}
+      group by session_id
+    ),
+    abandoned as (
+      select *, coalesce(last_cart_value, 0) >= ${minOrderAmountMad} as meets_minimum
+      from per_session
+      where add_events > 0 and not bought
+    )
+    select
+      (select count(*) from abandoned)                                          as total,
+      (select count(*) from abandoned where reached_checkout)                    as checkout_no_purchase,
+      (select count(*) from abandoned where not reached_checkout and meets_minimum)     as minimum_no_checkout,
+      (select count(*) from abandoned where not reached_checkout and not meets_minimum) as below_minimum,
+      (select coalesce(sum(last_cart_value), 0) from abandoned)                  as abandoned_value,
+      (
+        select coalesce(json_agg(t order by t.last_cart_value desc nulls last, t.last_at desc), '[]'::json)
+        from (
+          select * from abandoned
+          order by last_cart_value desc nulls last, last_at desc
+          limit ${limit}
+        ) t
+      )                                                                          as rows
+    from (select 1) as _
+  `;
+
+  const rawRows = (row?.rows ?? []) as Array<Record<string, unknown>>;
+
+  return {
+    summary: {
+      abandoned: n(row?.total),
+      stoppedBelowMinimum: n(row?.below_minimum),
+      reachedMinimumNoCheckout: n(row?.minimum_no_checkout),
+      reachedCheckoutNoPurchase: n(row?.checkout_no_purchase),
+      abandonedValueMad: n(row?.abandoned_value),
+    },
+    rows: rawRows.map((r) => ({
+      lastCartValueMad: n(r.last_cart_value),
+      distinctProducts: n(r.distinct_products),
+      totalUnits: n(r.total_units),
+      meetsMinimum: Boolean(r.meets_minimum),
+      sawCart: Boolean(r.saw_cart),
+      reachedCheckout: Boolean(r.reached_checkout),
+      lastEvent: String(r.last_event ?? ""),
+      sessionSeconds: Math.round(n(r.session_ms) / 1000),
+      utmSource: (r.utm_source as string | null) ?? null,
+      utmCampaign: (r.utm_campaign as string | null) ?? null,
+      referrerHost: (r.referrer_host as string | null) ?? null,
+      deviceType: (r.device_type as string | null) ?? null,
+      browser: (r.browser as string | null) ?? null,
+      lastAt: String(r.last_at ?? ""),
+    })),
+    truncated: rawRows.length >= limit,
+  };
 }
 
 /** نسبة مئوية بقسمة آمنة — 0 من 0 تساوي 0، لا NaN ولا Infinity. */
