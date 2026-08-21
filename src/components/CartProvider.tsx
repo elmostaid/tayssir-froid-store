@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import type { CartItem } from "@/lib/cart/types";
+import { trackAnalyticsEvent } from "@/lib/analytics/track";
 import {
   cartItemKey,
   computeSubtotal,
@@ -52,9 +53,28 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // تخزين تالف أو غير متاح (وضع خاص مثلاً) — نتجاهل ونبدأ بسلة فارغة
     } finally {
+      // تسليم المسؤولية من السكريبت المبكّر إلى React. موضع هذا السطر ليس
+      // تفصيلاً: هو في **نفس** الكتلة المتزامنة التي قرأنا فيها التخزين،
+      // فلا توجد لحظة واحدة تكون فيها السلة مقروءة والعلَم لم يُرفع بعد —
+      // ولا لحظة يظنّ فيها الطرفان أن الضغطة لهما. (انظر lib/cart/earlyAdd.ts)
+      window.__tfCartLive = true;
       setIsHydrated(true);
     }
   }, []);
+
+  // الإضافات التي وقعت قبل الترطيب سُجّلت في السلة فعلاً، لكن حدث القياس
+  // الداخلي لها لم يُرسَل بعد (السكريبت المضمَّن لا يعرف الجلسة ولا يُحمّل
+  // طبقة الإرسال عمداً). نُفرغ الطابور هنا مرة واحدة حتى يبقى عدّاد
+  // "أضاف للسلة" في اللوحة صادقاً، ولا نخسر بالسرعةِ صدقَ الأرقام.
+  useEffect(() => {
+    if (!isHydrated) return;
+    const pending = window.__tfPendingAdds;
+    if (!pending || pending.length === 0) return;
+    window.__tfPendingAdds = [];
+    for (const add of pending) {
+      trackAnalyticsEvent("add_to_cart", add);
+    }
+  }, [isHydrated]);
 
   // حفظ أي تغيير في السلة في التخزين المحلي (بعد اكتمال التحميل الأول فقط
   // حتى لا نكتب سلة فارغة فوق سلة محفوظة قبل أن تُحمَّل)

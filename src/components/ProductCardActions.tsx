@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useCart } from "@/components/CartProvider";
 import { buildProductWhatsAppLink } from "@/lib/whatsapp";
 import { trackAnalyticsEvent } from "@/lib/analytics/track";
+import type { EarlyAddPayload } from "@/lib/cart/earlyAdd";
 import type { CatalogProduct } from "@/lib/types";
 
 // إضافة سريعة للسلة من بطاقة المنتج (بالكمية الدنيا) — تُستعمل فقط للمنتجات
@@ -24,23 +25,27 @@ export function ProductCardActions({
   const outOfStock = product.status === "out_of_stock" || product.stock_quantity <= 0;
   const whatsappLink = buildProductWhatsAppLink(whatsappNumber, product.name_ar, product.sku);
 
+  const cartItem = {
+    productId: product.id,
+    variantId: null,
+    slug: product.slug,
+    sku: product.sku,
+    name: product.name_ar,
+    variantName: null,
+    unitPrice: Number(product.sale_price),
+    minOrderQty: product.min_order_qty,
+    qtyIncrement: product.qty_increment,
+    imageUrl,
+  };
+
+  // نفس الحمولة بالضبط التي يمرّرها handleAdd أدناه، مكتوبة في HTML نفسه
+  // حتى يستطيع السكريبت المضمَّن تنفيذ الإضافة قبل وصول React. اشتقاقها من
+  // نفس الكائن — لا نسخة ثانية — هو ما يضمن ألّا يفترقا مع الوقت.
+  const earlyAdd: EarlyAddPayload = { ...cartItem, quantity: product.min_order_qty };
+
   function handleAdd() {
     if (outOfStock || hasVariants) return;
-    addItem(
-      {
-        productId: product.id,
-        variantId: null,
-        slug: product.slug,
-        sku: product.sku,
-        name: product.name_ar,
-        variantName: null,
-        unitPrice: Number(product.sale_price),
-        minOrderQty: product.min_order_qty,
-        qtyIncrement: product.qty_increment,
-        imageUrl,
-      },
-      product.min_order_qty
-    );
+    addItem(cartItem, product.min_order_qty);
     // هذه الإضافة السريعة كانت غير مرئية تماماً قبل اليوم: لا لـMeta ولا
     // لنا. نسجّلها داخلياً الآن حتى يصبح عدد "من أضاف للسلة" في اللوحة
     // صادقاً. حدث Meta لا يُضاف هنا في هذه المرحلة عمداً — قرار منفصل
@@ -69,9 +74,16 @@ export function ProductCardActions({
           type="button"
           onClick={handleAdd}
           disabled={outOfStock}
+          data-early-add={outOfStock ? undefined : JSON.stringify(earlyAdd)}
           className="flex min-h-11 flex-1 items-center justify-center rounded-full bg-brand-orange px-3 text-xs font-semibold text-white transition-colors hover:bg-brand-orange-dark disabled:cursor-not-allowed disabled:bg-neutral-300"
         >
-          {outOfStock ? "غير متوفر" : added ? "تمت الإضافة ✓" : "أضف للسلة"}
+          {/* suppressHydrationWarning: قد يكون السكريبت المبكّر غيّر هذا
+              النص إلى «تمت الإضافة ✓» قبل الترطيب. لا نريد تحذيراً ولا
+              ترقيعاً وقت الترطيب — أول إعادة رندر بعد قراءة السلة تُعيده
+              إلى ما يقوله React على أي حال. */}
+          <span data-add-label suppressHydrationWarning>
+            {outOfStock ? "غير متوفر" : added ? "تمت الإضافة ✓" : "أضف للسلة"}
+          </span>
         </button>
       )}
       <a
