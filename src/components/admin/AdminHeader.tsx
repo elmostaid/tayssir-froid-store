@@ -24,6 +24,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/admin/categories", label: "التصنيفات", adminOnly: true },
   { href: "/admin/customers", label: "الزبائن", adminOnly: true },
   { href: "/admin/reports", label: "التقارير والأرباح", adminOnly: true },
+  { href: "/admin/analytics", label: "تحليلات الزوّار", adminOnly: true },
   { href: "/admin/settings", label: "الإعدادات", adminOnly: true },
   { href: "/admin/users", label: "المستخدمون والخدامة", adminOnly: true },
 ];
