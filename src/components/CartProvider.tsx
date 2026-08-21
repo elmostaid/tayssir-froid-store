@@ -10,6 +10,8 @@ import {
 } from "react";
 import type { CartItem } from "@/lib/cart/types";
 import { trackAnalyticsEvent } from "@/lib/analytics/track";
+import { SESSION_IDLE_MINUTES } from "@/lib/analytics/session";
+import { PENDING_ADDS_KEY, type PendingAdd } from "@/lib/cart/earlyAdd";
 import {
   cartItemKey,
   computeSubtotal,
@@ -66,13 +68,29 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   // الداخلي لها لم يُرسَل بعد (السكريبت المضمَّن لا يعرف الجلسة ولا يُحمّل
   // طبقة الإرسال عمداً). نُفرغ الطابور هنا مرة واحدة حتى يبقى عدّاد
   // "أضاف للسلة" في اللوحة صادقاً، ولا نخسر بالسرعةِ صدقَ الأرقام.
+  //
+  // الطابور في التخزين لا في الذاكرة: الزبون الذي يضغط عند الثانية الثانية
+  // قد يغادر قبل أن يصل React عند العاشرة، فيُفرَّغ في أول صفحة يكتمل فيها
+  // الترطيب بدل أن يضيع. ونُسقط ما شاخ أكثر من عمر الجلسة لأن نسبه إلى
+  // جلسة أخرى لاحقة كذبٌ أسوأ من إسقاطه.
   useEffect(() => {
     if (!isHydrated) return;
-    const pending = window.__tfPendingAdds;
-    if (!pending || pending.length === 0) return;
-    window.__tfPendingAdds = [];
+    let pending: PendingAdd[] = [];
+    try {
+      const raw = window.localStorage.getItem(PENDING_ADDS_KEY);
+      if (!raw) return;
+      window.localStorage.removeItem(PENDING_ADDS_KEY);
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) pending = parsed;
+    } catch {
+      return;
+    }
+
+    const oldest = Date.now() - SESSION_IDLE_MINUTES * 60_000;
     for (const add of pending) {
-      trackAnalyticsEvent("add_to_cart", add);
+      if (!add || typeof add.at !== "number" || add.at < oldest) continue;
+      const { at: _at, ...payload } = add;
+      trackAnalyticsEvent("add_to_cart", payload);
     }
   }, [isHydrated]);
 

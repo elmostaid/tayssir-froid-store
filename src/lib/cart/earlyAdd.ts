@@ -23,11 +23,21 @@
  *  2) العلَم __tfCartLive يُرفع داخل نفس الكتلة المتزامنة التي يقرأ فيها
  *     CartProvider التخزين. JavaScript أحادي الخيط، فلا يمكن لأي ضغطة أن
  *     تقع بين القراءة ورفع العلَم — لا سباق ممكن، لا نظرياً ولا عملياً.
- *  3) كل إضافة مبكّرة تُصفّ في __tfPendingAdds، ويُفرغها CartProvider بعد
- *     الترطيب عبر نفس مسار القياس الداخلي — فلا يضيع أي حدث.
+ *  3) كل إضافة مبكّرة تُصفّ في التخزين (لا في الذاكرة)، ويُفرغها
+ *     CartProvider بعد الترطيب عبر نفس مسار القياس الداخلي — فلا يضيع
+ *     الحدث حتى لو غادر الزبون الصفحة قبل أن يصل React.
  */
 
 export const CART_STORAGE_KEY = "tayssir_cart_v1";
+
+/**
+ * طابور الإضافات المبكّرة المنتظِرة للقياس. في التخزين لا في الذاكرة، لأن
+ * الزبون الذي يضغط عند الثانية الثانية كثيراً ما يغادر الصفحة قبل أن يصل
+ * React عند الثانية العاشرة — فطابور في الذاكرة يموت معه، ويختفي من اللوحة
+ * حدثٌ وقع فعلاً. قِسنا هذا على Production: ضغطة قبل الترطيب ثم مغادرة =
+ * صفر أحداث. مع التخزين تُفرَّغ في أول صفحة يكتمل فيها الترطيب.
+ */
+export const PENDING_ADDS_KEY = "tayssir_pending_adds_v1";
 
 /** الحمولة التي يحملها الزر في data-early-add. */
 export type EarlyAddPayload = {
@@ -51,12 +61,13 @@ export type PendingAdd = {
   sku: string;
   quantity: number;
   cartValue: number;
+  /** لحظة الضغط — تُستعمل لإسقاط ما شاخ أكثر من عمر الجلسة. */
+  at: number;
 };
 
 declare global {
   interface Window {
     __tfCartLive?: boolean;
-    __tfPendingAdds?: PendingAdd[];
   }
 }
 
@@ -83,8 +94,8 @@ function compact(source: string): string {
 export const EARLY_ADD_SCRIPT = compact(`
 (function(){
   var KEY=${JSON.stringify(CART_STORAGE_KEY)};
+  var PKEY=${JSON.stringify(PENDING_ADDS_KEY)};
   var DONE="تمت الإضافة ✓";
-  window.__tfPendingAdds=window.__tfPendingAdds||[];
   function snap(q,min,inc){
     var m=Math.max(1,min||1),i=Math.max(1,inc||1);
     if(q<=m)return m;
@@ -125,7 +136,12 @@ export const EARLY_ADD_SCRIPT = compact(`
       }
       try{localStorage.setItem(KEY,JSON.stringify(items));}catch(e){}
       var v=0;for(var j=0;j<items.length;j++)v+=items[j].unitPrice*items[j].quantity;
-      window.__tfPendingAdds.push({productId:it.productId,sku:it.sku,quantity:it.quantity,cartValue:v});
+      try{
+        var q=JSON.parse(localStorage.getItem(PKEY)||"[]");
+        if(!Array.isArray(q))q=[];
+        q.push({productId:it.productId,sku:it.sku,quantity:it.quantity,cartValue:v,at:Date.now()});
+        localStorage.setItem(PKEY,JSON.stringify(q));
+      }catch(e){}
       badge(items);
       var label=btn.querySelector("[data-add-label]")||btn;
       var was=label.textContent;
