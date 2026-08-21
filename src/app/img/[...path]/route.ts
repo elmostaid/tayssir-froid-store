@@ -52,7 +52,13 @@ export async function GET(
   try {
     const upstream = await fetch(
       `${supabaseUrl}/storage/v1/object/public/product-images/${objectPath}`,
-      { cache: "no-store" }
+      {
+        cache: "no-store",
+        // مهلة صريحة: بدونها، تعثّر Supabase يُعلّق هذه الدالة بلا نهاية —
+        // نفس فئة العطل التي أصلحناها في safeQuery. الصورة تسقط بهدوء
+        // (404) بدل أن تحجز نسخة خادم.
+        signal: AbortSignal.timeout(8000),
+      }
     );
     if (!upstream.ok) return new NextResponse(null, { status: 404 });
 

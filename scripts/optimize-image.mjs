@@ -40,6 +40,14 @@ export async function optimizeImage(input) {
       .jpeg({ quality, mozjpeg: true, progressive: false, chromaSubsampling: "4:2:0" })
       .toBuffer();
     if (out.length <= MAX_BYTES || quality === 58) {
+      // نتأكّد أن الناتج صورة صالحة فعلاً قبل إعادته. هذا ليس احتياطاً
+      // نظرياً: الصور المُعاد ترميزها تُقدَّم من حافة Vercel بترويسة
+      // immutable لسنة كاملة، فصورة تالفة تُثبَّت هناك ولا تُزال إلا بإعادة
+      // نشر. أرخص فحص يمنع أسوأ نتيجة.
+      const check = await sharp(out).metadata();
+      if (!check.width || !check.height || check.format !== "jpeg") {
+        throw new Error("الناتج ليس JPEG صالحاً");
+      }
       return { buffer: out, quality, width: meta.width, height: meta.height };
     }
   }
