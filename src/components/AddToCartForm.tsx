@@ -6,6 +6,7 @@ import { useCart } from "@/components/CartProvider";
 import { snapQuantity } from "@/lib/cart/cartMath";
 import { formatMad } from "@/lib/format";
 import { trackAddToCart } from "@/lib/pixel/fbq";
+import { trackAnalyticsEvent } from "@/lib/analytics/track";
 import type { CatalogProduct, CatalogProductVariant } from "@/lib/types";
 
 export function AddToCartForm({
@@ -18,7 +19,7 @@ export function AddToCartForm({
   imageUrl: string | null;
 }) {
   const router = useRouter();
-  const { addItem } = useCart();
+  const { addItem, subtotal } = useCart();
   const [selectedVariantId, setSelectedVariantId] = useState<number | null>(
     variants[0]?.id ?? null
   );
@@ -85,6 +86,14 @@ export function AddToCartForm({
       price: effective.price,
       quantity,
       category: product.category_name_ar,
+    });
+    // القياس الداخلي — مسار مستقل تماماً عن Meta أعلاه: لا يشاركه أي حالة
+    // ولا يمكن أن يُغيّر سلوكه، وفشله لا يمنع إرسال حدث Meta ولا العكس.
+    trackAnalyticsEvent("add_to_cart", {
+      productId: product.id,
+      sku: product.sku,
+      quantity,
+      cartValue: subtotal + effective.price * quantity,
     });
     setAdded(true);
   }

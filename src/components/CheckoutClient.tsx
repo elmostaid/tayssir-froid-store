@@ -9,6 +9,7 @@ import { isValidMoroccanPhone } from "@/lib/phone";
 import { buildOrderWhatsAppMessage, buildWhatsAppLink } from "@/lib/whatsapp";
 import { submitOrder, type CheckoutState } from "@/app/(storefront)/checkout/actions";
 import { trackInitiateCheckout, trackPurchase } from "@/lib/pixel/fbq";
+import { trackAnalyticsEvent } from "@/lib/analytics/track";
 
 const SAVE_ORDER_MAX_ATTEMPTS = 3;
 const SAVE_ORDER_RETRY_DELAYS_MS = [800, 2000];
@@ -112,6 +113,9 @@ export function CheckoutClient({
       value: subtotal,
       eventId: crypto.randomUUID(),
     });
+    // القياس الداخلي، بنفس الشرط ونفس الـref بالضبط — سطر مضاف لا يغيّر أي
+    // منطق قائم أعلاه.
+    trackAnalyticsEvent("begin_checkout", { cartValue: subtotal });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHydrated, items.length]);
 
@@ -254,6 +258,22 @@ export function CheckoutClient({
         value: subtotal,
         eventId: idempotencyKey,
       });
+      // القياس الداخلي للشراء. عمداً هنا وليس داخل createOrder: مسار إنشاء
+      // الطلب لا يُلمس في هذه المرحلة إطلاقاً. immediate: true لأن السطر
+      // التالي بعد قليل ينقل المتصفح إلى واتساب — sendBeacon تُرسَل فوراً
+      // ويتكفّل المتصفح بإتمامها بعد مغادرة الصفحة.
+      // publicReference ليس بيانات شخصية؛ الخادم يستعمله للبحث عن رقم الطلب
+      // ثم يرميه، ولا يُخزَّن في جدول القياس.
+      trackAnalyticsEvent(
+        "purchase",
+        {
+          orderRef: saveResult.publicReference,
+          orderValue: subtotal,
+          cartValue: subtotal,
+          quantity: items.reduce((sum, item) => sum + item.quantity, 0),
+        },
+        { immediate: true }
+      );
     }
 
     clearCart();
