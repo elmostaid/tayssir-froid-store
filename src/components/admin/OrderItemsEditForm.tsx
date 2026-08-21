@@ -53,7 +53,12 @@ export function OrderItemsEditForm({
         الفارق، وإنقاصها يُرجعه. المجموع والربح يُعاد حسابهما فور الحفظ.
       </p>
 
-      <OrderLinesEditor initialLines={lines} initialDeliveryFee={deliveryFee} disabled={pending} />
+      <OrderLinesEditor
+        initialLines={lines}
+        initialDeliveryFee={deliveryFee}
+        disabled={pending}
+        deliveryFeeLabel="مصاريف التوصيل (تُحفَظ مع هذا التعديل)"
+      />
 
       {state.error && (
         <p className="mt-3 rounded-lg border border-red-300 bg-red-50 p-3 text-sm font-semibold text-red-700">

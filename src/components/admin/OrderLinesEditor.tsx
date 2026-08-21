@@ -42,10 +42,14 @@ export function OrderLinesEditor({
   initialLines,
   initialDeliveryFee,
   disabled = false,
+  // صفحة تفاصيل الطلب تحمل أصلاً نموذجاً مستقلاً للتوصيل وحده. تسمية
+  // مختلفة هنا تمنع أن يبدو الحقلان نفس الشيء مرتين على الشاشة نفسها.
+  deliveryFeeLabel = "مصاريف التوصيل",
 }: {
   initialLines: EditableLine[];
   initialDeliveryFee: number;
   disabled?: boolean;
+  deliveryFeeLabel?: string;
 }) {
   const [lines, setLines] = useState<EditableLine[]>(initialLines);
   const [deliveryFee, setDeliveryFee] = useState(initialDeliveryFee);
@@ -269,7 +273,7 @@ export function OrderLinesEditor({
       {/* التوصيل والمجاميع */}
       <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
         <label className="text-[11px] text-neutral-600">
-          <span className="mb-1 block font-semibold">مصاريف التوصيل</span>
+          <span className="mb-1 block font-semibold">{deliveryFeeLabel}</span>
           <input
             type="number"
             name="deliveryFee"

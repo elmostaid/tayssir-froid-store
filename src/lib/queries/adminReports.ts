@@ -242,7 +242,10 @@ export async function getSalesBySource(
     from public.orders o
     left join order_cogs oc on oc.order_id = o.id
     where o.created_at >= ${range.from} and o.created_at < ${range.to}
-      ${source ? sql`and o.source = ${source}` : sql``}
+      -- فلتر اختياري بمعامل واحد دائم الوجود، لا بشظية SQL شرطية: نفس نمط
+      -- listAdminOrders المُجرَّب على هذا المجمّع في الإنتاج. الشظية الشرطية
+      -- كانت تُسقط الصفحة بـ500 خلف pgBouncer رغم نجاحها على Postgres محلي.
+      and (${source ?? null}::text is null or o.source = ${source ?? null})
     group by o.source
     order by revenue desc
   `;
