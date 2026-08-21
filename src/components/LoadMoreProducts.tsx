@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition, type ReactNode } from "react";
-import { loadMoreProducts } from "@/app/(storefront)/loadMoreProducts";
+import { loadMoreProducts, type LoadMoreFilters } from "@/app/(storefront)/loadMoreProducts";
 
 /**
  * زر "عرض المزيد من المنتجات" أسفل شبكة الصفحة الرئيسية.
@@ -18,10 +18,18 @@ export function LoadMoreProducts({
   initialOffset,
   pageSize,
   initialHasMore,
+  filters,
+  label,
+  gridClassName,
 }: {
   initialOffset: number;
   pageSize: number;
   initialHasMore: boolean;
+  /** تصنيف/بحث/ترتيب — للصفحة الرئيسية تُترك فارغة. */
+  filters?: LoadMoreFilters;
+  label?: string;
+  /** شبكة الكروت الإضافية — يجب أن تطابق شبكة الصفحة حتى لا تختلف الأعمدة بعد الضغط. */
+  gridClassName?: string;
 }) {
   const [cards, setCards] = useState<ReactNode[]>([]);
   const [offset, setOffset] = useState(initialOffset);
@@ -33,7 +41,7 @@ export function LoadMoreProducts({
     setFailed(false);
     startTransition(async () => {
       try {
-        const result = await loadMoreProducts(offset, pageSize);
+        const result = await loadMoreProducts(offset, pageSize, filters);
         setCards((previous) => [...previous, ...result.cards]);
         setOffset(result.nextOffset);
         setHasMore(result.hasMore);
@@ -48,7 +56,7 @@ export function LoadMoreProducts({
   return (
     <>
       {cards.length > 0 && (
-        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+        <div className={gridClassName ?? "mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4"}>
           {cards}
         </div>
       )}
@@ -67,7 +75,7 @@ export function LoadMoreProducts({
             disabled={isPending}
             className="flex min-h-11 items-center justify-center rounded-full border border-brand-turquoise px-6 py-2.5 text-sm font-semibold text-brand-turquoise-dark transition-colors hover:bg-brand-turquoise-tint disabled:opacity-60"
           >
-            {isPending ? "جارٍ التحميل…" : "عرض المزيد من المنتجات"}
+            {isPending ? "جارٍ التحميل…" : (label ?? "عرض المزيد من المنتجات")}
           </button>
         </div>
       )}

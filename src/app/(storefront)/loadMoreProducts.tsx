@@ -1,6 +1,6 @@
 "use server";
 
-import { getProducts, getProductIdsWithVariants } from "@/lib/queries/catalog";
+import { getProducts, getProductIdsWithVariants, type ProductSort } from "@/lib/queries/catalog";
 import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 import { ProductCard } from "@/components/ProductCard";
 import { safeQuery } from "@/lib/safeQuery";
@@ -17,14 +17,33 @@ import { safeQuery } from "@/lib/safeQuery";
  * لا تمسّ هذه الدالة أي منطق سلة أو Checkout أو واتساب: هي قراءة فقط، وتمرّ
  * على نفس getProducts المُخزَّن مؤقتاً (بإزاحة) الذي تستعمله بقية الصفحات.
  */
-export async function loadMoreProducts(offset: number, pageSize: number) {
+export type LoadMoreFilters = {
+  categorySlug?: string;
+  query?: string;
+  sort?: ProductSort;
+};
+
+export async function loadMoreProducts(
+  offset: number,
+  pageSize: number,
+  // فلاتر صفحة التصنيف (تصنيف/بحث/ترتيب). غيابها = الصفحة الرئيسية، أي
+  // نفس السلوك السابق بالحرف — الصفحة الرئيسية تستدعيها بلا هذا المعامل.
+  filters: LoadMoreFilters = {}
+) {
   // نطلب عنصراً زائداً واحداً بدل استعلام عدّ منفصل: وجوده يعني أن هناك
   // دفعة تالية، ثم نتجاهله عند العرض. استعلام واحد بدل اثنين.
   const [batch, variantProductIds, settings] = await Promise.all([
     safeQuery(
-      () => getProducts({ limit: pageSize + 1, offset }),
+      () =>
+        getProducts({
+          limit: pageSize + 1,
+          offset,
+          categorySlug: filters.categorySlug,
+          query: filters.query,
+          sort: filters.sort,
+        }),
       [],
-      "home.loadMoreProducts"
+      filters.categorySlug ? "category.loadMoreProducts" : "home.loadMoreProducts"
     ),
     safeQuery(
       () => getProductIdsWithVariants(),

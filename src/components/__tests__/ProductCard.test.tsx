@@ -51,13 +51,17 @@ describe("ProductCard — يحل رابط الصورة عبر resolveProductImag
     expect(img.src).toContain(encodeURIComponent(`/${storagePath}`));
   });
 
-  test("صورة مرفوعة حديثاً (storage_path رابط Supabase كامل): تُعرض عبر public URL كما هو حرفياً بلا أي تعديل", async () => {
-    const publicUrl = "https://example.supabase.co/storage/v1/object/public/product-images/999999999/new-remote.webp";
+  test("صورة مرفوعة حديثاً: تُعرض عبر /img/ من نطاق الموقع لا من رابط Supabase مباشرة", async () => {
+    const publicUrl =
+      "https://example.supabase.co/storage/v1/object/public/product-images/999999999/new-remote.webp";
 
     await renderProductCard({ product: baseProduct({ primary_image_path: publicUrl }), imageUrl: publicUrl });
 
     const img = screen.getByAltText("منتج اختبار") as HTMLImageElement;
-    expect(img.src).toContain(encodeURIComponent(publicUrl));
+    // Supabase على هذه الخطة تُرجع الصور بـno-cache مهما فعلنا عند الرفع،
+    // فنُقدّمها من نطاقنا حيث نتحكّم في ترويسة التخزين المؤقّت.
+    expect(img.src).toContain(encodeURIComponent("/img/999999999/new-remote.webp"));
+    expect(img.src).not.toContain("example.supabase.co");
   });
 
   test("بدون صورة (imageUrl=null): يعرض 'بدون صورة' بدل محاولة حل أي رابط", async () => {
