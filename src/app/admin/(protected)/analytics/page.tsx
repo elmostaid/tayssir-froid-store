@@ -58,11 +58,14 @@ function StatCard({
   value,
   hint,
   accent,
+  compact,
 }: {
   label: string;
   value: string;
   hint?: string;
   accent?: "orange" | "turquoise";
+  /** للمبالغ: خط أصغر حتى لا ينكسر "1.821,11 درهم" على سطرين. */
+  compact?: boolean;
 }) {
   const color =
     accent === "orange"
@@ -73,7 +76,9 @@ function StatCard({
   return (
     <div className="rounded-xl border border-neutral-200 bg-white p-3">
       <p className="text-xs leading-snug text-neutral-500">{label}</p>
-      <p className={`mt-1 text-2xl font-bold tabular-nums ${color}`}>{value}</p>
+      <p className={`mt-1 font-bold tabular-nums ${compact ? "text-lg" : "text-2xl"} ${color}`}>
+        {value}
+      </p>
       {hint && <p className="mt-0.5 text-[11px] leading-snug text-neutral-400">{hint}</p>}
     </div>
   );
@@ -171,6 +176,18 @@ function RangePicker({
           عرض
         </button>
       </form>
+    </div>
+  );
+}
+
+/** صفّ رقم صغير داخل بطاقة الهاتف. */
+function MiniStat({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
+  return (
+    <div>
+      <p className="text-[11px] leading-snug text-neutral-500">{label}</p>
+      <p className={`text-sm font-bold tabular-nums ${muted ? "text-neutral-500" : "text-neutral-800"}`}>
+        {value}
+      </p>
     </div>
   );
 }
@@ -308,14 +325,20 @@ export default async function AdminAnalyticsPage({
               hint="من جدول الطلبات — المرجع النهائي"
               accent="orange"
             />
-            <StatCard label="الإيراد" value={formatMad(orders.revenueMad)} hint="من الطلبات الحقيقية" accent="orange" />
+            <StatCard
+              label="الإيراد"
+              value={formatMad(orders.revenueMad)}
+              hint="من الطلبات الحقيقية"
+              accent="orange"
+              compact
+            />
             <StatCard
               label="نسبة التحويل"
               value={pct(conversion)}
               hint="زائر ← طلب"
               accent="orange"
             />
-            <StatCard label="متوسط قيمة الطلب" value={formatMad(aov)} hint="الإيراد ÷ الطلبات" />
+            <StatCard label="متوسط قيمة الطلب" value={formatMad(aov)} hint="الإيراد ÷ الطلبات" compact />
           </div>
 
           <SectionTitle note="كل مرحلة تعدّ الأشخاص (جلسات فريدة)، ما عدا الطلبات فهي من جدول الطلبات.">
@@ -362,7 +385,38 @@ export default async function AdminAnalyticsPage({
           <SectionTitle note="هذا الجدول يجيب عن السؤال: هل انخفضت الطلبات بسبب قلّة الزوّار أم بسبب مرحلة بعينها؟">
             حسب اليوم
           </SectionTitle>
-          <div className="mt-3 overflow-x-auto rounded-xl border border-neutral-200 bg-white">
+          {/* الهاتف: بطاقة لكل يوم — الأرقام المهمة مرئية بلا أي تمرير جانبي. */}
+          <div className="mt-3 flex flex-col gap-2 sm:hidden">
+            {days.map((day) => {
+              const row = daily.find((d) => d.day === day);
+              const order = ordersByDay.get(day);
+              const sessions = row?.sessions ?? 0;
+              const dayOrders = order?.orders ?? 0;
+              return (
+                <div key={day} className="rounded-xl border border-neutral-200 bg-white p-3">
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-sm font-bold tabular-nums text-neutral-800" dir="ltr">
+                      {day}
+                    </span>
+                    <span className="text-sm">
+                      <span className="font-bold text-brand-orange">{num(dayOrders)} طلب</span>
+                      <span className="text-neutral-500"> · {pct(rate(dayOrders, sessions))}</span>
+                    </span>
+                  </div>
+                  <div className="mt-2 grid grid-cols-3 gap-2 border-t border-neutral-100 pt-2">
+                    <MiniStat label="الزوّار" value={num(sessions)} />
+                    <MiniStat label="شاهدوا منتجاً" value={num(row?.productViewSessions ?? 0)} />
+                    <MiniStat label="أضافوا للسلة" value={num(row?.addToCartSessions ?? 0)} />
+                    <MiniStat label="أحداث الإضافة" value={num(row?.addToCartEvents ?? 0)} muted />
+                    <MiniStat label="Checkout" value={num(row?.checkoutSessions ?? 0)} />
+                    <MiniStat label="الإيراد" value={formatMad(order?.revenueMad ?? 0)} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-3 hidden overflow-x-auto rounded-xl border border-neutral-200 bg-white sm:block">
             <table className="w-full min-w-[46rem] text-sm">
               <thead className="bg-neutral-50 text-xs text-neutral-600">
                 <tr>
@@ -410,7 +464,34 @@ export default async function AdminAnalyticsPage({
           <SectionTitle note="وسوم UTM تُلتقط من رابط الإعلان عند أول صفحة، وتبقى منسوبة للجلسة كلها.">
             مصادر الزوّار
           </SectionTitle>
-          <div className="mt-3 overflow-x-auto rounded-xl border border-neutral-200 bg-white">
+          {/* الهاتف: بطاقة لكل مصدر. */}
+          <div className="mt-3 flex flex-col gap-2 sm:hidden">
+            {sources.length === 0 && (
+              <p className="rounded-xl border border-neutral-200 bg-white p-4 text-center text-xs text-neutral-500">
+                لا توجد مصادر مُسجَّلة بعد.
+              </p>
+            )}
+            {sources.map((source, index) => (
+              <div key={index} className="rounded-xl border border-neutral-200 bg-white p-3">
+                <p className="text-sm font-semibold text-neutral-800">
+                  {source.utmSource ?? "مباشر"}
+                  {source.utmMedium ? ` · ${source.utmMedium}` : ""}
+                </p>
+                <p className="text-[11px] leading-snug text-neutral-500">
+                  {source.utmCampaign ?? "بلا حملة"}
+                  {source.utmContent ? ` · ${source.utmContent}` : ""}
+                </p>
+                <div className="mt-2 grid grid-cols-4 gap-2 border-t border-neutral-100 pt-2">
+                  <MiniStat label="الزوّار" value={num(source.sessions)} />
+                  <MiniStat label="للسلة" value={num(source.addToCartSessions)} />
+                  <MiniStat label="Checkout" value={num(source.checkoutSessions)} />
+                  <MiniStat label="شراء" value={num(source.purchaseEvents)} />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-3 hidden overflow-x-auto rounded-xl border border-neutral-200 bg-white sm:block">
             <table className="w-full min-w-[48rem] text-sm">
               <thead className="bg-neutral-50 text-xs text-neutral-600">
                 <tr>
