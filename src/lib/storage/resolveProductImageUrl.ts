@@ -4,10 +4,28 @@
  * Supabase Storage — commitPrimaryImage/commitAdditionalImage يُخزِّنان public URL الكامل الجاهز
  * وقت الرفع نفسه)، أو مسار محلي قديم داخل public/ يُخدَم كما كان دائماً
  * قبل نظام Supabase بالكامل — بلا لمس أو تحليل أو فك ترميز لأي صورة قديمة.
+ *
+ * الاستثناء الوحيد: روابط bucket صورنا تُقدَّم عبر /img/… من نطاق الموقع
+ * نفسه (انظر app/img/[...path]/route.ts) — Supabase على هذه الخطة تُرجع كل
+ * كائن عام بـcache-control: no-cache فيُعيد الزبون العائد تنزيل كل صورة من
+ * الصفر. قاعدة البيانات لا تتغيّر إطلاقاً: التحويل يقع هنا وقت العرض فقط،
+ * والرابط الأصلي يبقى كما هو مخزَّناً.
  */
+
+const BUCKET_PUBLIC_MARKER = "/storage/v1/object/public/product-images/";
+
+/** المسار الداخلي للكائن إن كان الرابط يخصّ bucket صورنا، وإلا null. */
+export function localImageProxyPath(storagePath: string): string | null {
+  const markerIndex = storagePath.indexOf(BUCKET_PUBLIC_MARKER);
+  if (markerIndex === -1) return null;
+  const objectPath = storagePath.slice(markerIndex + BUCKET_PUBLIC_MARKER.length);
+  if (!objectPath || objectPath.includes("..")) return null;
+  return `/img/${objectPath}`;
+}
+
 export async function resolveProductImageUrl(storagePath: string): Promise<string> {
   if (storagePath.startsWith("https://") || storagePath.startsWith("http://")) {
-    return storagePath;
+    return localImageProxyPath(storagePath) ?? storagePath;
   }
   return `/${storagePath}`;
 }

@@ -187,7 +187,14 @@ function UploadForm({
         const supabase = createSupabaseBrowserClient();
         const { error: uploadError } = await supabase.storage
           .from(PRODUCT_IMAGES_BUCKET)
-          .uploadToSignedUrl(target.objectPath, target.token, selectedFile);
+          .uploadToSignedUrl(target.objectPath, target.token, selectedFile, {
+            // اسم كل ملف UUID عشوائي، وتغيير صورة منتج يُنتج مساراً
+            // جديداً كلياً — فالتخزين المؤقّت الطويل آمن هنا ولا يمكن
+            // أن يُبقي زبوناً على صورة قديمة. بدون هذا السطر ترجع
+            // Supabase الصور بـcache-control: no-cache، فيُعيد كل زائر
+            // تنزيل كل صورة من الصفر في كل زيارة.
+            cacheControl: "31536000",
+          });
         if (uploadError) {
           setState({ error: "تعذّر رفع الصورة. تحقق من الاتصال وحاول مرة أخرى." });
           return;

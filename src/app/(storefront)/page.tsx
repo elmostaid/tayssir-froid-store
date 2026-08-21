@@ -124,7 +124,7 @@ export default async function HomePage() {
             التصنيفات
           </h2>
           <div className="mt-3 grid grid-cols-1 gap-3">
-            {categories.map((category) => {
+            {categories.map((category, index) => {
               const count = productCounts[category.id] ?? 0;
               const imageSrc = getCategoryImage(category.slug);
               return (
@@ -144,7 +144,13 @@ export default async function HomePage() {
                         fill
                         sizes="(max-width: 1152px) 100vw, 1120px"
                         className="object-contain object-center p-2"
-                        priority
+                        // بطاقات التصنيفات مرصوصة عمودياً بعرض الشاشة كاملاً،
+                        // فلا يظهر منها فوق الطيّة إلا الأولى. حجزها كلها بـ
+                        // priority كان يُنزِّل سبع صور بأولوية قصوى قبل
+                        // JavaScript نفسه — وهو ما كان يؤخّر أول عرض وأول حدث
+                        // Meta على الشبكات الضعيفة.
+                        priority={index === 0}
+                        loading={index === 0 ? undefined : "lazy"}
                       />
                     ) : (
                       <span className="flex h-full w-full flex-col items-center justify-center gap-2 p-4">

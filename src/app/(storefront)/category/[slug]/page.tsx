@@ -9,11 +9,17 @@ import {
 import type { Category } from "@/lib/types";
 import { ProductCard } from "@/components/ProductCard";
 import { safeQuery } from "@/lib/safeQuery";
+import { LoadMoreProducts } from "@/components/LoadMoreProducts";
 import { ServiceUnavailableError } from "@/lib/serviceUnavailable";
 import { getSiteUrl } from "@/lib/siteUrl";
 import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 
 export const dynamic = "force-dynamic";
+
+// حجم الدفعة الأولى في صفحة التصنيف. أكبر تصنيف يضمّ 80 منتجاً، وتحميلها
+// كلها بصورها دفعة واحدة كان يعني عشرات الميغابايت على هاتف الزبون قبل أن
+// يرى أول قطعة. 24 يملأ أكثر من شاشتين على الهاتف، ثم يُكمل الزبون بضغطة.
+export const CATEGORY_PAGE_SIZE = 24;
 
 type Props = {
   params: Promise<{ slug: string }>;
@@ -76,7 +82,8 @@ export default async function CategoryPage({ params, searchParams }: Props) {
       "category.getCategoryBySlug"
     ),
     safeQuery(
-      () => getProducts({ categorySlug: slug, limit: 100, query, sort }),
+      // عنصر زائد واحد يكشف وجود دفعة تالية بلا استعلام عدّ ثانٍ.
+      () => getProducts({ categorySlug: slug, limit: CATEGORY_PAGE_SIZE + 1, query, sort }),
       [],
       "category.getProducts"
     ),
@@ -94,6 +101,9 @@ export default async function CategoryPage({ params, searchParams }: Props) {
   if (!category) {
     notFound();
   }
+
+  const hasMoreProducts = products.length > CATEGORY_PAGE_SIZE;
+  const firstPage = hasMoreProducts ? products.slice(0, CATEGORY_PAGE_SIZE) : products;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
@@ -140,28 +150,41 @@ export default async function CategoryPage({ params, searchParams }: Props) {
       </form>
 
       <p className="mt-3 text-sm text-neutral-500">
-        {products.length} {products.length === 1 ? "منتج" : "منتجات"}
+        {/* لا نعلن رقماً لا نعرفه: بعد التقسيم إلى دفعات، ما نملكه هو عدد
+            المعروض الآن لا العدد الكلي. */}
+        عرض {firstPage.length} {firstPage.length === 1 ? "منتج" : "منتجات"}
+        {hasMoreProducts && <> (وهناك المزيد)</>}
         {query && <> لـ &quot;{query}&quot;</>}
       </p>
 
-      {products.length === 0 ? (
+      {firstPage.length === 0 ? (
         <p className="mt-6 text-sm text-neutral-500">
           {query
             ? `لا توجد نتائج مطابقة لـ "${query}" في هذا التصنيف.`
             : "لا توجد منتجات منشورة في هذا التصنيف حالياً."}
         </p>
       ) : (
-        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-          {products.map((product) => (
-            <ProductCard
-              key={product.id}
-              product={product}
-              imageUrl={product.primary_image_path}
-              hasVariants={variantProductIds.has(product.id)}
-              whatsappNumber={settings.whatsappNumber}
-            />
-          ))}
-        </div>
+        <>
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+            {firstPage.map((product) => (
+              <ProductCard
+                key={product.id}
+                product={product}
+                imageUrl={product.primary_image_path}
+                hasVariants={variantProductIds.has(product.id)}
+                whatsappNumber={settings.whatsappNumber}
+              />
+            ))}
+          </div>
+          <LoadMoreProducts
+            initialOffset={firstPage.length}
+            pageSize={CATEGORY_PAGE_SIZE}
+            initialHasMore={hasMoreProducts}
+            filters={{ categorySlug: slug, query, sort }}
+            label="شوف منتجات أكثر"
+            gridClassName="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
+          />
+        </>
       )}
     </div>
   );

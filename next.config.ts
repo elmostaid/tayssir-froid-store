@@ -70,6 +70,28 @@ const nextConfig: NextConfig = {
     // على خدمة مدفوعة معاً، بلا أي مقايضة متبقية.
     unoptimized: true,
   },
+
+  // ملفات public/ تُقدَّم افتراضياً بـ"max-age=0, must-revalidate": كل صورة
+  // تكلّف رحلة تحقّق كاملة في كل زيارة حتى لو لم تتغيّر، وعلى شبكة ضعيفة
+  // ذهاب وإياب لكل صورة أغلى من الصورة نفسها أحياناً.
+  //
+  // أسبوع واحد لا "immutable": أسماء هذه الملفات ثابتة (SKU/التصنيف)، فلو
+  // بدّلت صورة منتج بنفس الاسم يجب أن يراها الزبون قريباً لا بعد سنة.
+  // stale-while-revalidate يعطي الشهر التالي عرضاً فورياً من الذاكرة مع
+  // تحديث صامت في الخلفية.
+  async headers() {
+    return [
+      {
+        source: "/:dir(product-images|product-images-v2|product-images-v3|categories|brand)/:path*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=604800, stale-while-revalidate=2592000",
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
