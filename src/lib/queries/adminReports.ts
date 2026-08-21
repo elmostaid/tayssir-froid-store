@@ -191,6 +191,12 @@ export async function getDeliveredOrdersProfitBreakdown(
  * 3) **التكلفة الناقصة تُعَدّ ولا تُخمَّن.** منتج بلا ثمن شراء يُحتسَب
  *    بصفر، فيبدو ربحه كامل ثمن البيع. نعدّ تلك الطلبات ونعرض عددها بدل
  *    رقم ربح واثق وكاذب.
+ *
+ * وملاحظة تنفيذية دفعنا ثمنها: الـCTE مكتوب هنا كاملاً بدل استدعاء
+ * orderCogsCte() المشترك. تركيب شظية داخل استعلام يحمل هو نفسه معاملات كان
+ * يُسقط الصفحة بـ500 بعد نحو 11 ثانية على Preview — بينما بقية دوال هذا
+ * الملف تستعمل الشظية إما بلا معاملات إطلاقاً أو بمعامل واحد. التكرار هنا
+ * مقصود ومحدود، وأرخص من صفحة تقارير تسقط.
  */
 export type SalesBySourceRow = {
   source: string;
@@ -221,30 +227,38 @@ export async function getSalesBySource(
   source: string | null = null
 ): Promise<SalesBySource> {
   const rows = await sql<Record<string, unknown>[]>`
-    ${orderCogsCte()}
+    with order_cogs as (
+      select
+        oi.order_id,
+        sum(
+          oi.quantity * coalesce(oi.purchase_price_snapshot, pv.purchase_price_override, p.purchase_price, 0)
+        ) as cogs,
+        bool_and(oi.purchase_price_snapshot is not null) as has_full_snapshot
+      from public.order_items oi
+      left join public.products p on p.id = oi.product_id
+      left join public.product_variants pv on pv.id = oi.variant_id
+      group by oi.order_id
+    )
     select
       o.source,
-      count(*) filter (where o.status = 'delivered')::int          as delivered_orders,
-      coalesce(sum(o.items_subtotal) filter (where o.status = 'delivered'), 0)  as revenue,
-      coalesce(sum(o.delivery_fee)   filter (where o.status = 'delivered'), 0)  as delivery_fees,
-      coalesce(sum(oc.cogs)          filter (where o.status = 'delivered'), 0)  as cogs,
+      count(*) filter (where o.status = 'delivered')::int                        as delivered_orders,
+      coalesce(sum(o.items_subtotal) filter (where o.status = 'delivered'), 0)   as revenue,
+      coalesce(sum(o.delivery_fee)   filter (where o.status = 'delivered'), 0)   as delivery_fees,
+      coalesce(sum(oc.cogs)          filter (where o.status = 'delivered'), 0)   as cogs,
       coalesce(sum(o.items_subtotal - coalesce(oc.cogs, 0)) filter (
         where o.status = 'delivered'
-      ), 0)                                                        as gross_profit,
+      ), 0)                                                                      as gross_profit,
       count(*) filter (
         where o.status = 'delivered' and coalesce(oc.has_full_snapshot, true) = false
-      )::int                                                       as missing_cost,
+      )::int                                                                     as missing_cost,
       count(*) filter (where o.status in ('new', 'confirmed', 'preparing', 'shipped'))::int
-                                                                   as pending_orders,
+                                                                                 as pending_orders,
       coalesce(sum(o.items_subtotal) filter (
         where o.status in ('new', 'confirmed', 'preparing', 'shipped')
-      ), 0)                                                        as pending_revenue
+      ), 0)                                                                      as pending_revenue
     from public.orders o
     left join order_cogs oc on oc.order_id = o.id
     where o.created_at >= ${range.from} and o.created_at < ${range.to}
-      -- فلتر اختياري بمعامل واحد دائم الوجود، لا بشظية SQL شرطية: نفس نمط
-      -- listAdminOrders المُجرَّب على هذا المجمّع في الإنتاج. الشظية الشرطية
-      -- كانت تُسقط الصفحة بـ500 خلف pgBouncer رغم نجاحها على Postgres محلي.
       and (${source ?? null}::text is null or o.source = ${source ?? null})
     group by o.source
     order by revenue desc
