@@ -83,10 +83,17 @@ export type AnalyticsBreakdownRow = {
   purchaseEvents: number;
 };
 
+/** من أين جاءت قيمة السلة المعروضة — وما مدى الثقة بها. */
+export type CartValueSource = "checkout" | "add_to_cart";
+
 /** صفّ واحد = جلسة واحدة أضافت للسلة ولم تشترِ. لا يحمل أي بيانات شخصية. */
 export type AbandonedCartRow = {
-  /** آخر قيمة سلة سجّلها القياس في تلك الجلسة (لا الأكبر). */
+  /**
+   * آخر قيمة **سجّلها القياس**، لا بالضرورة ما انتهت إليه السلة.
+   * انظر valueSource أدناه قبل قراءتها على أنها الحقيقة.
+   */
   lastCartValueMad: number;
+  valueSource: CartValueSource;
   distinctProducts: number;
   totalUnits: number;
   meetsMinimum: boolean;
@@ -106,10 +113,13 @@ export type AbandonedCartRow = {
 export type AbandonedCartsSummary = {
   /** كل الجلسات التي أضافت للسلة ولم تشترِ. مجموع الفئات الثلاث أدناه. */
   abandoned: number;
+  /** يقين: القيمة المسجَّلة حدّ أعلى، فالسلة الحقيقية أقلّ منه أو تساويه. */
   stoppedBelowMinimum: number;
+  /** ظنّ: بلغتها سلّتهم عند آخر إضافة، وقد تكون نزلت بعدها بحذف لا نرصده. */
   reachedMinimumNoCheckout: number;
+  /** يقين: القيمة من begin_checkout، وهي المجموع الحيّ وقت فتح Checkout. */
   reachedCheckoutNoPurchase: number;
-  /** مجموع آخر قيم تلك السلات — ما تُرك على الطاولة. */
+  /** مجموع القيم المسجَّلة — حدّ أعلى لما تُرك على الطاولة، لا رقم مؤكَّد. */
   abandonedValueMad: number;
 };
 
@@ -347,10 +357,20 @@ export function getAnalyticsByBrowser(range: AnalyticsRange): Promise<AnalyticsB
  *
  * ثلاثة قرارات تستحقّ التوضيح:
  *
- * 1) **«آخر قيمة» لا «أكبر قيمة».** cart_value في كل حدث إضافة هو مجموع
- *    السلة بعد تلك الإضافة، فآخر حدث يحمل الحصيلة النهائية. أخذ الأكبر كان
- *    سيُبالغ لو حذف الزبون شيئاً — وإن كنا لا نرصد الحذف أصلاً (لا يوجد
- *    حدث remove_from_cart)، فالرقم يبقى «ما بلغته السلة»، لا جردَ سلةٍ حيّة.
+ * 1) **القيمة مسجَّلة، لا محسوبة — ومصدرها يُغيّر معناها.** هذه أدقّ نقطة
+ *    في القسم كلّه، وقد أخطأنا فيها أولَ مرة فصحّحها اختبار حقيقي على
+ *    Preview. ما يحمل قيمة سلة فعلاً هو حدثان فقط:
+ *      • begin_checkout: يحمل subtotal الحيّ وقت فتح Checkout — **مؤكَّد**،
+ *        ويعكس أي حذف سبقه.
+ *      • add_to_cart: يحمل مجموع السلة **عند تلك الإضافة** — يتقادم فور أن
+ *        يحذف الزبون شيئاً بعده.
+ *    و cart_view لا يحمل قيمة إطلاقاً، والحذف لا يُنتج أي حدث. فزبون رفع
+ *    سلته إلى 1420 ثم حذف حتى 350 ثم غادر بلا Checkout لا يترك خلفه إلا
+ *    1420 (تحقّقنا من ذلك حرفياً في قاعدة Preview).
+ *
+ *    لذلك نأخذ قيمة Checkout متى وُجدت، وإلا فآخر إضافة، ونُصرّح بالمصدر في
+ *    valueSource حتى لا يُقرأ الظنّ يقيناً. والقيمة غير المؤكَّدة **حدّ
+ *    أعلى** دائماً: الحذف لا يرفع سلة أبداً.
  *
  * 2) **الحد الأدنى يأتي من الإعدادات لا مكتوباً في الكود.** لو غيّرتَ الحد
  *    غداً من 1000 إلى 1200، يتبعه هذا القسم من تلقاء نفسه.
@@ -358,6 +378,10 @@ export function getAnalyticsByBrowser(range: AnalyticsRange): Promise<AnalyticsB
  * 3) **الفئات الثلاث حصرية وجامعة**، فمجموعها يساوي العدد الكلي دائماً:
  *    من فتح Checkout يُحسب هناك مهما كانت سلته، ومن لم يفتحه يُقسَّم على
  *    الحد الأدنى. بلا هذا الترتيب يظهر الشخص الواحد في خانتين فتنكسر الجمعة.
+ *
+ *    ولأن القيمة غير المؤكَّدة حدّ أعلى، الفئتان تختلفان في درجة اليقين لا
+ *    في الحساب: «تحت الحد الأدنى» يقين (الحقيقي أقلّ أو يساوي)، بينما
+ *    «بلغ الحد الأدنى» ظنّ — بلغته سلّته لحظةً، وقد تكون نزلت بعدها.
  *
  * وأخيراً: الجلسة التي ضاع حدث شرائها ستظهر هنا خطأً. اللوحة تعرض فوق
  * القسم فارقَ التتبّع إن وُجد، فلا يُقرأ الرقم على أنه يقين.
@@ -381,9 +405,14 @@ export async function getAbandonedCarts(
           where event_name = 'add_to_cart' and product_id is not null
         )                                                       as distinct_products,
         coalesce(sum(quantity) filter (where event_name = 'add_to_cart'), 0) as total_units,
+        -- المصدران الوحيدان اللذان يحملان قيمة سلة، مفصولين عمداً:
+        -- الأول مؤكَّد (المجموع الحيّ)، والثاني حدّ أعلى قد يكون تقادم.
+        (array_agg(cart_value order by occurred_at desc, id desc) filter (
+          where event_name = 'begin_checkout' and cart_value is not null
+        ))[1]                                                   as checkout_cart_value,
         (array_agg(cart_value order by occurred_at desc, id desc) filter (
           where event_name = 'add_to_cart' and cart_value is not null
-        ))[1]                                                   as last_cart_value,
+        ))[1]                                                   as add_cart_value,
         (array_agg(event_name order by occurred_at desc, id desc))[1] as last_event,
         -- ثابتة داخل الجلسة (تُلتقط عند صفحة الهبوط وتُعاد مع كل حدث)، لكننا
         -- نُجمّعها بـmax لا نضعها في group by: الضمانة المطلوبة هنا صفّ واحد
@@ -398,7 +427,13 @@ export async function getAbandonedCarts(
       group by session_id
     ),
     abandoned as (
-      select *, coalesce(last_cart_value, 0) >= ${minOrderAmountMad} as meets_minimum
+      select
+        *,
+        coalesce(checkout_cart_value, add_cart_value)              as last_cart_value,
+        case when checkout_cart_value is not null
+             then 'checkout' else 'add_to_cart' end                as value_source,
+        coalesce(coalesce(checkout_cart_value, add_cart_value), 0)
+          >= ${minOrderAmountMad}                                  as meets_minimum
       from per_session
       where add_events > 0 and not bought
     )
@@ -431,6 +466,7 @@ export async function getAbandonedCarts(
     },
     rows: rawRows.map((r) => ({
       lastCartValueMad: n(r.last_cart_value),
+      valueSource: r.value_source === "checkout" ? "checkout" : "add_to_cart",
       distinctProducts: n(r.distinct_products),
       totalUnits: n(r.total_units),
       meetsMinimum: Boolean(r.meets_minimum),

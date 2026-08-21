@@ -96,6 +96,30 @@ function productsLabel(row: AbandonedCartRow): string {
   return num(row.distinctProducts);
 }
 
+/**
+ * القيمة وحدها تكذب: 1420 من آخر إضافة قد تكون 350 الآن. الشارة تُلازم
+ * الرقم أينما ظهر، فلا يُقرأ مجرَّداً عن درجة اليقين به.
+ */
+function ValueSource({ source }: { source: AbandonedCartRow["valueSource"] }) {
+  const confirmed = source === "checkout";
+  return (
+    <span
+      title={
+        confirmed
+          ? "من حدث begin_checkout: المجموع الحيّ وقت فتح Checkout، ويعكس أي حذف سبقه."
+          : "من آخر إضافة للسلة. الحذف لا يُسجَّل، فقد تكون السلة نزلت بعدها — هذا حدّ أعلى."
+      }
+      className={`inline-block rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+        confirmed
+          ? "bg-brand-turquoise-tint text-brand-turquoise-dark"
+          : "bg-amber-50 text-amber-800"
+      }`}
+    >
+      {confirmed ? "مؤكَّدة" : "حدّ أعلى"}
+    </span>
+  );
+}
+
 function YesNo({ yes }: { yes: boolean }) {
   return (
     <span className={yes ? "font-semibold text-brand-turquoise-dark" : "text-neutral-400"}>
@@ -471,7 +495,7 @@ export default async function AdminAnalyticsPage({
                 <span className="font-bold">{num(abandoned.summary.stoppedBelowMinimum)}</span>{" "}
                 توقّفوا تحت {formatMad(settings.minOrderAmountMad)}،{" "}
                 <span className="font-bold">{num(abandoned.summary.reachedMinimumNoCheckout)}</span>{" "}
-                بلغوا الحد الأدنى ولم يفتحوا Checkout، و
+                بلغَت سلّتهم الحد الأدنى ولم يفتحوا Checkout، و
                 <span className="font-bold">{num(abandoned.summary.reachedCheckoutNoPurchase)}</span>{" "}
                 فتحوا Checkout ولم يشتروا.
               </p>
@@ -486,12 +510,12 @@ export default async function AdminAnalyticsPage({
                 <StatCard
                   label={`توقّفوا تحت ${formatMad(settings.minOrderAmountMad)}`}
                   value={num(abandoned.summary.stoppedBelowMinimum)}
-                  hint="لم يفتحوا Checkout"
+                  hint="مؤكَّد — الحذف لا يرفع سلة"
                 />
                 <StatCard
-                  label="بلغوا الحد الأدنى"
+                  label="بلغَت سلّتهم الحد الأدنى"
                   value={num(abandoned.summary.reachedMinimumNoCheckout)}
-                  hint="ولم يفتحوا Checkout"
+                  hint="ولم يفتحوا Checkout — قد تكون نزلت بعد حذف"
                 />
                 <StatCard
                   label="فتحوا Checkout"
@@ -502,7 +526,7 @@ export default async function AdminAnalyticsPage({
                 <StatCard
                   label="القيمة المتروكة"
                   value={formatMad(abandoned.summary.abandonedValueMad)}
-                  hint="مجموع آخر قيم تلك السلات"
+                  hint="حدّ أعلى — مجموع القيم المسجَّلة"
                   compact
                 />
               </div>
@@ -521,8 +545,11 @@ export default async function AdminAnalyticsPage({
                 {abandoned.rows.map((row, index) => (
                   <div key={index} className="rounded-xl border border-neutral-200 bg-white p-3">
                     <div className="flex items-baseline justify-between gap-2">
-                      <span className="text-base font-bold tabular-nums text-brand-orange">
-                        {formatMad(row.lastCartValueMad)}
+                      <span className="flex items-baseline gap-1.5">
+                        <span className="text-base font-bold tabular-nums text-brand-orange">
+                          {formatMad(row.lastCartValueMad)}
+                        </span>
+                        <ValueSource source={row.valueSource} />
                       </span>
                       <span
                         className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
@@ -560,7 +587,7 @@ export default async function AdminAnalyticsPage({
                 <table className="w-full min-w-[62rem] text-sm">
                   <thead className="bg-neutral-50 text-xs text-neutral-600">
                     <tr>
-                      <th className="px-3 py-2 text-right font-semibold">آخر قيمة السلة</th>
+                      <th className="px-3 py-2 text-right font-semibold">آخر قيمة مسجّلة</th>
                       <th className="px-3 py-2 text-right font-semibold">الحد الأدنى</th>
                       <th className="px-3 py-2 text-right font-semibold">منتجات مختلفة</th>
                       <th className="px-3 py-2 text-right font-semibold">مجموع الكميات</th>
@@ -577,8 +604,11 @@ export default async function AdminAnalyticsPage({
                   <tbody>
                     {abandoned.rows.map((row, index) => (
                       <tr key={index} className="border-t border-neutral-100">
-                        <td className="px-3 py-2 tabular-nums font-bold text-brand-orange">
-                          {formatMad(row.lastCartValueMad)}
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          <span className="tabular-nums font-bold text-brand-orange">
+                            {formatMad(row.lastCartValueMad)}
+                          </span>{" "}
+                          <ValueSource source={row.valueSource} />
                         </td>
                         <td className="px-3 py-2">
                           <span
@@ -618,8 +648,16 @@ export default async function AdminAnalyticsPage({
               </div>
 
               <p className="mt-2 text-[11px] leading-relaxed text-neutral-500">
+                <span className="font-semibold text-neutral-600">عن «آخر قيمة مسجّلة»:</span> حذف
+                منتج من السلة لا يُسجَّل حدثاً، و<span dir="ltr">cart_view</span> لا يحمل قيمة. فمن
+                فتح Checkout نأخذ المجموع الحيّ عندها (<ValueSource source="checkout" />)، ومن لم
+                يفتحه فأحدث ما لدينا هو مجموع سلّته عند آخر إضافة (
+                <ValueSource source="add_to_cart" />) — وقد يكون حذف بعدها. القيمة الثانية **حدّ
+                أعلى** دائماً، لأن الحذف لا يرفع سلة: فمن هو تحت الحد الأدنى هنا تحته يقيناً، ومن
+                بلغه قد يكون نزل عنه.
+                <br />
                 لا يحمل هذا القسم أي اسم أو هاتف أو عنوان — القياس الداخلي لا يخزّن شيئاً من ذلك
-                أصلاً. «آخر قيمة السلة» هي ما بلغته السلة عند آخر إضافة؛ لا نرصد حذف منتج منها.
+                أصلاً.
                 {abandoned.truncated && ` معروضة أكبر ${num(abandoned.rows.length)} سلة قيمةً فقط.`}
               </p>
             </>

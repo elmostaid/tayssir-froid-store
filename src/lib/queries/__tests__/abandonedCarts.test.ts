@@ -59,13 +59,17 @@ async function seed(events: Ev[]) {
 }
 
 // A اشترى، B تحت الحد الأدنى، C بلغه بلا Checkout، D فتح Checkout بلا شراء،
-// E دخل ولم يُضف شيئاً، F حذف من سلته فانخفضت قيمتها.
+// E دخل ولم يُضف شيئاً، F حذف ثم أضاف فانخفضت القيمة المسجَّلة،
+// G حذف ولم يُضف بعدها ولم يفتح Checkout (الحالة التي تعمى عنها البيانات)،
+// H حذف ثم فتح Checkout (فوصلتنا القيمة الحقيقية بعد الحذف).
 const A = sid();
 const B = sid();
 const C = sid();
 const D = sid();
 const E = sid();
 const F = sid();
+const G = sid();
+const H = sid();
 
 beforeAll(async () => {
   const rows = await sql<{ id: number }[]>`select id from public.products order by id limit 3`;
@@ -95,10 +99,25 @@ beforeAll(async () => {
     { session: E, name: "session_start", at: `${DAY}T17:00:00Z`, sessionMs: 0 },
     { session: E, name: "product_view", at: `${DAY}T17:01:00Z`, productId: p1 },
 
-    // F أضاف حتى 1400 ثم حذف، فآخر إضافة سجّلت 400 — «آخر قيمة» لا «أكبر قيمة».
+    // F أضاف حتى 1400 ثم حذف **ثم أضاف مجدداً**، فسجّلت الإضافة الأخيرة 400.
     { session: F, name: "session_start", at: `${DAY}T18:00:00Z`, sessionMs: 0 },
     { session: F, name: "add_to_cart", at: `${DAY}T18:01:00Z`, productId: p1, quantity: 7, cartValue: 1400, sessionMs: 60000 },
     { session: F, name: "add_to_cart", at: `${DAY}T18:02:00Z`, productId: p1, quantity: 2, cartValue: 400, sessionMs: 120000 },
+
+    // G هي الحالة التي أثبتناها حرفياً على Preview: رفع سلته إلى 1420، فتح
+    // السلة، حذف حتى 350، ولم يُضف شيئاً ولم يفتح Checkout. الحذف لا يُنتج
+    // حدثاً و cart_view لا يحمل قيمة — فلا أثر للـ350 في البيانات إطلاقاً.
+    { session: G, name: "session_start", at: `${DAY}T19:00:00Z`, sessionMs: 0 },
+    { session: G, name: "add_to_cart", at: `${DAY}T19:01:00Z`, productId: p1, quantity: 1, cartValue: 900, sessionMs: 60000 },
+    { session: G, name: "add_to_cart", at: `${DAY}T19:02:00Z`, productId: p2, quantity: 1, cartValue: 1250, sessionMs: 120000 },
+    { session: G, name: "add_to_cart", at: `${DAY}T19:03:00Z`, productId: p3, quantity: 1, cartValue: 1420, sessionMs: 180000 },
+    { session: G, name: "cart_view", at: `${DAY}T19:04:00Z`, sessionMs: 240000 },
+
+    // H نفس القصة لكنه فتح Checkout بعد الحذف، فحمل الحدث المجموع الحيّ.
+    { session: H, name: "session_start", at: `${DAY}T20:00:00Z`, sessionMs: 0 },
+    { session: H, name: "add_to_cart", at: `${DAY}T20:01:00Z`, productId: p1, quantity: 1, cartValue: 1420, sessionMs: 60000 },
+    { session: H, name: "cart_view", at: `${DAY}T20:02:00Z`, sessionMs: 120000 },
+    { session: H, name: "begin_checkout", at: `${DAY}T20:03:00Z`, cartValue: 350, sessionMs: 180000 },
   ]);
 });
 
@@ -118,8 +137,8 @@ describe("السلات المتروكة — من أضاف ولم يشترِ", ()
   test("من اشترى لا يظهر، ومن لم يُضف شيئاً لا يظهر", async () => {
     const { summary, rows } = await getAbandonedCarts(day(), MIN);
 
-    // B و C و D و F فقط — لا A (اشترى) ولا E (لم يُضف).
-    expect(summary.abandoned).toBe(4);
+    // B و C و D و F و G و H — لا A (اشترى) ولا E (لم يُضف).
+    expect(summary.abandoned).toBe(6);
     expect(rows.map((r) => r.lastCartValueMad)).not.toContain(1500);
   });
 
@@ -127,8 +146,8 @@ describe("السلات المتروكة — من أضاف ولم يشترِ", ()
     const { summary } = await getAbandonedCarts(day(), MIN);
 
     expect(summary.stoppedBelowMinimum).toBe(2); // B (150) و F (400)
-    expect(summary.reachedMinimumNoCheckout).toBe(1); // C (1200)
-    expect(summary.reachedCheckoutNoPurchase).toBe(1); // D (300، فتح Checkout)
+    expect(summary.reachedMinimumNoCheckout).toBe(2); // C (1200) و G (1420 مسجَّلة)
+    expect(summary.reachedCheckoutNoPurchase).toBe(2); // D و H — القيمة من Checkout
     expect(
       summary.stoppedBelowMinimum +
         summary.reachedMinimumNoCheckout +
@@ -139,7 +158,7 @@ describe("السلات المتروكة — من أضاف ولم يشترِ", ()
   test("من فتح Checkout يُحسب هناك مهما كانت سلته — فلا يظهر في خانتين", async () => {
     const { summary } = await getAbandonedCarts(day(), MIN);
     // D سلته 300 (تحت الحد الأدنى) لكنه فتح Checkout: يُحسب مرة واحدة فقط.
-    expect(summary.reachedCheckoutNoPurchase).toBe(1);
+    expect(summary.reachedCheckoutNoPurchase).toBe(2);
     expect(summary.stoppedBelowMinimum).toBe(2);
   });
 
@@ -149,7 +168,7 @@ describe("السلات المتروكة — من أضاف ولم يشترِ", ()
     expect(rows.map((r) => r.lastCartValueMad)).toContain(400);
     expect(rows.map((r) => r.lastCartValueMad)).not.toContain(1400);
     expect((await forSession(400)).meetsMinimum).toBe(false);
-    expect(summary.abandonedValueMad).toBe(150 + 1200 + 300 + 400);
+    expect(summary.abandonedValueMad).toBe(150 + 1200 + 300 + 400 + 1420 + 350);
   });
 
   test("عدد المنتجات المختلفة ومجموع الكميات محسوبان من أحداث الإضافة وحدها", async () => {
@@ -197,17 +216,45 @@ describe("السلات المتروكة — من أضاف ولم يشترِ", ()
 
   test("الترتيب: الأثمن أولاً — أول ما يجب أن تراه", async () => {
     const { rows } = await getAbandonedCarts(day(), MIN);
-    expect(rows.map((r) => r.lastCartValueMad)).toEqual([1200, 400, 300, 150]);
+    expect(rows.map((r) => r.lastCartValueMad)).toEqual([1420, 1200, 400, 350, 300, 150]);
   });
 
   test("الحد الأدنى يأتي من الإعدادات: تغييره يُعيد توزيع الفئات فوراً", async () => {
     const { summary } = await getAbandonedCarts(day(), 350);
 
-    // بحدّ 350: C (1200) و F (400) فوقه، B (150) تحته، D كما هو في Checkout.
-    expect(summary.reachedMinimumNoCheckout).toBe(2);
+    // بحدّ 350: C و F و G فوقه، B تحته، و D و H في خانة Checkout كما هما.
+    expect(summary.reachedMinimumNoCheckout).toBe(3);
     expect(summary.stoppedBelowMinimum).toBe(1);
-    expect(summary.reachedCheckoutNoPurchase).toBe(1);
-    expect(summary.abandoned).toBe(4);
+    expect(summary.reachedCheckoutNoPurchase).toBe(2);
+    expect(summary.abandoned).toBe(6);
+  });
+
+  test("الحالة العمياء: حذفٌ بلا إضافة بعده وبلا Checkout — نعرض المسجَّل ونُصرّح بأنه حدّ أعلى", async () => {
+    // ثبتت هذه الحالة حرفياً على Preview: السلة انتهت عند 350 والبيانات لا
+    // تعرف إلا 1420. لا نستطيع تصحيح الرقم — لكننا نمنع قراءته يقيناً.
+    const g = await forSession(1420);
+    expect(g.valueSource).toBe("add_to_cart");
+    expect(g.lastEvent).toBe("cart_view");
+    expect(g.reachedCheckout).toBe(false);
+  });
+
+  test("من فتح Checkout: القيمة من begin_checkout لا من آخر إضافة — وتعكس الحذف", async () => {
+    const { rows } = await getAbandonedCarts(day(), MIN);
+
+    // H أضاف حتى 1420 ثم حذف حتى 350 ثم فتح Checkout.
+    const h = rows.find((r) => r.valueSource === "checkout" && r.lastCartValueMad === 350);
+    expect(h).toBeDefined();
+    expect(h!.meetsMinimum).toBe(false);
+    // 1420 الخاصة به لا تظهر إطلاقاً: قيمة Checkout تغلبها.
+    expect(rows.filter((r) => r.lastCartValueMad === 1420)).toHaveLength(1);
+  });
+
+  test("كل صفّ يُصرّح بمصدر قيمته", async () => {
+    const { rows } = await getAbandonedCarts(day(), MIN);
+    for (const row of rows) {
+      expect(["checkout", "add_to_cart"]).toContain(row.valueSource);
+      expect(row.valueSource === "checkout").toBe(row.reachedCheckout && row.lastCartValueMad === 350);
+    }
   });
 
   test("لكل جلسة صفّ واحد لا أكثر", async () => {
@@ -220,7 +267,7 @@ describe("السلات المتروكة — من أضاف ولم يشترِ", ()
     expect(limited.rows).toHaveLength(2);
     expect(limited.truncated).toBe(true);
     // الخلاصة تبقى على كل الجلسات، لا على المعروض منها فقط.
-    expect(limited.summary.abandoned).toBe(4);
+    expect(limited.summary.abandoned).toBe(6);
   });
 
   test("فترة بلا أي حدث تُرجع خلاصة أصفار بلا انفجار", async () => {
