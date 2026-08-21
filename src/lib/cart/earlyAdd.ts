@@ -63,6 +63,12 @@ export type PendingAdd = {
   cartValue: number;
   /** لحظة الضغط — تُستعمل لإسقاط ما شاخ أكثر من عمر الجلسة. */
   at: number;
+  /**
+   * مُعرّف الضغطة. ليس زينة: بينما يُرسَل الحدث قد تصل ضغطة جديدة إلى نفس
+   * الطابور، فلا يصحّ أن نمسح الطابور كله عند النجاح. نمسح ما أُكِّد وصوله
+   * بالمُعرّف وحده.
+   */
+  id: string;
 };
 
 declare global {
@@ -139,7 +145,8 @@ export const EARLY_ADD_SCRIPT = compact(`
       try{
         var q=JSON.parse(localStorage.getItem(PKEY)||"[]");
         if(!Array.isArray(q))q=[];
-        q.push({productId:it.productId,sku:it.sku,quantity:it.quantity,cartValue:v,at:Date.now()});
+        var id=Date.now().toString(36)+Math.random().toString(36).slice(2,10);
+        q.push({id:id,productId:it.productId,sku:it.sku,quantity:it.quantity,cartValue:v,at:Date.now()});
         localStorage.setItem(PKEY,JSON.stringify(q));
       }catch(e){}
       badge(items);

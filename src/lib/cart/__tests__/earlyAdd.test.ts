@@ -163,10 +163,20 @@ describe("السكريبت المبكّر — الزر يعمل قبل وصول 
     button.click();
     button.click();
 
-    expect(pending().map(({ at: _at, ...rest }) => rest)).toEqual([
+    expect(pending().map(({ at: _at, id: _id, ...rest }) => rest)).toEqual([
       { productId: 7, sku: "TF-CP-001", quantity: 5, cartValue: 600 },
       { productId: 7, sku: "TF-CP-001", quantity: 5, cartValue: 1200 },
     ]);
+  });
+
+  test("لكل ضغطة مُعرّف فريد — لا يختلط حدثان أبداً", () => {
+    const { button } = renderPage();
+    button.click();
+    button.click();
+    button.click();
+
+    const ids = pending().map((p) => p.id);
+    expect(new Set(ids).size).toBe(3);
   });
 
   test("الطابور في التخزين لا في الذاكرة — يعيش بعد مغادرة الصفحة قبل الترطيب", () => {
@@ -175,6 +185,7 @@ describe("السكريبت المبكّر — الزر يعمل قبل وصول 
     renderPage().button.click();
     expect(pending()).toHaveLength(1);
     expect(typeof pending()[0].at).toBe("number");
+    expect(pending()[0].id).toMatch(/^[a-z0-9]+$/);
 
     // "صفحة جديدة": ذاكرة نظيفة، نفس التخزين.
     document.body.innerHTML = "";
