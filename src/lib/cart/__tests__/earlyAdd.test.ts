@@ -163,7 +163,13 @@ describe("السكريبت المبكّر — الزر يعمل قبل وصول 
     button.click();
     button.click();
 
-    expect(pending().map(({ at: _at, id: _id, ...rest }) => rest)).toEqual([
+    const withoutVolatile = pending().map((entry) => ({
+      productId: entry.productId,
+      sku: entry.sku,
+      quantity: entry.quantity,
+      cartValue: entry.cartValue,
+    }));
+    expect(withoutVolatile).toEqual([
       { productId: 7, sku: "TF-CP-001", quantity: 5, cartValue: 600 },
       { productId: 7, sku: "TF-CP-001", quantity: 5, cartValue: 1200 },
     ]);

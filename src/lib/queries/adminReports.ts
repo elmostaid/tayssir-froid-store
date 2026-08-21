@@ -171,6 +171,120 @@ export async function getDeliveredOrdersProfitBreakdown(
   }));
 }
 
+// ─────────────────── المبيعات والأرباح حسب المصدر ───────────────────
+
+/**
+ * تفصيل المبيعات حسب مصدر الطلب داخل مدى زمني.
+ *
+ * ثلاثة قرارات تحكم هذه الأرقام:
+ *
+ * 1) **الربح من الطلبات المسلَّمة وحدها** — نفس أساس بقية هذه الصفحة، ولنفس
+ *    السبب: الدفع عند الاستلام، فالبيع لا يصير مالاً إلا بالتسليم. طلب
+ *    واتساب يُسجَّل `confirmed`، فلا يدخل الربح حتى تُعلِن تسليمه. لذلك
+ *    نعرض بجانبه عدد المؤكَّدة غير المسلَّمة، حتى لا يبدو أن بيعاً اختفى.
+ *
+ * 2) **التوصيل إيراد لا تكلفة.** `delivery_fee` هو ما يدفعه الزبون، ولا
+ *    يوجد في قاعدة البيانات أي حقل لما يكلّفنا التوصيل فعلاً. فنعرضه سطراً
+ *    منفصلاً ولا نطرحه من الربح ولا نجمعه فيه — وأي "ربح نهائي بعد
+ *    التوصيل" سيكون رقماً مخترعاً.
+ *
+ * 3) **التكلفة الناقصة تُعَدّ ولا تُخمَّن.** منتج بلا ثمن شراء يُحتسَب
+ *    بصفر، فيبدو ربحه كامل ثمن البيع. نعدّ تلك الطلبات ونعرض عددها بدل
+ *    رقم ربح واثق وكاذب.
+ */
+export type SalesBySourceRow = {
+  source: string;
+  deliveredOrders: number;
+  revenueMad: number;
+  deliveryFeesMad: number;
+  cogsMad: number;
+  grossProfitMad: number;
+  /** طلبات مسلَّمة ينقص أحد سطورها ثمن الشراء — ربحها مبالَغ فيه. */
+  ordersWithMissingCost: number;
+  /** مؤكَّدة/قيد التجهيز ولم تُسلَّم بعد: مبيعات قادمة لا تدخل الربح. */
+  pendingOrders: number;
+  pendingRevenueMad: number;
+};
+
+export type SalesBySource = {
+  rows: SalesBySourceRow[];
+  totals: Omit<SalesBySourceRow, "source">;
+};
+
+const numeric = (value: unknown): number => {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+export async function getSalesBySource(
+  range: { from: Date; to: Date },
+  source: string | null = null
+): Promise<SalesBySource> {
+  const rows = await sql<Record<string, unknown>[]>`
+    ${orderCogsCte()}
+    select
+      o.source,
+      count(*) filter (where o.status = 'delivered')::int          as delivered_orders,
+      coalesce(sum(o.items_subtotal) filter (where o.status = 'delivered'), 0)  as revenue,
+      coalesce(sum(o.delivery_fee)   filter (where o.status = 'delivered'), 0)  as delivery_fees,
+      coalesce(sum(oc.cogs)          filter (where o.status = 'delivered'), 0)  as cogs,
+      coalesce(sum(o.items_subtotal - coalesce(oc.cogs, 0)) filter (
+        where o.status = 'delivered'
+      ), 0)                                                        as gross_profit,
+      count(*) filter (
+        where o.status = 'delivered' and coalesce(oc.has_full_snapshot, true) = false
+      )::int                                                       as missing_cost,
+      count(*) filter (where o.status in ('new', 'confirmed', 'preparing', 'shipped'))::int
+                                                                   as pending_orders,
+      coalesce(sum(o.items_subtotal) filter (
+        where o.status in ('new', 'confirmed', 'preparing', 'shipped')
+      ), 0)                                                        as pending_revenue
+    from public.orders o
+    left join order_cogs oc on oc.order_id = o.id
+    where o.created_at >= ${range.from} and o.created_at < ${range.to}
+      ${source ? sql`and o.source = ${source}` : sql``}
+    group by o.source
+    order by revenue desc
+  `;
+
+  const mapped: SalesBySourceRow[] = rows.map((r) => ({
+    source: String(r.source),
+    deliveredOrders: numeric(r.delivered_orders),
+    revenueMad: numeric(r.revenue),
+    deliveryFeesMad: numeric(r.delivery_fees),
+    cogsMad: numeric(r.cogs),
+    grossProfitMad: numeric(r.gross_profit),
+    ordersWithMissingCost: numeric(r.missing_cost),
+    pendingOrders: numeric(r.pending_orders),
+    pendingRevenueMad: numeric(r.pending_revenue),
+  }));
+
+  const totals = mapped.reduce<Omit<SalesBySourceRow, "source">>(
+    (sum, row) => ({
+      deliveredOrders: sum.deliveredOrders + row.deliveredOrders,
+      revenueMad: sum.revenueMad + row.revenueMad,
+      deliveryFeesMad: sum.deliveryFeesMad + row.deliveryFeesMad,
+      cogsMad: sum.cogsMad + row.cogsMad,
+      grossProfitMad: sum.grossProfitMad + row.grossProfitMad,
+      ordersWithMissingCost: sum.ordersWithMissingCost + row.ordersWithMissingCost,
+      pendingOrders: sum.pendingOrders + row.pendingOrders,
+      pendingRevenueMad: sum.pendingRevenueMad + row.pendingRevenueMad,
+    }),
+    {
+      deliveredOrders: 0,
+      revenueMad: 0,
+      deliveryFeesMad: 0,
+      cogsMad: 0,
+      grossProfitMad: 0,
+      ordersWithMissingCost: 0,
+      pendingOrders: 0,
+      pendingRevenueMad: 0,
+    }
+  );
+
+  return { rows: mapped, totals };
+}
+
 export type BestSellingProduct = {
   sku: string;
   name: string;

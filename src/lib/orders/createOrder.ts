@@ -1,13 +1,17 @@
 import { sql } from "@/lib/db";
 import { getSettings } from "@/lib/queries/settings";
 import { isValidMoroccanPhone, normalizePhone } from "@/lib/phone";
-import { isValidQuantity } from "@/lib/cart/cartMath";
 import { isRateLimited } from "@/lib/orders/rateLimit";
+import {
+  StockConflictError,
+  sumLines,
+  writeNewOrderLines,
+} from "@/lib/orders/orderLines";
+import { resolveOrderLines, WEBSITE_LINE_RULES } from "@/lib/orders/resolveLines";
 import { notifyNewOrder } from "@/lib/notifications/notifyNewOrder";
 import { sendCapiEvent } from "@/lib/pixel/capi";
 import { toInternationalDigits } from "@/lib/phone";
 import { getSiteUrl } from "@/lib/siteUrl";
-import type { CatalogProduct, CatalogProductVariant } from "@/lib/types";
 import type {
   CreateOrderFieldError,
   CreateOrderInput,
@@ -68,17 +72,6 @@ function validateStructure(input: CreateOrderInput): CreateOrderFieldError[] {
   return errors;
 }
 
-type ValidatedLineItem = {
-  productId: number;
-  variantId: number | null;
-  nameSnapshot: string;
-  skuSnapshot: string;
-  unitPrice: number;
-  quantity: number;
-  lineTotal: number;
-  purchasePriceSnapshot: number | null;
-};
-
 export async function createOrder(input: CreateOrderInput): Promise<CreateOrderResult> {
   const structuralErrors = validateStructure(input);
   if (structuralErrors.length > 0) {
@@ -118,137 +111,22 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       };
     }
 
-    const productIds = [...new Set(input.items.map((item) => item.productId))];
-    const variantIds = [
-      ...new Set(
-        input.items
-          .map((item) => item.variantId)
-          .filter((id): id is number => id !== null)
-      ),
-    ];
-
-    // إعادة جلب المنتجات والمتغيرات من قاعدة البيانات مباشرة — لا نثق أبداً
-    // بالسعر أو المخزون أو الحد الأدنى القادم من المتصفح.
-    const products = await sql<CatalogProduct[]>`
-      select * from public.catalog_products where id = any(${productIds})
-    `;
-    const variants =
-      variantIds.length > 0
-        ? await sql<CatalogProductVariant[]>`
-            select * from public.catalog_product_variants where id = any(${variantIds})
-          `
-        : [];
-
-    // ثمن الشراء سري ولا يظهر فـcatalog_products/catalog_product_variants (انظر
-    // supabase/migrations/20260730000002_security.sql) — نجلبه هنا من الجداول
-    // الأصلية مباشرة (اتصال خادم مباشر عبر DATABASE_URL، ليس عبر anon key/
-    // PostgREST) فقط لتخزين "صورة مجمَّدة" (snapshot) وقت إنشاء الطلب.
-    const purchasePriceRows = await sql<{ id: number; purchase_price: string | null }[]>`
-      select id, purchase_price from public.products where id = any(${productIds})
-    `;
-    const variantPurchasePriceRows =
-      variantIds.length > 0
-        ? await sql<{ id: number; purchase_price_override: string | null }[]>`
-            select id, purchase_price_override from public.product_variants where id = any(${variantIds})
-          `
-        : [];
-
-    const purchasePriceById = new Map(purchasePriceRows.map((p) => [p.id, p.purchase_price]));
-    const variantPurchasePriceById = new Map(
-      variantPurchasePriceRows.map((v) => [v.id, v.purchase_price_override])
-    );
-
-    const productById = new Map(products.map((p) => [p.id, p]));
-    const variantById = new Map(variants.map((v) => [v.id, v]));
-
-    const lineItems: ValidatedLineItem[] = [];
-    const itemErrors: CreateOrderFieldError[] = [];
-
-    for (const item of input.items) {
-      const fieldKey = `item:${item.productId}:${item.variantId ?? "base"}`;
-      const product = productById.get(item.productId);
-
-      if (!product) {
-        itemErrors.push({
-          field: fieldKey,
-          message: "أحد المنتجات في سلتك لم يعد متوفراً. الرجاء إزالته من السلة.",
-        });
-        continue;
-      }
-
-      let effectivePrice = Number(product.sale_price);
-      let effectiveMinQty = product.min_order_qty;
-      let effectiveIncrement = product.qty_increment;
-      let effectiveStock = product.stock_quantity;
-      let variantName: string | null = null;
-
-      if (item.variantId !== null) {
-        const variant = variantById.get(item.variantId);
-        if (!variant || variant.product_id !== item.productId) {
-          itemErrors.push({
-            field: fieldKey,
-            message: `النوع المختار من "${product.name_ar}" لم يعد متوفراً. الرجاء اختيار نوع آخر.`,
-          });
-          continue;
-        }
-        effectivePrice = Number(variant.sale_price);
-        effectiveMinQty = variant.min_order_qty;
-        effectiveIncrement = variant.qty_increment;
-        effectiveStock = variant.stock_quantity;
-        variantName = variant.variant_name;
-      }
-
-      if (product.status === "out_of_stock") {
-        itemErrors.push({
-          field: fieldKey,
-          message: `"${product.name_ar}" غير متوفر للطلب حالياً. الرجاء إزالته من السلة.`,
-        });
-        continue;
-      }
-
-      if (effectiveStock <= 0) {
-        itemErrors.push({
-          field: fieldKey,
-          message: `"${product.name_ar}" نفدت كميته حالياً. الرجاء إزالته من السلة.`,
-        });
-        continue;
-      }
-
-      if (!isValidQuantity(item.quantity, effectiveMinQty, effectiveIncrement)) {
-        itemErrors.push({
-          field: fieldKey,
-          message: `الكمية المطلوبة من "${product.name_ar}" غير صحيحة (الحد الأدنى ${effectiveMinQty}، بمضاعفات ${effectiveIncrement}).`,
-        });
-        continue;
-      }
-
-      // ثمن الشراء الفعلي وقت الطلب: أولوية لـvariant.purchase_price_override
-      // إن وُجد، وإلا product.purchase_price — يُخزَّن كـsnapshot ثابت فـ
-      // order_items ولا يتأثر بأي تعديل لاحق على ثمن الشراء (انظر
-      // adminReports.ts للاستهلاك).
-      const rawPurchasePrice =
-        item.variantId !== null
-          ? (variantPurchasePriceById.get(item.variantId) ?? purchasePriceById.get(item.productId) ?? null)
-          : (purchasePriceById.get(item.productId) ?? null);
-      const purchasePriceSnapshot = rawPurchasePrice === null ? null : Number(rawPurchasePrice);
-
-      lineItems.push({
-        productId: product.id,
+    // نفس المُحلِّل الذي يستعمله الطلب اليدوي وتعديل الطلب، بقواعد الموقع:
+    // لا ثمن خاص، والكمية الدنيا ومضاعفاتها مُلزِمة، والتوفّر مُلزِم.
+    const { lines: lineItems, errors: itemErrors } = await resolveOrderLines(
+      input.items.map((item) => ({
+        productId: item.productId,
         variantId: item.variantId,
-        nameSnapshot: variantName ? `${product.name_ar} — ${variantName}` : product.name_ar,
-        skuSnapshot: product.sku,
-        unitPrice: effectivePrice,
         quantity: item.quantity,
-        lineTotal: effectivePrice * item.quantity,
-        purchasePriceSnapshot,
-      });
-    }
+      })),
+      WEBSITE_LINE_RULES
+    );
 
     if (itemErrors.length > 0) {
       return { ok: false, errors: itemErrors };
     }
 
-    const subtotal = lineItems.reduce((sum, line) => sum + line.lineTotal, 0);
+    const subtotal = sumLines(lineItems);
 
     if (subtotal < settings.minOrderAmountMad) {
       return {
@@ -283,53 +161,9 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       if (inserted.length > 0) {
         const orderId = inserted[0].id;
 
-        for (const line of lineItems) {
-          // حجز المخزون: إنقاص فوري وذَرّي (atomic) عند إنشاء الطلب — الشرط
-          // "stock_quantity >= quantity" داخل UPDATE نفسه يمنع أي سباق (race
-          // condition) بين طلبين متزامنين على نفس القطعة، ويمنع مخزوناً
-          // سالباً دون الحاجة لقفل يدوي منفصل.
-          const decremented = line.variantId
-            ? await trx<{ id: number }[]>`
-                update public.product_variants
-                set stock_quantity = stock_quantity - ${line.quantity}
-                where id = ${line.variantId} and stock_quantity >= ${line.quantity}
-                returning id
-              `
-            : await trx<{ id: number }[]>`
-                update public.products
-                set stock_quantity = stock_quantity - ${line.quantity}
-                where id = ${line.productId} and stock_quantity >= ${line.quantity}
-                returning id
-              `;
-
-          if (decremented.length === 0) {
-            stockConflict = {
-              field: `item:${line.productId}:${line.variantId ?? "base"}`,
-              message: `الكمية المطلوبة من "${line.nameSnapshot}" لم تعد متوفرة بالكامل في المخزون الآن. الرجاء تعديل الكمية أو إزالة المنتج.`,
-            };
-            throw new Error("STOCK_CONFLICT");
-          }
-
-          await trx`
-            insert into public.order_items (
-              order_id, product_id, variant_id, product_name_snapshot,
-              sku_snapshot, unit_price_snapshot, quantity, line_total,
-              purchase_price_snapshot
-            ) values (
-              ${orderId}, ${line.productId}, ${line.variantId}, ${line.nameSnapshot},
-              ${line.skuSnapshot}, ${line.unitPrice}, ${line.quantity}, ${line.lineTotal},
-              ${line.purchasePriceSnapshot}
-            )
-          `;
-
-          await trx`
-            insert into public.stock_movements (
-              product_id, variant_id, order_id, quantity_delta, reason
-            ) values (
-              ${line.productId}, ${line.variantId}, ${orderId}, ${-line.quantity}, 'order_created'
-            )
-          `;
-        }
+        // نفس المنطق بالضبط الذي يستعمله الطلب اليدوي وتعديل الطلب —
+        // حجز ذرّي بشرط داخل UPDATE، ثم السطر، ثم حركة المخزون.
+        await writeNewOrderLines(trx, orderId, lineItems);
 
         await trx`
           insert into public.order_status_history (order_id, status, note)
@@ -360,7 +194,13 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
         isNew: false as const,
       };
     }).catch((error) => {
-      if (error instanceof Error && error.message === "STOCK_CONFLICT") return null;
+      if (error instanceof StockConflictError) {
+        stockConflict = {
+          field: `item:${error.line.productId}:${error.line.variantId ?? "base"}`,
+          message: `الكمية المطلوبة من "${error.line.nameSnapshot}" لم تعد متوفرة بالكامل في المخزون الآن. الرجاء تعديل الكمية أو إزالة المنتج.`,
+        };
+        return null;
+      }
       throw error;
     });
 

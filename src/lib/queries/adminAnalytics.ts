@@ -188,10 +188,16 @@ export async function getAnalyticsTotals(range: AnalyticsRange): Promise<Analyti
 }
 
 /**
- * الطلبات الحقيقية في نفس المدى — مرجع المبيعات النهائي.
+ * طلبات **الموقع** في نفس المدى — مرجع المبيعات النهائي لهذا القمع.
  *
  * تُحسب كل الطلبات المُنشأة في المدى (بما فيها ما أُلغي لاحقاً) لأن السؤال
  * هنا "كم طلباً نتج عن زيارات هذه الفترة"، وهو ما يُقارَن بحدث الشراء.
+ *
+ * والتصفية على source = 'website' ليست تفصيلاً: طلب واتساب بيعٌ حقيقي يدخل
+ * الإيراد والأرباح، لكنه **لم يمرّ بالموقع** ولم يُنتج زيارة ولا حدث شراء.
+ * حسبانه هنا يرفع نسبة "زائر ← طلب" بمبيعات لم يرها الموقع أصلاً، فيصير
+ * الرقم الذي بُني هذا النظام كله لتصحيحه كذبةً من نوع جديد. الأرقام
+ * الشاملة لكل المصادر مكانها صفحة التقارير.
  */
 export async function getOrdersTotals(range: AnalyticsRange): Promise<OrdersTotals> {
   const [row] = await sql<Record<string, unknown>[]>`
@@ -200,6 +206,7 @@ export async function getOrdersTotals(range: AnalyticsRange): Promise<OrdersTota
       coalesce(sum(coalesce(final_total, items_subtotal)), 0)   as revenue
     from public.orders
     where created_at >= ${range.from} and created_at < ${range.to}
+      and source = 'website'
   `;
   return { orders: n(row?.orders), revenueMad: n(row?.revenue) };
 }
@@ -251,6 +258,7 @@ export async function getOrdersDaily(range: AnalyticsRange): Promise<OrdersDaily
       coalesce(sum(coalesce(final_total, items_subtotal)), 0)                    as revenue
     from public.orders
     where created_at >= ${range.from} and created_at < ${range.to}
+      and source = 'website'
     group by 1
     order by 1 desc
   `;

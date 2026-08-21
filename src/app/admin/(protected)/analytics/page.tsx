@@ -334,6 +334,13 @@ export default async function AdminAnalyticsPage({
       <h1 className="text-xl font-bold text-neutral-800">تحليلات الزوّار</h1>
       <p className="mt-1 text-xs text-neutral-500">
         قياس داخلي مجهول — يعدّ الأشخاص لا الأحداث فقط. التوقيت بتوقيت المغرب.
+        <br />
+        كل الأرقام هنا تخصّ <span className="font-semibold">الموقع وحده</span>: طلبات واتساب
+        والهاتف والمحل مبيعات حقيقية لكنها لم تمرّ بهذا القمع، فمكانها{" "}
+        <Link href="/admin/reports" className="font-semibold text-brand-turquoise-dark underline">
+          صفحة التقارير والأرباح
+        </Link>
+        .
       </p>
 
       <RangePicker preset={range.preset} fromDay={range.fromDay} toDay={range.toDay} />
@@ -413,15 +420,15 @@ export default async function AdminAnalyticsPage({
               hint="أشخاص (جلسات فريدة)"
             />
             <StatCard
-              label="الطلبات"
+              label="طلبات الموقع"
               value={num(orders.orders)}
-              hint="من جدول الطلبات — المرجع النهائي"
+              hint="من جدول الطلبات — الموقع وحده"
               accent="orange"
             />
             <StatCard
               label="الإيراد"
               value={formatMad(orders.revenueMad)}
-              hint="من الطلبات الحقيقية"
+              hint="طلبات الموقع وحدها"
               accent="orange"
               compact
             />

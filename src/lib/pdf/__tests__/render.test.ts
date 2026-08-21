@@ -33,6 +33,7 @@ const fixtureOrder: AdminOrderDetail = {
   cartonCount: null,
   deliveryFee: null,
   finalTotal: null,
+  source: "website",
   createdAt: new Date().toISOString(),
 };
 
