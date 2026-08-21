@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useCart } from "@/components/CartProvider";
 import { buildProductWhatsAppLink } from "@/lib/whatsapp";
+import { trackAnalyticsEvent } from "@/lib/analytics/track";
 import type { CatalogProduct } from "@/lib/types";
 
 // إضافة سريعة للسلة من بطاقة المنتج (بالكمية الدنيا) — تُستعمل فقط للمنتجات
@@ -18,7 +19,7 @@ export function ProductCardActions({
   hasVariants: boolean;
   whatsappNumber: string;
 }) {
-  const { addItem } = useCart();
+  const { addItem, subtotal } = useCart();
   const [added, setAdded] = useState(false);
   const outOfStock = product.status === "out_of_stock" || product.stock_quantity <= 0;
   const whatsappLink = buildProductWhatsAppLink(whatsappNumber, product.name_ar, product.sku);
@@ -40,6 +41,16 @@ export function ProductCardActions({
       },
       product.min_order_qty
     );
+    // هذه الإضافة السريعة كانت غير مرئية تماماً قبل اليوم: لا لـMeta ولا
+    // لنا. نسجّلها داخلياً الآن حتى يصبح عدد "من أضاف للسلة" في اللوحة
+    // صادقاً. حدث Meta لا يُضاف هنا في هذه المرحلة عمداً — قرار منفصل
+    // يحتاج موافقة، لأنه سيُغيّر أرقام الحملة فجأة ويكسر مقارنتها التاريخية.
+    trackAnalyticsEvent("add_to_cart", {
+      productId: product.id,
+      sku: product.sku,
+      quantity: product.min_order_qty,
+      cartValue: subtotal + Number(product.sale_price) * product.min_order_qty,
+    });
     setAdded(true);
     window.setTimeout(() => setAdded(false), 1800);
   }
