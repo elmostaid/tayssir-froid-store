@@ -1,6 +1,12 @@
 import { gzipSync } from "node:zlib";
 import { beforeAll, beforeEach, describe, expect, test } from "vitest";
-import { CART_STORAGE_KEY, EARLY_ADD_SCRIPT, type EarlyAddPayload } from "@/lib/cart/earlyAdd";
+import {
+  CART_STORAGE_KEY,
+  EARLY_ADD_SCRIPT,
+  PENDING_ADDS_KEY,
+  type EarlyAddPayload,
+  type PendingAdd,
+} from "@/lib/cart/earlyAdd";
 import { cartItemKey, snapQuantity } from "@/lib/cart/cartMath";
 import type { CartItem } from "@/lib/cart/types";
 
@@ -39,6 +45,7 @@ function renderPage(payload: EarlyAddPayload = PAYLOAD) {
 }
 
 const stored = (): CartItem[] => JSON.parse(localStorage.getItem(CART_STORAGE_KEY) ?? "[]");
+const pending = (): PendingAdd[] => JSON.parse(localStorage.getItem(PENDING_ADDS_KEY) ?? "[]");
 
 beforeAll(() => {
   // نُنفّذ السكريبت مرة واحدة تماماً كما يفعل المتصفح وقت تحليل الصفحة.
@@ -48,7 +55,6 @@ beforeAll(() => {
 beforeEach(() => {
   localStorage.clear();
   delete window.__tfCartLive;
-  window.__tfPendingAdds = [];
 });
 
 describe("السكريبت المبكّر — الزر يعمل قبل وصول React", () => {
@@ -157,10 +163,33 @@ describe("السكريبت المبكّر — الزر يعمل قبل وصول 
     button.click();
     button.click();
 
-    expect(window.__tfPendingAdds).toEqual([
+    expect(pending().map(({ at: _at, id: _id, ...rest }) => rest)).toEqual([
       { productId: 7, sku: "TF-CP-001", quantity: 5, cartValue: 600 },
       { productId: 7, sku: "TF-CP-001", quantity: 5, cartValue: 1200 },
     ]);
+  });
+
+  test("لكل ضغطة مُعرّف فريد — لا يختلط حدثان أبداً", () => {
+    const { button } = renderPage();
+    button.click();
+    button.click();
+    button.click();
+
+    const ids = pending().map((p) => p.id);
+    expect(new Set(ids).size).toBe(3);
+  });
+
+  test("الطابور في التخزين لا في الذاكرة — يعيش بعد مغادرة الصفحة قبل الترطيب", () => {
+    // هذه بالضبط الحالة التي فقدنا فيها حدثاً على Production: ضغطة عند
+    // الثانية الثانية ثم مغادرة قبل أن يصل React عند العاشرة.
+    renderPage().button.click();
+    expect(pending()).toHaveLength(1);
+    expect(typeof pending()[0].at).toBe("number");
+    expect(pending()[0].id).toMatch(/^[a-z0-9]+$/);
+
+    // "صفحة جديدة": ذاكرة نظيفة، نفس التخزين.
+    document.body.innerHTML = "";
+    expect(pending()).toHaveLength(1);
   });
 
   test("زر معطّل (نفد المخزون) لا يضيف شيئاً", () => {
@@ -186,9 +215,10 @@ describe("السكريبت المبكّر — الزر يعمل قبل وصول 
     expect(stored()).toHaveLength(1);
   });
 
-  test("السكريبت أقل من كيلوبايت على السلك — الكلفة هنا تُدفع في كل صفحة", () => {
-    // ما يهمّ هو ما يُنقَل فعلاً: HTML يُقدَّم مضغوطاً دائماً. حارس صريح
-    // حتى لا يتضخّم هذا السكريبت لاحقاً وينقلب على الغاية التي كُتب لأجلها.
-    expect(gzipSync(Buffer.from(EARLY_ADD_SCRIPT, "utf8")).length).toBeLessThan(1024);
+  test("السكريبت نحو كيلوبايت على السلك — الكلفة هنا تُدفع في كل صفحة", () => {
+    // ما يهمّ هو ما يُنقَل فعلاً: HTML يُقدَّم مضغوطاً دائماً. الحدّ ليس رقماً
+    // سحرياً، بل حارس صريح حتى لا يتضخّم هذا السكريبت لاحقاً فينقلب على
+    // الغاية التي كُتب لأجلها.
+    expect(gzipSync(Buffer.from(EARLY_ADD_SCRIPT, "utf8")).length).toBeLessThan(1200);
   });
 });

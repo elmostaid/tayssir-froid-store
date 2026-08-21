@@ -9,7 +9,7 @@ import {
   useState,
 } from "react";
 import type { CartItem } from "@/lib/cart/types";
-import { trackAnalyticsEvent } from "@/lib/analytics/track";
+import { flushPendingEarlyAdds } from "@/lib/cart/pendingAdds";
 import {
   cartItemKey,
   computeSubtotal,
@@ -64,16 +64,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   // الإضافات التي وقعت قبل الترطيب سُجّلت في السلة فعلاً، لكن حدث القياس
   // الداخلي لها لم يُرسَل بعد (السكريبت المضمَّن لا يعرف الجلسة ولا يُحمّل
-  // طبقة الإرسال عمداً). نُفرغ الطابور هنا مرة واحدة حتى يبقى عدّاد
-  // "أضاف للسلة" في اللوحة صادقاً، ولا نخسر بالسرعةِ صدقَ الأرقام.
+  // طبقة الإرسال عمداً). نُفرغ الطابور هنا حتى يبقى عدّاد "أضاف للسلة" في
+  // اللوحة صادقاً، ولا نخسر بالسرعةِ صدقَ الأرقام. تفاصيل ضمان
+  // "ضغطة واحدة = حدث واحد" في lib/cart/pendingAdds.ts.
   useEffect(() => {
     if (!isHydrated) return;
-    const pending = window.__tfPendingAdds;
-    if (!pending || pending.length === 0) return;
-    window.__tfPendingAdds = [];
-    for (const add of pending) {
-      trackAnalyticsEvent("add_to_cart", add);
-    }
+    void flushPendingEarlyAdds();
   }, [isHydrated]);
 
   // حفظ أي تغيير في السلة في التخزين المحلي (بعد اكتمال التحميل الأول فقط

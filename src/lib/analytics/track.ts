@@ -147,6 +147,51 @@ export function trackAnalyticsEvent(
   }
 }
 
+/**
+ * إرسال يُخبرنا هل وصل أم لا — للإضافات المبكّرة وحدها.
+ *
+ * باقي الأحداث تُرسَل بأفضل مجهود عبر sendBeacon وتُنسى، وهذا صحيح لها:
+ * كلها تقع بينما الصفحة حيّة ومُرطَّبة. أما الإضافة المبكّرة فتقع قبل أن
+ * يصل React بثوانٍ، وقد يغادر صاحبها الصفحة أو تنقطع شبكته قبل أن تُرسَل
+ * — فهي الحدث الوحيد الذي نحتاج أن نعرف مصيره لنقرّر: نمسحه من الطابور أم
+ * نُعيد المحاولة في الصفحة التالية.
+ *
+ * يُعيد استعمال buildBatch نفسه (الجلسة، السياق، الجهاز) فلا تنشأ نسخة
+ * ثانية من منطق السياق تنحرف مع الوقت. `keepalive` يُبقي الطلب حياً حتى لو
+ * غادرت الصفحة أثناءه.
+ */
+export async function sendAnalyticsEventsNow(
+  events: Array<{ name: AnalyticsEventName; pagePath?: string } & AnalyticsEventPayload>
+): Promise<boolean> {
+  if (typeof window === "undefined" || typeof fetch !== "function") return false;
+  if (events.length === 0) return true;
+
+  try {
+    const session = getOrCreateSession();
+    const startedAt = session?.context.startedAt ?? Date.now();
+    const batch = buildBatch(
+      events.slice(0, MAX_EVENTS_PER_BATCH).map(({ name, pagePath, ...payload }) => ({
+        name,
+        pagePath: pagePath ?? nowPath(),
+        sessionMs: Math.max(0, Date.now() - startedAt),
+        ...payload,
+      }))
+    );
+    if (!batch) return false;
+
+    const response = await fetch(ANALYTICS_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(batch),
+      keepalive: true,
+    });
+    return response.ok;
+  } catch {
+    // شبكة مقطوعة أو طلب مرفوض — نُبلّغ بالفشل حتى يبقى الحدث في الطابور.
+    return false;
+  }
+}
+
 /** للاختبارات فقط — تفريغ الحالة بين الحالات. */
 export function __resetAnalyticsQueueForTests(): void {
   if (flushTimer !== null) clearTimeout(flushTimer);
