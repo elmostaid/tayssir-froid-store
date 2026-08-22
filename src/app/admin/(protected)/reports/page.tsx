@@ -42,10 +42,11 @@ export default async function AdminReportsPage({
   if (!admin) redirect("/admin/login");
   if (!isOwnerAdmin(admin)) redirect("/admin/orders");
 
-  const { range: rangeParam, from, to, source: sourceParam } = await searchParams;
-  const range = resolveRange(rangeParam, from, to);
-  const source = isOrderSource(sourceParam) ? sourceParam : null;
+  const params = await searchParams;
+  const range = resolveRange(params.range, params.from, params.to);
+  const source = isOrderSource(params.source) ? params.source : null;
 
+  let diagnostic: string | null = null;
   const [salesStats, profit, recentDelivered, bestByQuantity, bestByValue, bySourceResult] =
     await Promise.all([
       getDashboardOrderStats(),
@@ -61,6 +62,8 @@ export default async function AdminReportsPage({
         })
       ),
     ]);
+
+  if (!bySourceResult.ok) diagnostic = bySourceResult.message;
 
   const bySource = bySourceResult.ok
     ? bySourceResult.value
@@ -85,6 +88,11 @@ export default async function AdminReportsPage({
   return (
     <div>
       <h1 className="text-xl font-bold text-neutral-800">التقارير والأرباح</h1>
+      {diagnostic && (
+        <pre className="mt-2 overflow-x-auto rounded-lg bg-red-50 p-2 text-[10px] text-red-700">
+          {diagnostic}
+        </pre>
+      )}
 
       <h2 className="mt-4 border-r-4 border-brand-turquoise pr-3 text-base font-bold text-neutral-800">
         المبيعات (طلبات غير ملغاة وغير راجعة)
