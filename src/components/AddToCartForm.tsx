@@ -7,6 +7,7 @@ import { snapQuantity } from "@/lib/cart/cartMath";
 import { formatMad } from "@/lib/format";
 import { trackAddToCart } from "@/lib/pixel/fbq";
 import { trackAnalyticsEvent } from "@/lib/analytics/track";
+import type { EarlyAddPayload } from "@/lib/cart/earlyAdd";
 import type { CatalogProduct, CatalogProductVariant } from "@/lib/types";
 
 export function AddToCartForm({
@@ -59,6 +60,35 @@ export function AddToCartForm({
   }
 
   const outOfStock = effective.stock <= 0 || product.status === "out_of_stock";
+
+  /**
+   * الحمولة التي يقرأها السكريبت المضمَّن ليُضيف قبل وصول React.
+   *
+   * الكمية هنا هي الكمية الدنيا دائماً، وهذا ليس تبسيطاً: زرّا + و− لا
+   * يعملان قبل الترطيب أصلاً، فالكمية المعروضة على الشاشة قبله هي الدنيا
+   * يقيناً. فلا يمكن أن يفترق ما يراه الزبون عمّا يُضاف.
+   *
+   * ولا حمولة إطلاقاً لمنتج له مقاسات: اختيار المقاس نفسه يحتاج React،
+   * فإضافة أوّل مقاس نيابةً عن الزبون قد تضع في سلّته ما لم يخترْه. الأمان
+   * هنا أولى من السرعة — وهي نفس السياسة في بطاقة المنتج التي ترسله إلى
+   * هذه الصفحة بدل الإضافة السريعة.
+   */
+  const earlyAdd: EarlyAddPayload | null =
+    variants.length > 0 || outOfStock
+      ? null
+      : {
+          productId: product.id,
+          variantId: null,
+          slug: product.slug,
+          sku: product.sku,
+          name: product.name_ar,
+          variantName: null,
+          unitPrice: Number(product.sale_price),
+          minOrderQty: product.min_order_qty,
+          qtyIncrement: product.qty_increment,
+          imageUrl,
+          quantity: product.min_order_qty,
+        };
 
   function handleAddToCart() {
     if (outOfStock) return;
@@ -167,9 +197,18 @@ export function AddToCartForm({
           <button
             type="button"
             onClick={handleAddToCart}
+            data-early-add={earlyAdd ? JSON.stringify(earlyAdd) : undefined}
             className="flex-1 rounded-full bg-brand-orange px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-orange-dark"
           >
-            أضف إلى السلة
+            {/* النص ثابت كما كان: بعد الترطيب يظهر زرّ «تمت الإضافة — عرض
+                السلة» بجانبه، فتبديل نصّ هذا الزرّ أيضاً تكرارٌ وتغييرٌ
+                للتصميم. الذي يبدّله مؤقتاً هو السكريبت المبكّر وحده، قبل
+                الترطيب، حين لا يوجد أي زرّ آخر يؤكّد للزبون أن سلعته دخلت.
+                suppressHydrationWarning لأن هذا التبديل قد يكون وقع فعلاً
+                قبل وصول React — وهو المقصود لا خطأ. */}
+            <span data-add-label suppressHydrationWarning>
+              أضف إلى السلة
+            </span>
           </button>
           {added && (
             <button
