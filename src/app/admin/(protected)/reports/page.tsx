@@ -46,24 +46,27 @@ export default async function AdminReportsPage({
   const range = resolveRange(params.range, params.from, params.to);
   const source = isOrderSource(params.source) ? params.source : null;
 
-  let diagnostic: string | null = null;
-  const [salesStats, profit, recentDelivered, bestByQuantity, bestByValue, bySourceResult] =
-    await Promise.all([
-      getDashboardOrderStats(),
-      getProfitSummary(),
-      getDeliveredOrdersProfitBreakdown(10),
-      getBestSellingProducts("quantity", 5),
-      getBestSellingProducts("value", 5),
-      getSalesBySource(range, source).then(
-        (value) => ({ ok: true as const, value }),
-        (error: unknown) => ({
-          ok: false as const,
-          message: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
-        })
-      ),
-    ]);
+  // خمسة استعلامات متوازية لا ستة: مجمّع الاتصالات محدود بـmax 5 (انظر
+  // db.ts)، وإضافة سادس إلى نفس الدفعة جعلت هذه الصفحة تتعثّر على Preview
+  // بينما كانت تُفتح في أقل من ثانية بدونه. التفصيل حسب المصدر يأتي بعدها
+  // بترتيب متسلسل — كلفته أجزاء من الثانية، مقابل صفحة لا تتعثّر.
+  const [salesStats, profit, recentDelivered, bestByQuantity, bestByValue] = await Promise.all([
+    getDashboardOrderStats(),
+    getProfitSummary(),
+    getDeliveredOrdersProfitBreakdown(10),
+    getBestSellingProducts("quantity", 5),
+    getBestSellingProducts("value", 5),
+  ]);
 
-  if (!bySourceResult.ok) diagnostic = bySourceResult.message;
+  // وحتى لو تعثّر هذا الاستعلام وحده، تبقى بقية الصفحة كما هي بدل أن تسقط
+  // كلها — نفس ما تفعله بقية صفحات الإدارة عبر safeQuery.
+  const bySourceResult = await getSalesBySource(range, source).then(
+    (value) => ({ ok: true as const, value }),
+    (error: unknown) => {
+      console.error("adminReports.getSalesBySource: تعذّر التفصيل حسب المصدر", error);
+      return { ok: false as const };
+    }
+  );
 
   const bySource = bySourceResult.ok
     ? bySourceResult.value
@@ -88,11 +91,6 @@ export default async function AdminReportsPage({
   return (
     <div>
       <h1 className="text-xl font-bold text-neutral-800">التقارير والأرباح</h1>
-      {diagnostic && (
-        <pre className="mt-2 overflow-x-auto rounded-lg bg-red-50 p-2 text-[10px] text-red-700">
-          {diagnostic}
-        </pre>
-      )}
 
       <h2 className="mt-4 border-r-4 border-brand-turquoise pr-3 text-base font-bold text-neutral-800">
         المبيعات (طلبات غير ملغاة وغير راجعة)
@@ -164,8 +162,8 @@ export default async function AdminReportsPage({
       </div>
 
       {!bySourceResult.ok && (
-        <p className="mt-3 rounded-xl border border-red-300 bg-red-50 p-3 text-xs font-semibold text-red-700">
-          تعذّر حساب هذا القسم: {bySourceResult.message}
+        <p className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-semibold text-amber-800">
+          تعذّر حساب التفصيل حسب المصدر الآن. بقية أرقام الصفحة صحيحة — حدّث الصفحة بعد قليل.
         </p>
       )}
 
