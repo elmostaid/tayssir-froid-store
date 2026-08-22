@@ -226,6 +226,10 @@ export async function getSalesBySource(
   range: { from: Date; to: Date },
   source: string | null = null
 ): Promise<SalesBySource> {
+  // التصفية بالمصدر تقع بعد الاستعلام لا داخله. الاستعلام يُجمِّع على
+  // o.source فلا يُرجع أكثر من صفّ لكل مصدر (خمسة على الأكثر)، فلا شيء
+  // يُوفَّر بتصفيتها في SQL. وقد كلّفنا الفلتر داخل الاستعلام صفحة تقارير
+  // معلَّقة على Preview؛ إخراجه أبسط وأسرع وأقلّ مفاجأة.
   const rows = await sql<Record<string, unknown>[]>`
     with order_cogs as (
       select
@@ -259,12 +263,11 @@ export async function getSalesBySource(
     from public.orders o
     left join order_cogs oc on oc.order_id = o.id
     where o.created_at >= ${range.from} and o.created_at < ${range.to}
-      and (${source ?? null}::text is null or o.source = ${source ?? null})
     group by o.source
     order by revenue desc
   `;
 
-  const mapped: SalesBySourceRow[] = rows.map((r) => ({
+  const all: SalesBySourceRow[] = rows.map((r) => ({
     source: String(r.source),
     deliveredOrders: numeric(r.delivered_orders),
     revenueMad: numeric(r.revenue),
@@ -275,6 +278,8 @@ export async function getSalesBySource(
     pendingOrders: numeric(r.pending_orders),
     pendingRevenueMad: numeric(r.pending_revenue),
   }));
+
+  const mapped = source === null ? all : all.filter((row) => row.source === source);
 
   const totals = mapped.reduce<Omit<SalesBySourceRow, "source">>(
     (sum, row) => ({
