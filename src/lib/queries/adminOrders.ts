@@ -17,6 +17,8 @@ export type AdminOrderListItem = {
   customerCity: string;
   itemsSubtotal: string;
   createdAt: string;
+  /** website | whatsapp | phone | store | other — انظر lib/orders/orderSource. */
+  source: string;
 };
 
 export type AdminOrderDetail = AdminOrderListItem & {
@@ -71,10 +73,11 @@ export async function listAdminOrders(
       customer_city: string;
       items_subtotal: string;
       created_at: string;
+      source: string;
     }[]
   >`
     select id, order_number, public_reference, status, customer_name,
-      customer_phone, customer_city, items_subtotal, created_at
+      customer_phone, customer_city, items_subtotal, created_at, source
     from public.orders
     where (${pattern}::text is null
         or order_number ilike ${pattern}
@@ -100,6 +103,7 @@ export async function listAdminOrders(
     customerCity: r.customer_city,
     itemsSubtotal: r.items_subtotal,
     createdAt: r.created_at,
+    source: r.source,
   }));
 }
 
@@ -125,10 +129,11 @@ export async function getRecentAdminOrders(limit: number): Promise<AdminOrderLis
       customer_city: string;
       items_subtotal: string;
       created_at: string;
+      source: string;
     }[]
   >`
     select id, order_number, public_reference, status, customer_name,
-      customer_phone, customer_city, items_subtotal, created_at
+      customer_phone, customer_city, items_subtotal, created_at, source
     from public.orders
     order by created_at desc
     limit ${limit}
@@ -144,6 +149,7 @@ export async function getRecentAdminOrders(limit: number): Promise<AdminOrderLis
     customerCity: r.customer_city,
     itemsSubtotal: r.items_subtotal,
     createdAt: r.created_at,
+    source: r.source,
   }));
 }
 
@@ -233,11 +239,12 @@ export async function getAdminOrderById(id: number): Promise<AdminOrderDetail | 
       delivery_fee: string | null;
       final_total: string | null;
       created_at: string;
+      source: string;
     }[]
   >`
     select id, order_number, public_reference, status, customer_name,
       customer_phone, customer_city, customer_address, customer_notes,
-      items_subtotal, carton_count, delivery_fee, final_total, created_at
+      items_subtotal, carton_count, delivery_fee, final_total, created_at, source
     from public.orders where id = ${id} limit 1
   `;
   const row = rows[0];
@@ -247,6 +254,7 @@ export async function getAdminOrderById(id: number): Promise<AdminOrderDetail | 
     id: row.id,
     orderNumber: row.order_number,
     publicReference: row.public_reference,
+    source: row.source,
     status: row.status,
     customerName: row.customer_name,
     customerPhone: row.customer_phone,

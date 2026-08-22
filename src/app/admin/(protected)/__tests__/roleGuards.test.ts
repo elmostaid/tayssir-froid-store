@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 // اختبارات الصلاحيات على مستوى الصفحات (وليس فقط Server Actions):
 // Staff يُعاد توجيهه فوراً من كل صفحة مقصورة على Owner/Admin (قبل أي
@@ -122,7 +122,10 @@ describe("صفحات مقصورة على Owner/Admin — Staff يُعاد توج
   test("التقارير والأرباح (COGS/الربح)", async () => {
     getAdminUserMock.mockResolvedValueOnce(STAFF_USER);
     const { default: AdminReportsPage } = await import("@/app/admin/(protected)/reports/page");
-    await expectsRedirectTo(() => AdminReportsPage(), "/admin/orders");
+    await expectsRedirectTo(
+      () => AdminReportsPage({ searchParams: Promise.resolve({}) }),
+      "/admin/orders"
+    );
   });
 
   test("الإعدادات", async () => {
@@ -197,5 +200,76 @@ describe("صفحات الطلبات — متاحة لـStaff (ضمن صلاحي�
       expect(digest).not.toContain("NEXT_REDIRECT");
     }
     expect(threw === true || threw === false).toBe(true); // لا يشترط عدم رمي استثناء آخر، فقط عدم الارتداد
+  });
+});
+
+describe("الطلبات اليدوية وتعديل محتوى الطلب — مقصورة على Owner/Admin", () => {
+  // نُصفّر المحاكاة قبل كل حالة ونضبط قيمة ثابتة بدل mockResolvedValueOnce:
+  // بقية هذا الملف تعتمد على طابور استهلاك دقيق، وأي قيمة غير مُستهلَكة فيه
+  // كانت ستُزيح حالاتنا. الاستقلال هنا أرخص من ضبط الطابور كله.
+  beforeEach(() => {
+    getAdminUserMock.mockReset();
+  });
+
+  test("صفحة إضافة طلب يدوي: Staff يُعاد توجيهه", async () => {
+    getAdminUserMock.mockResolvedValue(STAFF_USER);
+    const { default: NewManualOrderPage } = await import(
+      "@/app/admin/(protected)/orders/new/page"
+    );
+    await expectsRedirectTo(() => NewManualOrderPage(), "/admin/orders");
+  });
+
+  test("صفحة إضافة طلب يدوي: Admin لا يُعاد توجيهه", async () => {
+    getAdminUserMock.mockResolvedValue(ADMIN_USER);
+    const { default: NewManualOrderPage } = await import(
+      "@/app/admin/(protected)/orders/new/page"
+    );
+    await expectsNoRedirectTo(() => NewManualOrderPage(), "/admin/orders");
+  });
+
+  // الحماية الحقيقية في الخادم: إخفاء الزرّ لا يمنع استدعاء الإجراء مباشرة.
+  test("إنشاء طلب يدوي: الإجراء نفسه يرفض Staff قبل أي فحص آخر", async () => {
+    getAdminUserMock.mockResolvedValue(STAFF_USER);
+    const { createManualOrderAction } = await import("@/app/admin/(protected)/orders/actions");
+    const form = new FormData();
+    form.set("source", "whatsapp");
+    form.set("fullName", "زبون");
+    form.set("phone", "0612345678");
+    form.set("city", "مراكش");
+    form.set("address", "عنوان");
+    form.append("productId", "1");
+    form.append("quantity", "1");
+
+    const result = await createManualOrderAction({ error: null }, form);
+    expect(result.error).toContain("صاحب الحساب");
+  });
+
+  test("تعديل محتوى الطلب: الإجراء نفسه يرفض Staff", async () => {
+    getAdminUserMock.mockResolvedValue(STAFF_USER);
+    const { updateOrderLinesAction } = await import("@/app/admin/(protected)/orders/actions");
+    const form = new FormData();
+    form.set("orderId", "1");
+    form.append("productId", "1");
+    form.append("quantity", "1");
+
+    const result = await updateOrderLinesAction({ error: null }, form);
+    expect(result.error).toContain("صاحب الحساب");
+  });
+
+  test("بحث المنتجات: يرفض Staff لأن نتيجته تحمل ثمن الشراء السرّي", async () => {
+    getAdminUserMock.mockResolvedValue(STAFF_USER);
+    const { searchProductsAction } = await import("@/app/admin/(protected)/orders/actions");
+    expect((await searchProductsAction("ضاغط")).ok).toBe(false);
+  });
+
+  test("زائر غير مسجَّل يُرفض في كل هذه الإجراءات", async () => {
+    getAdminUserMock.mockResolvedValue(null);
+    const { createManualOrderAction, updateOrderLinesAction, searchProductsAction } = await import(
+      "@/app/admin/(protected)/orders/actions"
+    );
+
+    expect((await createManualOrderAction({ error: null }, new FormData())).error).toBeTruthy();
+    expect((await updateOrderLinesAction({ error: null }, new FormData())).error).toBeTruthy();
+    expect((await searchProductsAction("x")).ok).toBe(false);
   });
 });

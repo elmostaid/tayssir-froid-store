@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getAdminUser } from "@/lib/auth/requireAdmin";
+import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
+import { ORDER_SOURCE_BADGE_CLASSES, orderSourceLabel } from "@/lib/orders/orderSource";
 import { listAdminOrders, ORDER_STATUSES, type OrderStatus } from "@/lib/queries/adminOrders";
 import { ORDER_STATUS_LABELS, ORDER_STATUS_BADGE_CLASSES } from "@/lib/orders/orderStatus";
 import { formatMad } from "@/lib/format";
@@ -16,6 +17,7 @@ type Props = {
 export default async function AdminOrdersPage({ searchParams }: Props) {
   const admin = await getAdminUser();
   if (!admin) redirect("/admin/login");
+  const owner = isOwnerAdmin(admin);
 
   const { q, status, city, from, to, deleted } = await searchParams;
   const validStatus = ORDER_STATUSES.includes(status as OrderStatus) ? (status as OrderStatus) : undefined;
@@ -30,7 +32,17 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
 
   return (
     <div>
-      <h1 className="text-xl font-bold text-neutral-800">الطلبات</h1>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-xl font-bold text-neutral-800">الطلبات</h1>
+        {owner && (
+          <Link
+            href="/admin/orders/new"
+            className="min-h-11 rounded-full bg-brand-orange px-4 py-2 text-sm font-semibold text-white"
+          >
+            + إضافة طلب يدوي / واتساب
+          </Link>
+        )}
+      </div>
 
       {/* رسالة نجاح بعد حذف طلب — القائمة أدناه مُعاد جلبها أصلاً
           (force-dynamic + revalidatePath)، فما يظهر هنا هو الحالة بعد الحذف. */}
@@ -96,6 +108,18 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
                   >
                     {ORDER_STATUS_LABELS[order.status]}
                   </span>
+                  {/* الموقع هو الأصل الصامت؛ نُظهر الوسم لما جاء من قناة أخرى. */}
+                  {order.source !== "website" && (
+                    <span
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${
+                        ORDER_SOURCE_BADGE_CLASSES[
+                          order.source as keyof typeof ORDER_SOURCE_BADGE_CLASSES
+                        ] ?? "bg-neutral-100 text-neutral-600"
+                      }`}
+                    >
+                      {orderSourceLabel(order.source)}
+                    </span>
+                  )}
                 </div>
                 <p className="truncate text-xs text-neutral-500">
                   {order.customerName} · {order.customerCity} ·{" "}

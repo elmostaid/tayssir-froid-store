@@ -2,11 +2,21 @@ import { redirect } from "next/navigation";
 import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import {
   getProfitSummary,
+  getSalesBySource,
   getDeliveredOrdersProfitBreakdown,
   getBestSellingProducts,
 } from "@/lib/queries/adminReports";
 import { getDashboardOrderStats } from "@/lib/queries/adminOrders";
 import { formatMad } from "@/lib/format";
+import Link from "next/link";
+import { RANGE_LABELS, RANGE_PRESETS, resolveRange } from "@/lib/analytics/dateRange";
+import {
+  isOrderSource,
+  ORDER_SOURCES,
+  ORDER_SOURCE_BADGE_CLASSES,
+  ORDER_SOURCE_LABELS,
+  orderSourceLabel,
+} from "@/lib/orders/orderSource";
 
 export const dynamic = "force-dynamic";
 
@@ -23,11 +33,23 @@ function StatCard({ label, value, accent }: { label: string; value: string; acce
   );
 }
 
-export default async function AdminReportsPage() {
+export default async function AdminReportsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ range?: string; from?: string; to?: string; source?: string }>;
+}) {
   const admin = await getAdminUser();
   if (!admin) redirect("/admin/login");
   if (!isOwnerAdmin(admin)) redirect("/admin/orders");
 
+  const params = await searchParams;
+  const range = resolveRange(params.range, params.from, params.to);
+  const source = isOrderSource(params.source) ? params.source : null;
+
+  // خمسة استعلامات متوازية لا ستة: مجمّع الاتصالات محدود بـmax 5 (انظر
+  // db.ts)، وإضافة سادس إلى نفس الدفعة جعلت هذه الصفحة تتعثّر على Preview
+  // بينما كانت تُفتح في أقل من ثانية بدونه. التفصيل حسب المصدر يأتي بعدها
+  // بترتيب متسلسل — كلفته أجزاء من الثانية، مقابل صفحة لا تتعثّر.
   const [salesStats, profit, recentDelivered, bestByQuantity, bestByValue] = await Promise.all([
     getDashboardOrderStats(),
     getProfitSummary(),
@@ -35,6 +57,36 @@ export default async function AdminReportsPage() {
     getBestSellingProducts("quantity", 5),
     getBestSellingProducts("value", 5),
   ]);
+
+  // وحتى لو تعثّر هذا الاستعلام وحده، تبقى بقية الصفحة كما هي بدل أن تسقط
+  // كلها — نفس ما تفعله بقية صفحات الإدارة عبر safeQuery.
+  const bySourceResult = await getSalesBySource(range, source).then(
+    (value) => ({ ok: true as const, value }),
+    (error: unknown) => {
+      console.error("adminReports.getSalesBySource: تعذّر التفصيل حسب المصدر", error);
+      return { ok: false as const };
+    }
+  );
+
+  const bySource = bySourceResult.ok
+    ? bySourceResult.value
+    : {
+        rows: [],
+        totals: {
+          deliveredOrders: 0,
+          revenueMad: 0,
+          deliveryFeesMad: 0,
+          cogsMad: 0,
+          grossProfitMad: 0,
+          ordersWithMissingCost: 0,
+          pendingOrders: 0,
+          pendingRevenueMad: 0,
+        },
+      };
+  const websiteRow = bySource.rows.find((row) => row.source === "website");
+  const manualRevenue = bySource.rows
+    .filter((row) => row.source !== "website")
+    .reduce((sum, row) => sum + row.revenueMad, 0);
 
   return (
     <div>
@@ -48,6 +100,146 @@ export default async function AdminReportsPage() {
         <StatCard label="مبيعات آخر 7 أيام" value={formatMad(salesStats.sales7DaysMad)} />
         <StatCard label="مبيعات الشهر الحالي" value={formatMad(salesStats.salesThisMonthMad)} />
       </div>
+
+      <h2 className="mt-6 border-r-4 border-brand-orange pr-3 text-base font-bold text-neutral-800">
+        المبيعات والأرباح حسب المصدر
+      </h2>
+      <p className="mt-1 text-xs leading-relaxed text-neutral-500">
+        الأرقام هنا من الطلبات <span className="font-semibold">المسلَّمة</span> داخل المدى
+        المختار — نفس أساس بقية هذه الصفحة، ولنفس السبب: الدفع عند الاستلام، فالبيع لا يصير مالاً
+        إلا بالتسليم. طلب واتساب يُسجَّل «مؤكَّد»، فلا يدخل الربح حتى تُعلن تسليمه.
+      </p>
+
+      {/* فلاتر: نموذج GET عادي بلا JavaScript. */}
+      <div className="mt-3 flex flex-wrap gap-2">
+        {RANGE_PRESETS.filter((preset) => preset !== "custom").map((preset) => (
+          <Link
+            key={preset}
+            href={`/admin/reports?range=${preset}${source ? `&source=${source}` : ""}`}
+            className={`min-h-9 rounded-full border px-3 py-1.5 text-xs font-semibold ${
+              range.preset === preset
+                ? "border-brand-turquoise bg-brand-turquoise-tint text-brand-turquoise-dark"
+                : "border-neutral-200 bg-white text-neutral-700"
+            }`}
+          >
+            {RANGE_LABELS[preset]}
+          </Link>
+        ))}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Link
+          href={`/admin/reports?range=${range.preset}`}
+          className={`min-h-9 rounded-full border px-3 py-1.5 text-xs font-semibold ${
+            source === null
+              ? "border-brand-orange bg-brand-orange-tint text-brand-orange"
+              : "border-neutral-200 bg-white text-neutral-700"
+          }`}
+        >
+          كل المصادر
+        </Link>
+        {ORDER_SOURCES.map((value) => (
+          <Link
+            key={value}
+            href={`/admin/reports?range=${range.preset}&source=${value}`}
+            className={`min-h-9 rounded-full border px-3 py-1.5 text-xs font-semibold ${
+              source === value
+                ? "border-brand-orange bg-brand-orange-tint text-brand-orange"
+                : "border-neutral-200 bg-white text-neutral-700"
+            }`}
+          >
+            {ORDER_SOURCE_LABELS[value]}
+          </Link>
+        ))}
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <StatCard label="مبيعات الموقع" value={formatMad(websiteRow?.revenueMad ?? 0)} />
+        <StatCard label="مبيعات واتساب / يدوية" value={formatMad(manualRevenue)} />
+        <StatCard label="المبيعات الإجمالية" value={formatMad(bySource.totals.revenueMad)} accent />
+        <StatCard label="تكلفة البضاعة" value={formatMad(bySource.totals.cogsMad)} />
+        <StatCard label="الربح الخام" value={formatMad(bySource.totals.grossProfitMad)} accent />
+        <StatCard label="مصاريف التوصيل المحصَّلة" value={formatMad(bySource.totals.deliveryFeesMad)} />
+      </div>
+
+      {!bySourceResult.ok && (
+        <p className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-semibold text-amber-800">
+          تعذّر حساب التفصيل حسب المصدر الآن. بقية أرقام الصفحة صحيحة — حدّث الصفحة بعد قليل.
+        </p>
+      )}
+
+      {bySource.rows.length === 0 ? (
+        <p className="mt-3 rounded-xl border border-dashed border-neutral-300 bg-white p-6 text-center text-xs text-neutral-500">
+          لا توجد طلبات في هذا المدى.
+        </p>
+      ) : (
+        <div className="mt-3 overflow-x-auto rounded-xl border border-neutral-200 bg-white">
+          <table className="w-full min-w-[42rem] text-sm">
+            <thead className="bg-neutral-50 text-xs text-neutral-600">
+              <tr>
+                <th className="px-3 py-2 text-right font-semibold">المصدر</th>
+                <th className="px-3 py-2 text-right font-semibold">طلبات مسلَّمة</th>
+                <th className="px-3 py-2 text-right font-semibold">المبيعات</th>
+                <th className="px-3 py-2 text-right font-semibold">التكلفة</th>
+                <th className="px-3 py-2 text-right font-semibold">الربح الخام</th>
+                <th className="px-3 py-2 text-right font-semibold">التوصيل المحصَّل</th>
+                <th className="px-3 py-2 text-right font-semibold">لم تُسلَّم بعد</th>
+              </tr>
+            </thead>
+            <tbody>
+              {bySource.rows.map((row) => (
+                <tr key={row.source} className="border-t border-neutral-100">
+                  <td className="px-3 py-2">
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                        ORDER_SOURCE_BADGE_CLASSES[
+                          row.source as keyof typeof ORDER_SOURCE_BADGE_CLASSES
+                        ] ?? "bg-neutral-100 text-neutral-600"
+                      }`}
+                    >
+                      {orderSourceLabel(row.source)}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 tabular-nums">{row.deliveredOrders}</td>
+                  <td className="px-3 py-2 tabular-nums font-semibold">{formatMad(row.revenueMad)}</td>
+                  <td className="px-3 py-2 tabular-nums text-neutral-500">{formatMad(row.cogsMad)}</td>
+                  <td className="px-3 py-2 tabular-nums font-bold text-brand-turquoise-dark">
+                    {formatMad(row.grossProfitMad)}
+                    {row.ordersWithMissingCost > 0 && (
+                      <span className="mr-1 text-[11px] font-normal text-amber-700">
+                        ({row.ordersWithMissingCost} بلا تكلفة)
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 tabular-nums text-neutral-500">
+                    {formatMad(row.deliveryFeesMad)}
+                  </td>
+                  <td className="px-3 py-2 tabular-nums text-neutral-500">
+                    {row.pendingOrders > 0
+                      ? `${row.pendingOrders} · ${formatMad(row.pendingRevenueMad)}`
+                      : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <p className="mt-2 text-[11px] leading-relaxed text-neutral-500">
+        <span className="font-semibold text-neutral-600">عن التوصيل:</span> العمود أعلاه هو ما
+        دفعه الزبون، لا ما كلّفنا. قاعدة البيانات لا تحمل تكلفة توصيل فعلية، فلا يمكن حساب «ربح
+        نهائي بعد التوصيل» بصدق — ولذلك لا يُطرَح ولا يُجمَع في الربح.
+        {bySource.totals.ordersWithMissingCost > 0 && (
+          <>
+            {" "}
+            و<span className="font-semibold text-amber-700">
+              {bySource.totals.ordersWithMissingCost} طلباً
+            </span>{" "}
+            ينقص أحد سطوره ثمن الشراء، فيُحتسَب بصفر ويبدو ربحه كامل ثمن البيع. لا نُخمّن ثمناً غير
+            مسجَّل.
+          </>
+        )}
+      </p>
 
       <h2 className="mt-6 border-r-4 border-brand-orange pr-3 text-base font-bold text-neutral-800">
         الطلبات المسلَّمة فعلياً (منفصلة عن المبيعات أعلاه)

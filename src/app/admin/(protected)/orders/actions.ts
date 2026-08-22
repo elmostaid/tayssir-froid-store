@@ -1,11 +1,21 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { sql } from "@/lib/db";
 import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import { ORDER_STATUSES, type OrderStatus } from "@/lib/queries/adminOrders";
 import { RESTOCKING_STATUSES } from "@/lib/orders/orderStatus";
 import { revalidateCatalog } from "@/lib/queries/catalogCache";
+import { createManualOrder } from "@/lib/orders/createManualOrder";
+import { updateOrderLines } from "@/lib/orders/updateOrderLines";
+import { isManualOrderSource } from "@/lib/orders/orderSource";
+import type { LineRequest } from "@/lib/orders/resolveLines";
+import type { CreateOrderFieldError } from "@/lib/orders/types";
+import {
+  searchProductsForOrder,
+  type ProductSearchResult,
+} from "@/lib/queries/adminProductSearch";
 
 export type OrderActionState = { error: string | null };
 
@@ -264,4 +274,128 @@ export async function deleteOrder(orderId: number): Promise<DeleteOrderResult> {
   revalidatePath("/admin/orders");
   revalidatePath(`/admin/orders/${orderId}`);
   return { error: null, orderNumber };
+}
+
+// ───────────────────── الطلبات اليدوية وتعديل الطلبات ─────────────────────
+
+export type OrderEditState = { error: string | null; fieldErrors?: CreateOrderFieldError[] };
+
+/**
+ * حارس واحد لكل ما يمسّ المال أو المخزون.
+ *
+ * Staff يرى الطلبات ويحرّك حالاتها، لكنه لا يُنشئ بيعاً ولا يغيّر ثمناً ولا
+ * كميةً — تلك صلاحية Owner/Admin وحدها، كما هي مصاريف التوصيل والتقارير
+ * أصلاً. الفحص هنا في الخادم لا في الواجهة: إخفاء زرّ ليس حماية.
+ */
+async function requireOwner(): Promise<{ email: string } | { error: string }> {
+  const admin = await getAdminUser();
+  if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+  if (!isOwnerAdmin(admin)) {
+    return { error: "إنشاء الطلبات وتعديل محتواها مقصور على صاحب الحساب (Admin)." };
+  }
+  return { email: admin.email };
+}
+
+/** يقرأ سطور المنتجات من الحقول المتكرّرة في النموذج. */
+function readLines(formData: FormData): LineRequest[] {
+  const productIds = formData.getAll("productId");
+  const quantities = formData.getAll("quantity");
+  const prices = formData.getAll("unitPrice");
+
+  const lines: LineRequest[] = [];
+  for (let i = 0; i < productIds.length; i += 1) {
+    const productId = Number(productIds[i]);
+    const quantity = Number(quantities[i]);
+    if (!Number.isInteger(productId) || productId <= 0) continue;
+    if (!Number.isInteger(quantity) || quantity <= 0) continue;
+
+    const rawPrice = String(prices[i] ?? "").trim();
+    lines.push({
+      productId,
+      variantId: null,
+      quantity,
+      unitPriceOverride: rawPrice === "" ? null : Number(rawPrice),
+    });
+  }
+  return lines;
+}
+
+export async function createManualOrderAction(
+  _prevState: OrderEditState,
+  formData: FormData
+): Promise<OrderEditState> {
+  const auth = await requireOwner();
+  if ("error" in auth) return { error: auth.error };
+
+  const source = String(formData.get("source") ?? "");
+  if (!isManualOrderSource(source)) return { error: "اختر مصدر الطلب." };
+
+  const feeRaw = String(formData.get("deliveryFee") ?? "").trim();
+  const deliveryFee = feeRaw === "" ? 0 : Number(feeRaw);
+
+  const result = await createManualOrder({
+    customer: {
+      fullName: String(formData.get("fullName") ?? ""),
+      phone: String(formData.get("phone") ?? ""),
+      city: String(formData.get("city") ?? ""),
+      address: String(formData.get("address") ?? ""),
+      notes: String(formData.get("notes") ?? "") || null,
+    },
+    source,
+    deliveryFee,
+    createdByEmail: auth.email,
+    items: readLines(formData),
+  });
+
+  if (!result.ok) {
+    return { error: result.errors[0]?.message ?? "تعذّر حفظ الطلب.", fieldErrors: result.errors };
+  }
+
+  // المخزون تغيّر فعلاً، فصفحات الكتالوج العامة يجب أن تعكسه.
+  revalidateCatalog();
+  revalidatePath("/admin/orders");
+  revalidatePath("/admin");
+  redirect(`/admin/orders/${result.orderId}`);
+}
+
+export async function updateOrderLinesAction(
+  _prevState: OrderEditState,
+  formData: FormData
+): Promise<OrderEditState> {
+  const auth = await requireOwner();
+  if ("error" in auth) return { error: auth.error };
+
+  const orderId = Number(formData.get("orderId"));
+  if (!Number.isInteger(orderId) || orderId <= 0) return { error: "الطلب غير صالح." };
+
+  const feeRaw = String(formData.get("deliveryFee") ?? "").trim();
+
+  const result = await updateOrderLines({
+    orderId,
+    items: readLines(formData),
+    deliveryFee: feeRaw === "" ? null : Number(feeRaw),
+    changedByEmail: auth.email,
+  });
+
+  if (!result.ok) {
+    return { error: result.errors[0]?.message ?? "تعذّر حفظ التعديل.", fieldErrors: result.errors };
+  }
+
+  revalidateCatalog();
+  revalidatePath(`/admin/orders/${orderId}`);
+  revalidatePath("/admin/orders");
+  revalidatePath("/admin/reports");
+  return { error: null };
+}
+
+/**
+ * بحث المنتجات لنموذج الطلب اليدوي. خلف نفس بوابة Owner/Admin لأن نتيجته
+ * تحمل ثمن الشراء السرّي.
+ */
+export async function searchProductsAction(
+  term: string
+): Promise<{ ok: true; results: ProductSearchResult[] } | { ok: false; error: string }> {
+  const auth = await requireOwner();
+  if ("error" in auth) return { ok: false, error: auth.error };
+  return { ok: true, results: await searchProductsForOrder(term) };
 }

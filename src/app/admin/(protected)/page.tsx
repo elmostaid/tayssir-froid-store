@@ -5,6 +5,7 @@ import { getDashboardOrderStats, getRecentAdminOrders } from "@/lib/queries/admi
 import { getLowStockProductsAdmin, countLowStockProductsAdmin } from "@/lib/queries/adminProducts";
 import { ORDER_STATUS_LABELS, ORDER_STATUS_BADGE_CLASSES, type OrderStatus } from "@/lib/orders/orderStatus";
 import { formatMad } from "@/lib/format";
+import { getDashboardSummary, type DayCounters } from "@/lib/queries/adminDashboardSummary";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,64 @@ function StatCard({ label, value, accent }: { label: string; value: string; acce
       </p>
     </div>
   );
+}
+
+
+/** فرق اليوم عن أمس: سهم وعدد، بلا نسب مئوية تُضخّم فرقاً بين 1 و2. */
+function Delta({ today, yesterday }: { today: number; yesterday: number }) {
+  const diff = today - yesterday;
+  if (diff === 0) {
+    return <span className="text-[11px] text-neutral-400">= أمس ({yesterday})</span>;
+  }
+  return (
+    <span className={`text-[11px] font-semibold ${diff > 0 ? "text-green-700" : "text-red-600"}`}>
+      {diff > 0 ? "▲" : "▼"} {Math.abs(diff)} عن أمس ({yesterday})
+    </span>
+  );
+}
+
+/**
+ * بطاقة اليوم: رقم، ومقارنة بأمس، ورابط إلى تفصيلها في لوحة التحليلات.
+ * الضغط عليها يفتح نفس المدى (اليوم) هناك، فلا ينقطع خيط السؤال.
+ */
+function TodayCard({
+  label,
+  href,
+  today,
+  yesterday,
+  format,
+  accent,
+}: {
+  label: string;
+  href: string;
+  today: number;
+  yesterday: number;
+  format?: (value: number) => string;
+  accent?: "orange" | "turquoise";
+}) {
+  const color =
+    accent === "orange"
+      ? "text-brand-orange"
+      : accent === "turquoise"
+        ? "text-brand-turquoise-dark"
+        : "text-neutral-800";
+  return (
+    <Link
+      href={href}
+      className="rounded-xl border border-neutral-200 bg-white p-3 transition-colors hover:border-brand-turquoise"
+    >
+      <p className="text-xs leading-snug text-neutral-500">{label}</p>
+      <p className={`mt-1 text-xl font-bold tabular-nums ${color}`}>
+        {format ? format(today) : today.toLocaleString("en-US")}
+      </p>
+      <Delta today={today} yesterday={yesterday} />
+    </Link>
+  );
+}
+
+/** نسبة التحويل من طلبات الموقع وحدها — هي وحدها ما يمكن أن يتحوّل عن زيارة. */
+function conversion(day: DayCounters): number {
+  return day.sessions === 0 ? 0 : (day.websiteOrders / day.sessions) * 100;
 }
 
 const STATUS_ORDER: OrderStatus[] = [
@@ -48,16 +107,88 @@ export default async function AdminDashboardPage() {
     redirect("/admin/orders");
   }
 
-  const [stats, recentOrders, lowStockProducts, lowStockCount] = await Promise.all([
+  const [stats, recentOrders, lowStockProducts, lowStockCount, summary] = await Promise.all([
     getDashboardOrderStats(),
     getRecentAdminOrders(5),
     getLowStockProductsAdmin(5),
     countLowStockProductsAdmin(),
+    getDashboardSummary(),
   ]);
 
   return (
     <div>
       <h1 className="text-xl font-bold text-neutral-800">لوحة التحكم</h1>
+
+      <section className="mt-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-base font-bold text-neutral-800">اليوم في سطر</h2>
+          <Link
+            href="/admin/analytics?range=today"
+            className="text-xs font-semibold text-brand-turquoise-dark hover:underline"
+          >
+            كل التفاصيل ←
+          </Link>
+        </div>
+        <p className="mt-1 text-[11px] leading-relaxed text-neutral-500">
+          الزوّار والقمع من قياس الموقع؛ الطلبات والمبيعات من كل المصادر (الموقع وواتساب والهاتف
+          والمحل). نسبة التحويل من طلبات الموقع وحدها، لأنها وحدها ما يتحوّل عن زيارة.
+        </p>
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <TodayCard
+            label="زوّار اليوم"
+            href="/admin/analytics?range=today"
+            today={summary.today.sessions}
+            yesterday={summary.yesterday.sessions}
+            accent="turquoise"
+          />
+          <TodayCard
+            label="شاهدوا منتجاً"
+            href="/admin/analytics?range=today"
+            today={summary.today.productViewSessions}
+            yesterday={summary.yesterday.productViewSessions}
+          />
+          <TodayCard
+            label="أضافوا للسلة"
+            href="/admin/analytics?range=today"
+            today={summary.today.addToCartSessions}
+            yesterday={summary.yesterday.addToCartSessions}
+          />
+          <TodayCard
+            label="وصلوا Checkout"
+            href="/admin/analytics?range=today"
+            today={summary.today.checkoutSessions}
+            yesterday={summary.yesterday.checkoutSessions}
+          />
+          <TodayCard
+            label="الطلبات (كل المصادر)"
+            href="/admin/orders"
+            today={summary.today.orders}
+            yesterday={summary.yesterday.orders}
+            accent="orange"
+          />
+          <TodayCard
+            label="المبيعات"
+            href="/admin/reports?range=today"
+            today={summary.today.salesMad}
+            yesterday={summary.yesterday.salesMad}
+            format={formatMad}
+            accent="orange"
+          />
+          <TodayCard
+            label="نسبة التحويل"
+            href="/admin/analytics?range=today"
+            today={Math.round(conversion(summary.today) * 10) / 10}
+            yesterday={Math.round(conversion(summary.yesterday) * 10) / 10}
+            format={(value) => `${value}%`}
+          />
+          <TodayCard
+            label="السلات المتروكة"
+            href="/admin/analytics?range=today"
+            today={summary.today.abandonedCarts}
+            yesterday={summary.yesterday.abandonedCarts}
+          />
+        </div>
+      </section>
 
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
         <StatCard label="طلبات اليوم" value={String(stats.ordersToday)} />

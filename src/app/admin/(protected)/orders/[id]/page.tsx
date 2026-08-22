@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
+import { getEditableOrderLines } from "@/lib/queries/adminProductSearch";
+import { OrderItemsEditForm } from "@/components/admin/OrderItemsEditForm";
+import { RESTOCKING_STATUSES } from "@/lib/orders/orderStatus";
+import { ORDER_SOURCE_BADGE_CLASSES, orderSourceLabel } from "@/lib/orders/orderSource";
 import {
   getAdminOrderById,
   getAdminOrderItems,
@@ -35,11 +39,18 @@ export default async function AdminOrderDetailPage({ params }: Props) {
   const order = await getAdminOrderById(orderId);
   if (!order) notFound();
 
-  const [items, history, settings] = await Promise.all([
+  const owner = isOwnerAdmin(admin);
+  const [items, history, settings, editableLines] = await Promise.all([
     getAdminOrderItems(orderId),
     getAdminOrderStatusHistory(orderId),
     safeQuery(() => getSettings(), FALLBACK_SETTINGS, "adminOrderDetail.getSettings"),
+    // ثمن الشراء داخل هذه السطور سرّي، فلا نجلبها أصلاً لغير Owner/Admin.
+    owner ? getEditableOrderLines(orderId) : Promise.resolve([]),
   ]);
+
+  const editLockedReason = RESTOCKING_STATUSES.includes(order.status)
+    ? "لا يمكن تعديل محتوى طلب ملغى أو راجع: مخزونه أُرجع بالفعل، وأي تعديل الآن سيخصمه مرتين."
+    : null;
 
   return (
     <div>
@@ -48,9 +59,20 @@ export default async function AdminOrderDetailPage({ params }: Props) {
       </Link>
 
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-        <h1 dir="ltr" className="font-mono text-xl font-bold text-neutral-800">
-          {order.orderNumber}
-        </h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 dir="ltr" className="font-mono text-xl font-bold text-neutral-800">
+            {order.orderNumber}
+          </h1>
+          <span
+            className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+              ORDER_SOURCE_BADGE_CLASSES[
+                order.source as keyof typeof ORDER_SOURCE_BADGE_CLASSES
+              ] ?? "bg-neutral-100 text-neutral-600"
+            }`}
+          >
+            {orderSourceLabel(order.source)}
+          </span>
+        </div>
         <div className="flex flex-wrap gap-2">
           <a
             href={buildCustomerWhatsAppLink(
@@ -176,6 +198,22 @@ export default async function AdminOrderDetailPage({ params }: Props) {
           </div>
         )}
       </div>
+
+      {owner && (
+        <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-4">
+          <h2 className="text-sm font-semibold text-neutral-800">تعديل محتوى الطلب</h2>
+          <p className="mt-1 text-xs leading-relaxed text-neutral-600">
+            لإضافة منتج اتفق عليه الزبون لاحقاً على واتساب، أو تصحيح كمية أو ثمن — بدل فتح طلب
+            ثانٍ للزبون نفسه.
+          </p>
+          <OrderItemsEditForm
+            orderId={order.id}
+            lines={editableLines}
+            deliveryFee={order.deliveryFee ? Number(order.deliveryFee) : 0}
+            lockedReason={editLockedReason}
+          />
+        </div>
+      )}
 
       <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-4">
         <h2 className="text-sm font-semibold text-neutral-800">حالة الطلب</h2>
