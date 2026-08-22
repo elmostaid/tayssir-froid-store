@@ -11,9 +11,13 @@ export function SettingsForm({ settings }: { settings: StoreSettings }) {
 
   return (
     <form action={formAction} className="mt-4 flex flex-col gap-4">
+      {/* لم يعد هذا المبلغ يمنع أي طلب — أي سلة مهما صغرت تُكمَّل. بقي
+          الحقل لأن قسم «السلات المتروكة» يستعمله مِسطرةً لتمييز السلة
+          الصغيرة من الكبيرة، فتبقى المقارنة مع بيانات ما قبل إلغاء الحد
+          ممكنة. التسمية القديمة كانت ستُوهم المالك أن رفعه يوقف الطلبات. */}
       <label className="text-sm">
         <span className="mb-1 block font-medium text-neutral-700">
-          الحد الأدنى لقيمة الطلب (درهم)
+          حدّ تمييز السلة الكبيرة في التقارير (درهم)
         </span>
         <input
           name="minOrderAmountMad"
@@ -24,6 +28,10 @@ export function SettingsForm({ settings }: { settings: StoreSettings }) {
           required
           className="w-full rounded-lg border border-neutral-300 px-3 py-2.5 text-base focus:border-brand-turquoise focus:outline-none"
         />
+        <span className="mt-1 block text-xs text-neutral-500">
+          لا يمنع أي طلب. يُستعمل في «السلات المتروكة» فقط لفصل السلة الصغيرة
+          عن الكبيرة.
+        </span>
       </label>
 
       <label className="text-sm">

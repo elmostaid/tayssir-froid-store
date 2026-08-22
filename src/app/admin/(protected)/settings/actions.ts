@@ -29,7 +29,7 @@ export async function updateSettings(
   const codEnabled = formData.get("codEnabled") === "on";
 
   if (!Number.isFinite(minOrderAmountMad) || minOrderAmountMad < 0) {
-    return { error: "الحد الأدنى لقيمة الطلب غير صالح." };
+    return { error: "حدّ تمييز السلة الكبيرة غير صالح." };
   }
   if (!Number.isFinite(deliveryFeePerCartonMad) || deliveryFeePerCartonMad < 0) {
     return { error: "مصاريف التوصيل الافتراضية غير صالحة." };
