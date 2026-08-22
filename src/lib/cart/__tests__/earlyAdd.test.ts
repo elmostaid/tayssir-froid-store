@@ -128,7 +128,7 @@ describe("السكريبت المبكّر — الزر يعمل قبل وصول 
   test("نص الزر يؤكّد الإضافة للزبون فوراً", () => {
     const { button, label } = renderPage();
     button.click();
-    expect(label.textContent).toBe("تمت الإضافة ✓");
+    expect(label.textContent).toBe("✓ تمت الإضافة للسلة");
   });
 
   test("بعد رفع __tfCartLive يتنحّى السكريبت تماماً ويترك الحدث لـReact", () => {
@@ -221,10 +221,10 @@ describe("السكريبت المبكّر — الزر يعمل قبل وصول 
     expect(stored()).toHaveLength(1);
   });
 
-  test("السكريبت نحو كيلوبايت على السلك — الكلفة هنا تُدفع في كل صفحة", () => {
+  test("السكريبت نحو كيلوبايت ونصف على السلك — الكلفة هنا تُدفع في كل صفحة", () => {
     // ما يهمّ هو ما يُنقَل فعلاً: HTML يُقدَّم مضغوطاً دائماً. الحدّ ليس رقماً
     // سحرياً، بل حارس صريح حتى لا يتضخّم هذا السكريبت لاحقاً فينقلب على
     // الغاية التي كُتب لأجلها.
-    expect(gzipSync(Buffer.from(EARLY_ADD_SCRIPT, "utf8")).length).toBeLessThan(1200);
+    expect(gzipSync(Buffer.from(EARLY_ADD_SCRIPT, "utf8")).length).toBeLessThan(1400);
   });
 });

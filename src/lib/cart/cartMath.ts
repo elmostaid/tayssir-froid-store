@@ -8,10 +8,6 @@ export function computeSubtotal(items: CartItem[]): number {
   return items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
 }
 
-export function meetsMinimumOrder(subtotal: number, minOrderAmount: number): boolean {
-  return subtotal >= minOrderAmount;
-}
-
 /**
  * يُقرِّب كمية مطلوبة إلى أقرب قيمة صالحة: لا تقل عن الكمية الدنيا،
  * وتكون دائماً الكمية الدنيا + مضاعف صحيح من درجة الزيادة.

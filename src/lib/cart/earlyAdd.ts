@@ -101,7 +101,7 @@ export const EARLY_ADD_SCRIPT = compact(`
 (function(){
   var KEY=${JSON.stringify(CART_STORAGE_KEY)};
   var PKEY=${JSON.stringify(PENDING_ADDS_KEY)};
-  var DONE="تمت الإضافة ✓";
+  var DONE="✓ تمت الإضافة للسلة";
   function snap(q,min,inc){
     var m=Math.max(1,min||1),i=Math.max(1,inc||1);
     if(q<=m)return m;
@@ -110,11 +110,22 @@ export const EARLY_ADD_SCRIPT = compact(`
   function read(){
     try{var r=localStorage.getItem(KEY);var p=r?JSON.parse(r):[];return Array.isArray(p)?p:[];}catch(e){return [];}
   }
+  function money(v){
+    try{return new Intl.NumberFormat("fr-MA",{style:"currency",currency:"MAD"}).format(v);}
+    catch(e){return v+" درهم";}
+  }
   function badge(items){
     try{
-      var n=0;for(var i=0;i<items.length;i++)n+=items[i].quantity;
+      var n=0,v=0;
+      for(var i=0;i<items.length;i++){n+=items[i].quantity;v+=items[i].unitPrice*items[i].quantity;}
       var el=document.querySelector("[data-cart-count]");
       if(el){el.textContent=String(n);el.hidden=n===0;}
+      var bar=document.querySelector("[data-cart-bar]");
+      if(bar)bar.hidden=n===0;
+      var c=document.querySelector("[data-cart-bar-count]");
+      if(c)c.textContent=String(n);
+      var t=document.querySelector("[data-cart-bar-total]");
+      if(t)t.textContent=money(v);
     }catch(e){}
   }
   document.addEventListener("click",function(ev){

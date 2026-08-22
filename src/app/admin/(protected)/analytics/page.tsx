@@ -482,7 +482,9 @@ export default async function AdminAnalyticsPage({
             />
           </div>
 
-          <SectionTitle note={`كل جلسة أضافت للسلة ولم يُسجَّل لها شراء. الحد الأدنى المعتمد: ${formatMad(settings.minOrderAmountMad)} — من الإعدادات، لا مكتوباً في الكود.`}>
+          <SectionTitle
+            note={`كل جلسة أضافت للسلة ولم يُسجَّل لها شراء. لم يعد للمتجر حدّ أدنى للطلب، فالمبلغ ${formatMad(settings.minOrderAmountMad)} يُستعمل هنا مِسطرةً لتمييز السلة الصغيرة من الكبيرة فقط — حتى تبقى المقارنة مع ما قبل إلغاء الحد ممكنة على نفس البيانات.`}
+          >
             السلات المتروكة
           </SectionTitle>
 
@@ -500,9 +502,9 @@ export default async function AdminAnalyticsPage({
                 <span className="font-bold">{num(abandoned.summary.abandoned)}</span> شخصاً أضافوا
                 للسلة ولم يشتروا:{" "}
                 <span className="font-bold">{num(abandoned.summary.stoppedBelowMinimum)}</span>{" "}
-                توقّفوا تحت {formatMad(settings.minOrderAmountMad)}،{" "}
+                سلّتهم تحت {formatMad(settings.minOrderAmountMad)}،{" "}
                 <span className="font-bold">{num(abandoned.summary.reachedMinimumNoCheckout)}</span>{" "}
-                بلغَت سلّتهم الحد الأدنى ولم يفتحوا Checkout، و
+                سلّتهم فوقه ولم يفتحوا Checkout، و
                 <span className="font-bold">{num(abandoned.summary.reachedCheckoutNoPurchase)}</span>{" "}
                 فتحوا Checkout ولم يشتروا.
               </p>
@@ -515,14 +517,14 @@ export default async function AdminAnalyticsPage({
                   accent="orange"
                 />
                 <StatCard
-                  label={`توقّفوا تحت ${formatMad(settings.minOrderAmountMad)}`}
+                  label={`سلّة تحت ${formatMad(settings.minOrderAmountMad)}`}
                   value={num(abandoned.summary.stoppedBelowMinimum)}
-                  hint="مؤكَّد — الحذف لا يرفع سلة"
+                  hint="ولم يفتحوا Checkout"
                 />
                 <StatCard
-                  label="بلغَت سلّتهم الحد الأدنى"
+                  label={`سلّة فوق ${formatMad(settings.minOrderAmountMad)}`}
                   value={num(abandoned.summary.reachedMinimumNoCheckout)}
-                  hint="ولم يفتحوا Checkout — قد تكون نزلت بعد حذف"
+                  hint="ولم يفتحوا Checkout — أثمن ما نخسره"
                 />
                 <StatCard
                   label="فتحوا Checkout"
@@ -565,7 +567,7 @@ export default async function AdminAnalyticsPage({
                             : "bg-neutral-100 text-neutral-600"
                         }`}
                       >
-                        {row.meetsMinimum ? "بلغ الحد الأدنى" : "تحت الحد الأدنى"}
+                        {row.meetsMinimum ? "سلة كبيرة" : "سلة صغيرة"}
                       </span>
                     </div>
                     <div className="mt-2 grid grid-cols-3 gap-2 border-t border-neutral-100 pt-2">
@@ -595,7 +597,7 @@ export default async function AdminAnalyticsPage({
                   <thead className="bg-neutral-50 text-xs text-neutral-600">
                     <tr>
                       <th className="px-3 py-2 text-right font-semibold">آخر قيمة مسجّلة</th>
-                      <th className="px-3 py-2 text-right font-semibold">الحد الأدنى</th>
+                      <th className="px-3 py-2 text-right font-semibold">حجم السلة</th>
                       <th className="px-3 py-2 text-right font-semibold">منتجات مختلفة</th>
                       <th className="px-3 py-2 text-right font-semibold">مجموع الكميات</th>
                       <th className="px-3 py-2 text-right font-semibold">فتح السلة</th>
@@ -625,7 +627,7 @@ export default async function AdminAnalyticsPage({
                                 : "text-neutral-500"
                             }
                           >
-                            {row.meetsMinimum ? "بلغه" : "تحته"}
+                            {row.meetsMinimum ? "كبيرة" : "صغيرة"}
                           </span>
                         </td>
                         <td className="px-3 py-2 tabular-nums">{productsLabel(row)}</td>

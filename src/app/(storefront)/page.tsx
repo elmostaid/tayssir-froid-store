@@ -14,15 +14,16 @@ import { LoadMoreProducts } from "@/components/LoadMoreProducts";
 import { getCategoryImage } from "@/lib/categoryImages";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
 import { safeQuery } from "@/lib/safeQuery";
-import { formatMinOrderAmount } from "@/lib/format";
 
 // تُعرض هذه الصفحة ديناميكياً عند كل طلب (وليس عند البناء) لأن بيانات
 // المنتجات والأسعار تأتي من قاعدة البيانات ويجب أن تكون محدَّثة دائماً.
 export const dynamic = "force-dynamic";
 
-export function buildTrustPoints(minOrderAmountMad: number): string[] {
+// حُذف «الحد الأدنى للطلب» من هنا مع حذف الحاجز نفسه: وعدٌ بحرية الطلب
+// أفضل ما يُقال أولاً لمن يزور المتجر لأول مرة.
+export function buildTrustPoints(): string[] {
   return [
-    `الحد الأدنى للطلب: ${formatMinOrderAmount(minOrderAmountMad)}`,
+    "اطلب أي كمية — بلا حد أدنى",
     "الدفع عند الاستلام بعد معاينة السلعة",
     "التوصيل لجميع مدن المغرب 24–48 ساعة",
     "كلما زادت الكمية، كينقص الثمن",
@@ -75,7 +76,7 @@ export default async function HomePage() {
     settings.whatsappNumber,
     "مرحباً، أريد الاطلاع على منتجاتكم بالجملة."
   );
-  const trustPoints = buildTrustPoints(settings.minOrderAmountMad);
+  const trustPoints = buildTrustPoints();
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">

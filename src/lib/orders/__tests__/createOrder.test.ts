@@ -86,37 +86,45 @@ afterAll(async () => {
   await sql`delete from public.products where sku in ('TEST-FIXTURE-001', 'TEST-FIXTURE-002', 'TEST-FIXTURE-003', 'TEST-FIXTURE-CAPI')`;
 });
 
-describe("createOrder — الحد الأدنى للطلبية", () => {
-  test("يرفض طلباً مجموعه أقل من الحد الأدنى (1000 درهم)", async () => {
-    const demo003 = await getRawProduct("TEST-FIXTURE-003"); // سعره 120 درهم
-    const input: CreateOrderInput = {
+describe("createOrder — لا حدّ أدنى إجمالي للطلبية", () => {
+  test("يقبل طلباً صغيراً جداً: 120 درهماً وحدها تمرّ", async () => {
+    const demo003 = await getRawProduct("TEST-FIXTURE-003"); // 120 درهم، كمية دنيا 1
+    const result = await createOrder({
       items: [{ productId: demo003.id, variantId: null, quantity: 1 }],
       customer: baseCustomer(),
       idempotencyKey: randomUUID(),
-    };
+    });
 
-    const result = await createOrder(input);
+    expect(result.ok).toBe(true);
+  });
 
+  test("لا رسالة «حد أدنى للطلب» في أي رفض — الحاجز لم يعد موجوداً", async () => {
+    const demo001 = await getRawProduct("TEST-FIXTURE-001"); // كمية دنيا 5
+    const result = await createOrder({
+      items: [{ productId: demo001.id, variantId: null, quantity: 3 }],
+      customer: baseCustomer(),
+      idempotencyKey: randomUUID(),
+    });
+
+    // يُرفض للكمية الدنيا للمنتج، لا للمجموع.
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.errors.some((e) => e.message.includes("الحد الأدنى"))).toBe(true);
+      expect(result.errors.some((e) => e.message.includes("الحد الأدنى للطلب"))).toBe(false);
     }
   });
 
-  test("يقبل طلباً بمنتجات مختلطة يصل مجموعها إلى 1000 درهم أو أكثر", async () => {
-    const demo001 = await getRawProduct("TEST-FIXTURE-001"); // 18 درهم، حد أدنى 5
-    const demo003 = await getRawProduct("TEST-FIXTURE-003"); // 120 درهم، حد أدنى 1
+  test("الطلب الكبير يبقى يعمل كما كان", async () => {
+    const demo001 = await getRawProduct("TEST-FIXTURE-001");
+    const demo003 = await getRawProduct("TEST-FIXTURE-003");
 
-    const input: CreateOrderInput = {
+    const result = await createOrder({
       items: [
-        { productId: demo001.id, variantId: null, quantity: 10 }, // 180
-        { productId: demo003.id, variantId: null, quantity: 8 }, // 960 => المجموع 1140
+        { productId: demo001.id, variantId: null, quantity: 10 },
+        { productId: demo003.id, variantId: null, quantity: 8 },
       ],
       customer: baseCustomer(),
       idempotencyKey: randomUUID(),
-    };
-
-    const result = await createOrder(input);
+    });
     expect(result.ok).toBe(true);
   });
 });
@@ -422,17 +430,18 @@ describe("createOrder — Meta Conversions API (Purchase) مرتبط بـPixel �
     expect(call.customData.content_type).toBe("product");
   });
 
-  test("طلب فاشل (تحت الحد الأدنى): sendCapiEvent لا تُستدعى إطلاقاً", async () => {
+  test("طلب فاشل (كمية غير صالحة): sendCapiEvent لا تُستدعى إطلاقاً", async () => {
     sendCapiEventMock.mockClear();
-    const demoCapi = await getRawProduct("TEST-FIXTURE-CAPI");
+    // الحد الأدنى الإجمالي حُذف، فنستعمل سبب رفض ما زال قائماً: كمية أقل من
+    // الكمية الدنيا للمنتج نفسه.
+    const demo002 = await getRawProduct("TEST-FIXTURE-002"); // كمية دنيا 10
 
-    const input: CreateOrderInput = {
-      items: [{ productId: demoCapi.id, variantId: null, quantity: 1 }], // 20 فقط، أقل من الحد الأدنى
+    const result = await createOrder({
+      items: [{ productId: demo002.id, variantId: null, quantity: 3 }],
       customer: baseCustomer(),
       idempotencyKey: randomUUID(),
-    };
+    });
 
-    const result = await createOrder(input);
     expect(result.ok).toBe(false);
     expect(sendCapiEventMock).not.toHaveBeenCalled();
   });

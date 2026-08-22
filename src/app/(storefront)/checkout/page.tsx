@@ -18,7 +18,6 @@ export default async function CheckoutPage() {
 
   return (
     <CheckoutClient
-      minOrderAmountMad={settings.minOrderAmountMad}
       deliveryFeePerCartonMad={settings.deliveryFeePerCartonMad}
       whatsappNumber={settings.whatsappNumber}
       storeName={settings.storeName}

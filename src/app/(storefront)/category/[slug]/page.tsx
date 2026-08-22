@@ -181,7 +181,6 @@ export default async function CategoryPage({ params, searchParams }: Props) {
             pageSize={CATEGORY_PAGE_SIZE}
             initialHasMore={hasMoreProducts}
             filters={{ categorySlug: slug, query, sort }}
-            label="شوف منتجات أكثر"
             gridClassName="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
           />
         </>

@@ -19,7 +19,6 @@ export function LoadMoreProducts({
   pageSize,
   initialHasMore,
   filters,
-  label,
   gridClassName,
 }: {
   initialOffset: number;
@@ -27,7 +26,6 @@ export function LoadMoreProducts({
   initialHasMore: boolean;
   /** تصنيف/بحث/ترتيب — للصفحة الرئيسية تُترك فارغة. */
   filters?: LoadMoreFilters;
-  label?: string;
   /** شبكة الكروت الإضافية — يجب أن تطابق شبكة الصفحة حتى لا تختلف الأعمدة بعد الضغط. */
   gridClassName?: string;
 }) {
@@ -67,15 +65,18 @@ export function LoadMoreProducts({
         </p>
       )}
 
+      {/* زرّ بعرض الشاشة تقريباً وارتفاع إبهام: كان صغيراً ومحاطاً بفراغ
+          فلا يُلاحَظ على الهاتف، وهو الطريق الوحيد لبقية المنتجات بعد أول
+          24. يظهر مباشرة تحت آخر صفّ. */}
       {hasMore && (
-        <div className="mt-4 flex justify-center">
+        <div className="mt-4 px-1">
           <button
             type="button"
             onClick={handleClick}
             disabled={isPending}
-            className="flex min-h-11 items-center justify-center rounded-full border border-brand-turquoise px-6 py-2.5 text-sm font-semibold text-brand-turquoise-dark transition-colors hover:bg-brand-turquoise-tint disabled:opacity-60"
+            className="flex min-h-14 w-full items-center justify-center rounded-2xl border-2 border-brand-turquoise bg-brand-turquoise-tint px-6 text-lg font-bold text-brand-turquoise-dark transition-colors hover:bg-brand-turquoise hover:text-white disabled:opacity-60 sm:mx-auto sm:max-w-md"
           >
-            {isPending ? "جارٍ التحميل…" : (label ?? "عرض المزيد من المنتجات")}
+            {isPending ? "جارٍ التحميل…" : "عرض المزيد من المنتجات"}
           </button>
         </div>
       )}

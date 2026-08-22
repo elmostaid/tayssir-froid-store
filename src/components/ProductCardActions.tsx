@@ -82,7 +82,7 @@ export function ProductCardActions({
               ترقيعاً وقت الترطيب — أول إعادة رندر بعد قراءة السلة تُعيده
               إلى ما يقوله React على أي حال. */}
           <span data-add-label suppressHydrationWarning>
-            {outOfStock ? "غير متوفر" : added ? "تمت الإضافة ✓" : "أضف للسلة"}
+            {outOfStock ? "غير متوفر" : added ? "✓ تمت الإضافة للسلة" : "أضف للسلة"}
           </span>
         </button>
       )}

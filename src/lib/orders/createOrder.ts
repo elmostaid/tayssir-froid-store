@@ -128,17 +128,10 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
 
     const subtotal = sumLines(lineItems);
 
-    if (subtotal < settings.minOrderAmountMad) {
-      return {
-        ok: false,
-        errors: [
-          {
-            field: "items",
-            message: `المجموع الحالي (${subtotal.toFixed(2)} درهم) أقل من الحد الأدنى للطلب (${settings.minOrderAmountMad} درهم)، دون احتساب التوصيل. أضف منتجات أخرى للوصول إلى الحد الأدنى.`,
-          },
-        ],
-      };
-    }
+    // حُذف حاجز الحد الأدنى للطلب عمداً: كان يمنع زبوناً اختار فعلاً ما
+    // يريد من إتمام طلبه، وهو أكبر نزيف في مسار الشراء. الكمية الدنيا لكل
+    // منتج تبقى مطبَّقة كما هي (انظر resolveLines)، والأسعار والمخزون
+    // كذلك — الملغى هو الحدّ الإجمالي وحده.
 
     const normalizedPhone = normalizePhone(input.customer.phone);
 

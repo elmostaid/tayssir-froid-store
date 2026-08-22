@@ -2,6 +2,7 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { CartProvider } from "@/components/CartProvider";
 import { AnalyticsClient } from "@/components/AnalyticsClient";
+import { MobileCartBar } from "@/components/MobileCartBar";
 import { EARLY_ADD_SCRIPT } from "@/lib/cart/earlyAdd";
 
 export default function StorefrontLayout({
@@ -25,7 +26,10 @@ export default function StorefrontLayout({
         <SiteHeader />
         <main className="flex-1">{children}</main>
         <SiteFooter />
+        {/* مساحة بقدر ارتفاع الشريط الثابت، حتى لا يحجب آخر سطر في الصفحة. */}
+        <div className="h-20 sm:hidden" aria-hidden="true" />
       </div>
+      <MobileCartBar />
     </CartProvider>
   );
 }

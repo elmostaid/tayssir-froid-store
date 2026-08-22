@@ -3,7 +3,6 @@ import {
   cartItemKey,
   computeSubtotal,
   isValidQuantity,
-  meetsMinimumOrder,
   snapQuantity,
 } from "@/lib/cart/cartMath";
 import type { CartItem } from "@/lib/cart/types";
@@ -43,18 +42,6 @@ describe("computeSubtotal", () => {
 
   test("سلة فارغة = صفر", () => {
     expect(computeSubtotal([])).toBe(0);
-  });
-});
-
-describe("meetsMinimumOrder", () => {
-  test("يرفض مجموعاً أقل من الحد الأدنى", () => {
-    expect(meetsMinimumOrder(999.99, 1000)).toBe(false);
-  });
-  test("يقبل مجموعاً يساوي الحد الأدنى بالضبط", () => {
-    expect(meetsMinimumOrder(1000, 1000)).toBe(true);
-  });
-  test("يقبل مجموعاً أكبر من الحد الأدنى", () => {
-    expect(meetsMinimumOrder(1500, 1000)).toBe(true);
   });
 });
 

@@ -4,12 +4,12 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useCart } from "@/components/CartProvider";
-import { cartItemKey, meetsMinimumOrder, snapQuantity } from "@/lib/cart/cartMath";
+import { cartItemKey, snapQuantity } from "@/lib/cart/cartMath";
 import { resolveImageUrl } from "@/lib/images";
 import { resolveCartImageUrls } from "@/app/(storefront)/cart/resolveCartImageUrls";
-import { formatMad, formatMinOrderAmount } from "@/lib/format";
+import { formatMad } from "@/lib/format";
 
-export function CartPageClient({ minOrderAmountMad }: { minOrderAmountMad: number }) {
+export function CartPageClient() {
   const { items, subtotal, updateQuantity, removeItem, isHydrated } = useCart();
 
   // السلة (localStorage) لا تخزّن سوى storage_path الخام. نحلّه من جهة
@@ -58,9 +58,6 @@ export function CartPageClient({ minOrderAmountMad }: { minOrderAmountMad: numbe
       </div>
     );
   }
-
-  const meetsMinimum = meetsMinimumOrder(subtotal, minOrderAmountMad);
-  const remaining = Math.max(0, minOrderAmountMad - subtotal);
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-6">
@@ -174,23 +171,6 @@ export function CartPageClient({ minOrderAmountMad }: { minOrderAmountMad: numbe
           الكرطونات بعد تجهيز الطلب.
         </p>
 
-        {!meetsMinimum && (
-          <div className="mt-3">
-            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
-              باقي لك {formatMad(remaining)} باش توصل لأقل قيمة للطلب (
-              {formatMinOrderAmount(minOrderAmountMad)}).
-            </p>
-            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-neutral-200">
-              <div
-                className="h-full rounded-full bg-brand-orange transition-[width]"
-                style={{
-                  width: `${Math.min(100, (subtotal / minOrderAmountMad) * 100)}%`,
-                }}
-              />
-            </div>
-          </div>
-        )}
-
         {/* طمأنة قصيرة قبل زر إتمام الطلب: الخطوة التالية واضحة وما بقاش
             على الزبون غير يعمّر معلوماته. نص فقط — لا تغيير في منطق السلة
             ولا في إتمام الطلب ولا في رابط واتساب. */}
@@ -199,22 +179,12 @@ export function CartPageClient({ minOrderAmountMad }: { minOrderAmountMad: numbe
         </p>
 
         <div className="mt-3 flex flex-col gap-2 sm:flex-row-reverse">
-          {meetsMinimum ? (
-            <Link
-              href="/checkout"
-              className="flex min-h-11 flex-1 items-center justify-center rounded-full bg-brand-orange px-5 text-sm font-semibold text-white transition-colors hover:bg-brand-orange-dark"
-            >
-              إتمام الطلب
-            </Link>
-          ) : (
-            <button
-              type="button"
-              disabled
-              className="flex min-h-11 flex-1 cursor-not-allowed items-center justify-center rounded-full bg-neutral-300 px-5 text-sm font-semibold text-white"
-            >
-              إتمام الطلب
-            </button>
-          )}
+          <Link
+            href="/checkout"
+            className="flex min-h-12 flex-1 items-center justify-center rounded-full bg-brand-orange px-5 text-base font-bold text-white transition-colors hover:bg-brand-orange-dark"
+          >
+            إتمام الطلب
+          </Link>
           <Link
             href="/"
             className="flex min-h-11 flex-1 items-center justify-center rounded-full border border-neutral-300 px-5 text-sm font-semibold text-neutral-700 hover:border-brand-turquoise hover:text-brand-turquoise-dark"
