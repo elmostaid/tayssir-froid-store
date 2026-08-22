@@ -16,6 +16,12 @@ import {
   searchProductsForOrder,
   type ProductSearchResult,
 } from "@/lib/queries/adminProductSearch";
+import {
+  buildOrderDraft,
+  parseOrderJson,
+  type ImportIssue,
+  type ImportedOrderDraft,
+} from "@/lib/orders/importOrder";
 
 export type OrderActionState = { error: string | null };
 
@@ -398,4 +404,26 @@ export async function searchProductsAction(
   const auth = await requireOwner();
   if ("error" in auth) return { ok: false, error: auth.error };
   return { ok: true, results: await searchProductsForOrder(term) };
+}
+
+/**
+ * قراءة بون واتساب وتحويله إلى مسودّة معروضة. **لا تُنشئ طلباً ولا تلمس
+ * المخزون** — كل ما تفعله قراءة ومطابقة. الإنشاء يبقى في
+ * createManualOrderAction وحده، بعد أن يراجع الإنسان ويضغط التأكيد.
+ *
+ * خلف نفس بوابة Owner/Admin كبقية هذه الإجراءات: النتيجة تحمل ثمن الشراء.
+ */
+export async function importOrderDraftAction(
+  rawJson: string
+): Promise<
+  | { ok: true; draft: ImportedOrderDraft; warnings: ImportIssue[] }
+  | { ok: false; errors: ImportIssue[] }
+> {
+  const auth = await requireOwner();
+  if ("error" in auth) return { ok: false, errors: [{ field: "auth", message: auth.error }] };
+
+  const parsed = parseOrderJson(rawJson);
+  if (!parsed.ok) return { ok: false, errors: parsed.errors };
+
+  return buildOrderDraft(parsed.value);
 }

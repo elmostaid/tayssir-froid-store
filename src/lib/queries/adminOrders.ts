@@ -16,6 +16,13 @@ export type AdminOrderListItem = {
   customerPhone: string;
   customerCity: string;
   itemsSubtotal: string;
+  /**
+   * مصاريف التوصيل والمبلغ الإجمالي — في القائمة لا في التفاصيل وحدها.
+   * غيابهما هنا هو ما جعل بطاقة الطلب تعرض مجموع المنتجات تحت اسم «قيمة
+   * الطلب»: لم يكن لديها رقم آخر تعرضه. (انظر lib/orders/orderTotals.ts)
+   */
+  deliveryFee: string | null;
+  finalTotal: string | null;
   createdAt: string;
   /** website | whatsapp | phone | store | other — انظر lib/orders/orderSource. */
   source: string;
@@ -25,8 +32,6 @@ export type AdminOrderDetail = AdminOrderListItem & {
   customerAddress: string;
   customerNotes: string | null;
   cartonCount: number | null;
-  deliveryFee: string | null;
-  finalTotal: string | null;
 };
 
 export type AdminOrderItem = {
@@ -72,12 +77,15 @@ export async function listAdminOrders(
       customer_phone: string;
       customer_city: string;
       items_subtotal: string;
+      delivery_fee: string | null;
+      final_total: string | null;
       created_at: string;
       source: string;
     }[]
   >`
     select id, order_number, public_reference, status, customer_name,
-      customer_phone, customer_city, items_subtotal, created_at, source
+      customer_phone, customer_city, items_subtotal, delivery_fee, final_total,
+      created_at, source
     from public.orders
     where (${pattern}::text is null
         or order_number ilike ${pattern}
@@ -102,6 +110,8 @@ export async function listAdminOrders(
     customerPhone: r.customer_phone,
     customerCity: r.customer_city,
     itemsSubtotal: r.items_subtotal,
+    deliveryFee: r.delivery_fee,
+    finalTotal: r.final_total,
     createdAt: r.created_at,
     source: r.source,
   }));
@@ -128,12 +138,15 @@ export async function getRecentAdminOrders(limit: number): Promise<AdminOrderLis
       customer_phone: string;
       customer_city: string;
       items_subtotal: string;
+      delivery_fee: string | null;
+      final_total: string | null;
       created_at: string;
       source: string;
     }[]
   >`
     select id, order_number, public_reference, status, customer_name,
-      customer_phone, customer_city, items_subtotal, created_at, source
+      customer_phone, customer_city, items_subtotal, delivery_fee, final_total,
+      created_at, source
     from public.orders
     order by created_at desc
     limit ${limit}
@@ -148,6 +161,8 @@ export async function getRecentAdminOrders(limit: number): Promise<AdminOrderLis
     customerPhone: r.customer_phone,
     customerCity: r.customer_city,
     itemsSubtotal: r.items_subtotal,
+    deliveryFee: r.delivery_fee,
+    finalTotal: r.final_total,
     createdAt: r.created_at,
     source: r.source,
   }));
