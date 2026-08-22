@@ -46,16 +46,37 @@ export default async function AdminReportsPage({
   const range = resolveRange(rangeParam, from, to);
   const source = isOrderSource(sourceParam) ? sourceParam : null;
 
-  const [salesStats, profit, recentDelivered, bestByQuantity, bestByValue, bySource] =
+  const [salesStats, profit, recentDelivered, bestByQuantity, bestByValue, bySourceResult] =
     await Promise.all([
       getDashboardOrderStats(),
       getProfitSummary(),
       getDeliveredOrdersProfitBreakdown(10),
       getBestSellingProducts("quantity", 5),
       getBestSellingProducts("value", 5),
-      getSalesBySource(range, source),
+      getSalesBySource(range, source).then(
+        (value) => ({ ok: true as const, value }),
+        (error: unknown) => ({
+          ok: false as const,
+          message: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+        })
+      ),
     ]);
 
+  const bySource = bySourceResult.ok
+    ? bySourceResult.value
+    : {
+        rows: [],
+        totals: {
+          deliveredOrders: 0,
+          revenueMad: 0,
+          deliveryFeesMad: 0,
+          cogsMad: 0,
+          grossProfitMad: 0,
+          ordersWithMissingCost: 0,
+          pendingOrders: 0,
+          pendingRevenueMad: 0,
+        },
+      };
   const websiteRow = bySource.rows.find((row) => row.source === "website");
   const manualRevenue = bySource.rows
     .filter((row) => row.source !== "website")
@@ -133,6 +154,12 @@ export default async function AdminReportsPage({
         <StatCard label="الربح الخام" value={formatMad(bySource.totals.grossProfitMad)} accent />
         <StatCard label="مصاريف التوصيل المحصَّلة" value={formatMad(bySource.totals.deliveryFeesMad)} />
       </div>
+
+      {!bySourceResult.ok && (
+        <p className="mt-3 rounded-xl border border-red-300 bg-red-50 p-3 text-xs font-semibold text-red-700">
+          تعذّر حساب هذا القسم: {bySourceResult.message}
+        </p>
+      )}
 
       {bySource.rows.length === 0 ? (
         <p className="mt-3 rounded-xl border border-dashed border-neutral-300 bg-white p-6 text-center text-xs text-neutral-500">
