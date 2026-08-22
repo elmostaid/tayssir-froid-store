@@ -111,7 +111,9 @@ export const EARLY_ADD_SCRIPT = compact(`
     try{var r=localStorage.getItem(KEY);var p=r?JSON.parse(r):[];return Array.isArray(p)?p:[];}catch(e){return [];}
   }
   function money(v){
-    try{return new Intl.NumberFormat("fr-MA",{style:"currency",currency:"MAD"}).format(v);}
+    // نفس صياغة formatMad بالضبط، وإلا اختلف نصّ الشريط قبل الترطيب عنه
+    // بعده أمام عين الزبون.
+    try{return new Intl.NumberFormat("ar-MA",{minimumFractionDigits:2,maximumFractionDigits:2}).format(v)+" درهم";}
     catch(e){return v+" درهم";}
   }
   function badge(items){
