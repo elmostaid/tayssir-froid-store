@@ -1,8 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useCart } from "@/components/CartProvider";
 import { formatMad } from "@/lib/format";
+
+// الصفحة التي الشريط نفسه يقود إليها. عرضه فوقها يعني زرّاً برتقالياً كبيراً
+// في أسفل الشاشة يقول «إتمام الطلب» ولا يفعل شيئاً سوى إعادة تحميل نفس
+// الصفحة — ومع إعادة التحميل يضيع كل ما كتبه الزبون في النموذج. فلا يُعرض.
+const HIDDEN_ON = new Set(["/checkout"]);
 
 /**
  * شريط ثابت أسفل الشاشة: قيمة السلة وزرّ يذهب مباشرة إلى إتمام الطلب.
@@ -20,39 +26,49 @@ import { formatMad } from "@/lib/format";
  */
 export function MobileCartBar() {
   const { itemCount, subtotal, isHydrated } = useCart();
+  const pathname = usePathname();
   const empty = itemCount === 0;
 
+  // لا نكتفي بإخفائه بـCSS: السكريبت المبكّر يبحث عن [data-cart-bar]
+  // ويُظهره فور أول إضافة، فلو بقي في الصفحة لأعاده إلى الشاشة. غيابه من
+  // الـDOM أصلاً هو ما يجعل السكريبت يتخطّاه (حارس `if(bar)` عنده).
+  if (HIDDEN_ON.has(pathname)) return null;
+
   return (
-    <div
-      data-cart-bar
-      hidden={empty}
-      suppressHydrationWarning
-      className="fixed inset-x-0 bottom-0 z-50 border-t border-brand-orange/30 bg-white/95 px-3 py-2 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] backdrop-blur sm:hidden"
-    >
-      <div className="flex items-center gap-3">
-        <Link
-          href="/cart"
-          className="min-w-0 flex-1 leading-tight"
-          aria-label="عرض السلة وتعديلها"
-        >
-          <span className="block text-[11px] text-neutral-500">
-            السلة (<span data-cart-bar-count suppressHydrationWarning>{itemCount}</span>)
-          </span>
-          <span
-            data-cart-bar-total
-            suppressHydrationWarning
-            className="block truncate text-base font-bold text-brand-orange"
+    <>
+      {/* مساحة بقدر ارتفاع الشريط، حتى لا يحجب آخر سطر في الصفحة. */}
+      <div className="h-20 sm:hidden" aria-hidden="true" />
+      <div
+        data-cart-bar
+        hidden={empty}
+        suppressHydrationWarning
+        className="fixed inset-x-0 bottom-0 z-50 border-t border-brand-orange/30 bg-white/95 px-3 py-2 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] backdrop-blur sm:hidden"
+      >
+        <div className="flex items-center gap-3">
+          <Link
+            href="/cart"
+            className="min-w-0 flex-1 leading-tight"
+            aria-label="عرض السلة وتعديلها"
           >
-            {isHydrated ? formatMad(subtotal) : ""}
-          </span>
-        </Link>
-        <Link
-          href="/checkout"
-          className="flex min-h-12 shrink-0 items-center justify-center rounded-full bg-brand-orange px-6 text-base font-bold text-white"
-        >
-          إتمام الطلب
-        </Link>
+            <span className="block text-[11px] text-neutral-500">
+              السلة (<span data-cart-bar-count suppressHydrationWarning>{itemCount}</span>)
+            </span>
+            <span
+              data-cart-bar-total
+              suppressHydrationWarning
+              className="block truncate text-base font-bold text-brand-orange"
+            >
+              {isHydrated ? formatMad(subtotal) : ""}
+            </span>
+          </Link>
+          <Link
+            href="/checkout"
+            className="flex min-h-12 shrink-0 items-center justify-center rounded-full bg-brand-orange px-6 text-base font-bold text-white"
+          >
+            إتمام الطلب
+          </Link>
+        </div>
       </div>
-    </div>
+    </>
   );
 }

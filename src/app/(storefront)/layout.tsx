@@ -26,10 +26,10 @@ export default function StorefrontLayout({
         <SiteHeader />
         <main className="flex-1">{children}</main>
         <SiteFooter />
-        {/* مساحة بقدر ارتفاع الشريط الثابت، حتى لا يحجب آخر سطر في الصفحة. */}
-        <div className="h-20 sm:hidden" aria-hidden="true" />
+        {/* الشريط الثابت ومساحته معاً: يختفيان في نفس الصفحات، فلا تبقى
+            مساحة فارغة أسفل صفحة لا شريط فيها. */}
+        <MobileCartBar />
       </div>
-      <MobileCartBar />
     </CartProvider>
   );
 }
