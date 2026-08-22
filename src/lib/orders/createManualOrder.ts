@@ -7,6 +7,7 @@ import {
 } from "@/lib/orders/orderLines";
 import { MANUAL_LINE_RULES, resolveOrderLines, type LineRequest } from "@/lib/orders/resolveLines";
 import { isManualOrderSource, ORDER_SOURCE_LABELS, type OrderSource } from "@/lib/orders/orderSource";
+import { belowCostMessage, findBelowCostLines } from "@/lib/orders/belowCost";
 import type { CreateOrderFieldError } from "@/lib/orders/types";
 
 /**
@@ -43,6 +44,11 @@ export type ManualOrderInput = {
   deliveryFee: number;
   /** بريد المدير — يُسجَّل في تاريخ الحالة، لا في بيانات الزبون. */
   createdByEmail: string;
+  /**
+   * إقرار صريح بالبيع تحت التكلفة. بدونه يُرفَض الطلب الذي يحمل سطراً
+   * خاسراً — انظر lib/orders/belowCost.ts.
+   */
+  acknowledgeBelowCost?: boolean;
 };
 
 export type ManualOrderResult =
@@ -92,6 +98,14 @@ export async function createManualOrder(input: ManualOrderInput): Promise<Manual
   if (errors.length > 0) return { ok: false, errors };
   if (lines.length === 0) {
     return { ok: false, errors: [{ field: "items", message: "أضف منتجاً واحداً على الأقل." }] };
+  }
+
+  // الحارس قبل أي كتابة: لا طلب، ولا حجز مخزون، ولا صفّ واحد.
+  if (!input.acknowledgeBelowCost) {
+    const belowCost = findBelowCostLines(lines);
+    if (belowCost.length > 0) {
+      return { ok: false, errors: [{ field: "belowCost", message: belowCostMessage(belowCost) }] };
+    }
   }
 
   const subtotal = sumLines(lines);

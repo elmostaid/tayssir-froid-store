@@ -5,6 +5,7 @@ import { getDashboardOrderStats, getRecentAdminOrders } from "@/lib/queries/admi
 import { getLowStockProductsAdmin, countLowStockProductsAdmin } from "@/lib/queries/adminProducts";
 import { ORDER_STATUS_LABELS, ORDER_STATUS_BADGE_CLASSES, type OrderStatus } from "@/lib/orders/orderStatus";
 import { formatMad } from "@/lib/format";
+import { orderPayableTotal } from "@/lib/orders/orderTotals";
 import { getDashboardSummary, type DayCounters } from "@/lib/queries/adminDashboardSummary";
 
 export const dynamic = "force-dynamic";
@@ -167,7 +168,7 @@ export default async function AdminDashboardPage() {
             accent="orange"
           />
           <TodayCard
-            label="المبيعات"
+            label="مبيعات اليوم (المنتجات)"
             href="/admin/reports?range=today"
             today={summary.today.salesMad}
             yesterday={summary.yesterday.salesMad}
@@ -192,17 +193,18 @@ export default async function AdminDashboardPage() {
 
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
         <StatCard label="طلبات اليوم" value={String(stats.ordersToday)} />
-        <StatCard label="مبيعات اليوم" value={formatMad(stats.salesTodayMad)} accent />
+        <StatCard label="مبيعات اليوم (المنتجات)" value={formatMad(stats.salesTodayMad)} accent />
         <StatCard label="منتجات مخزونها منخفض" value={String(lowStockCount)} />
-        <StatCard label="مبيعات آخر 7 أيام" value={formatMad(stats.sales7DaysMad)} accent />
-        <StatCard label="مبيعات الشهر الحالي" value={formatMad(stats.salesThisMonthMad)} accent />
+        <StatCard label="مبيعات 7 أيام (المنتجات)" value={formatMad(stats.sales7DaysMad)} accent />
+        <StatCard label="مبيعات الشهر (المنتجات)" value={formatMad(stats.salesThisMonthMad)} accent />
       </div>
 
       {/* المبيعات هنا = مجموع قيمة المنتجات (items_subtotal) للطلبات غير
           الملغاة وغير الراجعة فقط — انظر التعليق الكامل فـ
           getDashboardOrderStats (adminOrders.ts) لشرح هذا الاختيار. */}
       <p className="mt-2 text-xs text-neutral-400">
-        المبيعات المعروضة لا تشمل الطلبات الملغاة أو الراجعة.
+        المبيعات المعروضة هي مجموع المنتجات بلا مصاريف التوصيل، ولا تشمل الطلبات الملغاة أو
+        الراجعة. أما مبلغ كل طلب في القائمة فهو ما يدفعه الزبون شاملاً التوصيل.
       </p>
 
       <h2 className="mt-6 border-r-4 border-brand-turquoise pr-3 text-base font-bold text-neutral-800">
@@ -257,7 +259,7 @@ export default async function AdminDashboardPage() {
                     <p className="truncate text-xs text-neutral-500">{order.customerName}</p>
                   </div>
                   <span className="shrink-0 text-sm font-semibold text-neutral-800">
-                    {formatMad(order.itemsSubtotal)}
+                    {formatMad(orderPayableTotal(order))}
                   </span>
                 </Link>
               ))}

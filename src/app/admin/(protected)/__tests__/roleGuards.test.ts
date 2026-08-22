@@ -262,14 +262,26 @@ describe("الطلبات اليدوية وتعديل محتوى الطلب — �
     expect((await searchProductsAction("ضاغط")).ok).toBe(false);
   });
 
+  test("استيراد البون: يرفض Staff — النتيجة تحمل ثمن الشراء أيضاً", async () => {
+    getAdminUserMock.mockResolvedValue(STAFF_USER);
+    const { importOrderDraftAction } = await import("@/app/admin/(protected)/orders/actions");
+    const result = await importOrderDraftAction("{}");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors[0].message).toContain("صاحب الحساب");
+  });
+
   test("زائر غير مسجَّل يُرفض في كل هذه الإجراءات", async () => {
     getAdminUserMock.mockResolvedValue(null);
-    const { createManualOrderAction, updateOrderLinesAction, searchProductsAction } = await import(
-      "@/app/admin/(protected)/orders/actions"
-    );
+    const {
+      createManualOrderAction,
+      updateOrderLinesAction,
+      searchProductsAction,
+      importOrderDraftAction,
+    } = await import("@/app/admin/(protected)/orders/actions");
 
     expect((await createManualOrderAction({ error: null }, new FormData())).error).toBeTruthy();
     expect((await updateOrderLinesAction({ error: null }, new FormData())).error).toBeTruthy();
     expect((await searchProductsAction("x")).ok).toBe(false);
+    expect((await importOrderDraftAction("{}")).ok).toBe(false);
   });
 });

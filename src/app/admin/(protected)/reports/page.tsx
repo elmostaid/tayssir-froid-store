@@ -93,12 +93,12 @@ export default async function AdminReportsPage({
       <h1 className="text-xl font-bold text-neutral-800">التقارير والأرباح</h1>
 
       <h2 className="mt-4 border-r-4 border-brand-turquoise pr-3 text-base font-bold text-neutral-800">
-        المبيعات (طلبات غير ملغاة وغير راجعة)
+        المبيعات (طلبات غير ملغاة وغير راجعة) — مجموع المنتجات بلا توصيل
       </h2>
       <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <StatCard label="مبيعات اليوم" value={formatMad(salesStats.salesTodayMad)} />
-        <StatCard label="مبيعات آخر 7 أيام" value={formatMad(salesStats.sales7DaysMad)} />
-        <StatCard label="مبيعات الشهر الحالي" value={formatMad(salesStats.salesThisMonthMad)} />
+        <StatCard label="مبيعات اليوم (المنتجات)" value={formatMad(salesStats.salesTodayMad)} />
+        <StatCard label="مبيعات 7 أيام (المنتجات)" value={formatMad(salesStats.sales7DaysMad)} />
+        <StatCard label="مبيعات الشهر (المنتجات)" value={formatMad(salesStats.salesThisMonthMad)} />
       </div>
 
       <h2 className="mt-6 border-r-4 border-brand-orange pr-3 text-base font-bold text-neutral-800">
@@ -153,9 +153,9 @@ export default async function AdminReportsPage({
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <StatCard label="مبيعات الموقع" value={formatMad(websiteRow?.revenueMad ?? 0)} />
-        <StatCard label="مبيعات واتساب / يدوية" value={formatMad(manualRevenue)} />
-        <StatCard label="المبيعات الإجمالية" value={formatMad(bySource.totals.revenueMad)} accent />
+        <StatCard label="مبيعات الموقع (المنتجات)" value={formatMad(websiteRow?.revenueMad ?? 0)} />
+        <StatCard label="مبيعات واتساب/يدوية (المنتجات)" value={formatMad(manualRevenue)} />
+        <StatCard label="مبيعات المنتجات إجمالاً" value={formatMad(bySource.totals.revenueMad)} accent />
         <StatCard label="تكلفة البضاعة" value={formatMad(bySource.totals.cogsMad)} />
         <StatCard label="الربح الخام" value={formatMad(bySource.totals.grossProfitMad)} accent />
         <StatCard label="مصاريف التوصيل المحصَّلة" value={formatMad(bySource.totals.deliveryFeesMad)} />

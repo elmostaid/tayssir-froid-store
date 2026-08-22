@@ -5,6 +5,7 @@ import { ORDER_SOURCE_BADGE_CLASSES, orderSourceLabel } from "@/lib/orders/order
 import { listAdminOrders, ORDER_STATUSES, type OrderStatus } from "@/lib/queries/adminOrders";
 import { ORDER_STATUS_LABELS, ORDER_STATUS_BADGE_CLASSES } from "@/lib/orders/orderStatus";
 import { formatMad } from "@/lib/format";
+import { isPayableTotalFinal, orderPayableTotal } from "@/lib/orders/orderTotals";
 
 export const dynamic = "force-dynamic";
 
@@ -127,7 +128,10 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
                 </p>
               </div>
               <div className="shrink-0 text-left text-sm font-semibold text-neutral-800">
-                {formatMad(order.itemsSubtotal)}
+                {formatMad(orderPayableTotal(order))}
+                {!isPayableTotalFinal(order) && (
+                  <p className="text-[11px] font-normal text-amber-700">بلا توصيل بعد</p>
+                )}
                 <p className="text-xs font-normal text-neutral-500">
                   {new Date(order.createdAt).toLocaleString("ar-MA")}
                 </p>
