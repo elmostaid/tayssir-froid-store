@@ -115,6 +115,15 @@ export function OrderLinesEditor({
     0
   );
   const linesMissingCost = lines.filter((line) => line.purchasePrice === null);
+  // البيع تحت التكلفة: نحسبه هنا للعرض، والخادم يفحصه من جديد ويرفض بدون
+  // الإقرار مهما فعل المتصفح (lib/orders/belowCost.ts).
+  const belowCost = lines
+    .filter((line) => line.purchasePrice !== null && line.unitPrice < line.purchasePrice)
+    .map((line) => ({
+      ...line,
+      lossPerUnit: (line.purchasePrice ?? 0) - line.unitPrice,
+      lossTotal: ((line.purchasePrice ?? 0) - line.unitPrice) * line.quantity,
+    }));
   const finalTotal = itemsSubtotal + deliveryFee;
   const grossProfit = itemsSubtotal - knownCost;
 
@@ -259,6 +268,13 @@ export function OrderLinesEditor({
                     الكمية تتجاوز المتاح — الخادم سيرفض الحفظ حتى لا يصير المخزون سالباً.
                   </p>
                 )}
+                {line.purchasePrice !== null && line.unitPrice < line.purchasePrice && (
+                  <p className="mt-1 rounded-md bg-red-50 px-2 py-1 text-[11px] font-bold text-red-700">
+                    ثمن البيع أقل من ثمن الشراء: ستخسر{" "}
+                    {formatMad(line.purchasePrice - line.unitPrice)} في القطعة الواحدة
+                    {line.quantity > 1 && <> و{formatMad((line.purchasePrice - line.unitPrice) * line.quantity)} في هذا السطر</>}.
+                  </p>
+                )}
                 {line.purchasePrice === null && (
                   <p className="mt-1 text-[11px] text-amber-700">
                     لا ثمن شراء مسجَّل لهذا المنتج — ربح هذا السطر غير معروف.
@@ -310,6 +326,37 @@ export function OrderLinesEditor({
             </span>
           </dd>
         </dl>
+
+        {belowCost.length > 0 && (
+          <div className="mt-3 rounded-lg border-2 border-red-400 bg-red-50 p-3">
+            <p className="text-sm font-bold text-red-700">
+              {belowCost.length === 1 ? "منتج يُباع" : `${belowCost.length} منتجات تُباع`} تحت ثمن
+              الشراء — مجموع الخسارة {formatMad(belowCost.reduce((sum, l) => sum + l.lossTotal, 0))}
+            </p>
+            <ul className="mt-1 list-inside list-disc space-y-0.5 text-xs text-red-700">
+              {belowCost.map((line) => (
+                <li key={line.productId}>
+                  <span className="font-semibold">{line.name}</span>: بيع{" "}
+                  {formatMad(line.unitPrice)} · شراء {formatMad(line.purchasePrice ?? 0)} — ستخسر{" "}
+                  {formatMad(line.lossPerUnit)} في القطعة
+                  {line.quantity > 1 && <> ({formatMad(line.lossTotal)} في السطر)</>}
+                </li>
+              ))}
+            </ul>
+            <label className="mt-2 flex items-start gap-2 rounded-md bg-white p-2 text-xs font-semibold text-red-800">
+              <input
+                type="checkbox"
+                name="acknowledgeBelowCost"
+                disabled={disabled}
+                className="mt-0.5 h-4 w-4 shrink-0 accent-red-600"
+              />
+              <span>أفهم أن هذا يُباع تحت التكلفة وأريد المتابعة</span>
+            </label>
+            <p className="mt-1 text-[11px] text-red-700">
+              بدون هذا التأكيد لن يُحفظ الطلب ولن يتغيّر أي مخزون.
+            </p>
+          </div>
+        )}
 
         {linesMissingCost.length > 0 && (
           <p className="mt-2 text-[11px] leading-relaxed text-amber-700">

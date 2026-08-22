@@ -10,6 +10,7 @@ import {
   type OrderLine,
 } from "@/lib/orders/orderLines";
 import { MANUAL_LINE_RULES, resolveOrderLines, type LineRequest } from "@/lib/orders/resolveLines";
+import { belowCostMessage, findBelowCostLines } from "@/lib/orders/belowCost";
 import type { CreateOrderFieldError } from "@/lib/orders/types";
 import type { OrderStatus } from "@/lib/orders/orderStatus";
 
@@ -42,6 +43,8 @@ export type UpdateOrderLinesInput = {
   /** null تعني: اترك مصاريف التوصيل كما هي. */
   deliveryFee: number | null;
   changedByEmail: string;
+  /** نفس الإقرار المطلوب عند الإنشاء — الحماية واحدة في المسارين. */
+  acknowledgeBelowCost?: boolean;
 };
 
 export type UpdateOrderLinesResult =
@@ -76,6 +79,14 @@ export async function updateOrderLines(
 
   const { lines, errors } = await resolveOrderLines(input.items, MANUAL_LINE_RULES);
   if (errors.length > 0) return { ok: false, errors };
+
+  // نفس حارس الإنشاء: تعديل الثمن إلى ما دون التكلفة يستحقّ نفس الوقفة.
+  if (!input.acknowledgeBelowCost) {
+    const belowCost = findBelowCostLines(lines);
+    if (belowCost.length > 0) {
+      return { ok: false, errors: [{ field: "belowCost", message: belowCostMessage(belowCost) }] };
+    }
+  }
 
   // ندمج السطور المكرَّرة لنفس القطعة: سطران لنفس المنتج يعنيان كمية واحدة
   // مجموعة، وإلا حسبنا فرق المخزون مرتين على نفس المفتاح.

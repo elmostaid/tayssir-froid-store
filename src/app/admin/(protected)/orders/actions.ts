@@ -351,6 +351,7 @@ export async function createManualOrderAction(
     deliveryFee,
     createdByEmail: auth.email,
     items: readLines(formData),
+    acknowledgeBelowCost: formData.get("acknowledgeBelowCost") === "on",
   });
 
   if (!result.ok) {
@@ -381,6 +382,7 @@ export async function updateOrderLinesAction(
     items: readLines(formData),
     deliveryFee: feeRaw === "" ? null : Number(feeRaw),
     changedByEmail: auth.email,
+    acknowledgeBelowCost: formData.get("acknowledgeBelowCost") === "on",
   });
 
   if (!result.ok) {
