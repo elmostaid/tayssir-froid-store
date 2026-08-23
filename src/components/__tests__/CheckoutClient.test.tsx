@@ -188,8 +188,9 @@ describe("CheckoutClient — الخروج إلى واتساب لا يرتهن ب
     await submitAndWait();
 
     const href = hrefOf();
-    expect(href).toContain("TF-TEST-001×2");
-    expect(href).toContain("لم يُؤكَّد حفظها");
+    expect(href).toContain("منتج اختبار");
+    expect(href).toMatch(/منتج اختبار.*× 2/);
+    expect(href).toContain("لم يُؤكَّد الحفظ");
     // لا Purchase على طلب لم يُؤكَّد حفظه — لا شراء وهمي بمجرد ضغطة زر.
     expect(trackPurchaseMock).not.toHaveBeenCalled();
   }, 20000);
@@ -201,7 +202,8 @@ describe("CheckoutClient — الخروج إلى واتساب لا يرتهن ب
     await submitAndWait();
 
     const href = hrefOf();
-    expect(href).toContain("TF-TEST-001×2");
+    expect(href).toContain("منتج اختبار");
+    expect(href).toMatch(/منتج اختبار.*× 2/);
     expect(href).toContain("أحمد");
     expect(trackPurchaseMock).not.toHaveBeenCalled();
     expect(screen.queryByText(/تعذّر|خطأ/)).toBeNull();

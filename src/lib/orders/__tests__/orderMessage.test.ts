@@ -106,12 +106,37 @@ describe("الرسالة المؤكَّدة — الطلب محفوظ", () => {
 });
 
 describe("رسالة الإنقاذ — لم يتأكّد الحفظ", () => {
-  test("تحمل الطلبية نفسها مضغوطة (SKU × الكمية) بلا الأسماء الطويلة", () => {
+  // العطل الذي تحرسه: الصيغة الأولى كانت `SKU×الكمية`. حمَت المتصفّح لكنها
+  // أهدرت البون — الموظّف لا يحفظ الأكواد، فوصلته ورقة أرقام لا طلبية.
+  test("كل منتج يظهر باسمه البشري وكميته", () => {
     const message = rescue(cart(3));
-    expect(message).toContain("TF-AC-001×2");
-    expect(message).toContain("TF-AC-003×2");
-    expect(message).not.toContain("غاز تبريد R410 للمكيفات المنزلية سبليت");
+    expect(message).toContain("غاز تبريد R410 للمكيفات المنزلية سبليت");
+    expect(message).toMatch(/غاز تبريد R410 للمكيفات المنزلية سبليت.*× 2/);
     expect(message).toContain("2.100,00 درهم");
+  });
+
+  test("SKU يُضاف بعد الاسم ما دام الحجم يسمح", () => {
+    expect(rescue(cart(3))).toContain("(TF-AC-001)");
+  });
+
+  // لا تراجع إلى الأكواد مهما ضاق السقف: الاسم آخر ما يُتنازل عنه.
+  test("لا سطر بكود بلا اسم مهما كبرت السلة", () => {
+    for (const n of [40, 150, 400]) {
+      const message = rescue(cart(n));
+      const lines = message.split("\n").filter((l) => l.startsWith("- "));
+      expect(lines.length).toBeGreaterThan(0);
+      for (const line of lines) {
+        expect(line).toMatch(/[؀-ۿ]/);
+        expect(line).not.toMatch(/^- TF-AC-\d+ ?× ?\d+$/);
+      }
+    }
+  });
+
+  test("الاسم الطويل يُقصَّر عند حدّ كلمة ويبقى مُعرِّفاً", () => {
+    const message = rescue(cart(150));
+    const line = message.split("\n").find((l) => l.startsWith("- "))!;
+    expect(line).toContain("غاز تبريد");
+    expect(line.length).toBeLessThan(60);
   });
 
   test("بيانات الزبون تصل دائماً — هي أهم ما يجب ألّا يضيع", () => {
@@ -121,22 +146,28 @@ describe("رسالة الإنقاذ — لم يتأكّد الحفظ", () => {
     expect(message).toContain("حي المحاميد زنقة 12 رقم 45");
   });
 
-  // القصّ الصامت أسوأ من القصّ: الفريق يجب أن يعرف أنه لم ير الطلبية كاملة.
-  test("عند القصّ تُذكر المنتجات غير المذكورة صراحةً", () => {
+  test("عدد المنتجات والقطع والمجموع حاضرة مهما قُصَّت السطور", () => {
+    const message = rescue(cart(200));
+    expect(message).toContain("200 منتجاً (400 قطعة)");
+    expect(message).toContain("140.000,00 درهم");
+  });
+
+  // القصّ الصامت أسوأ من القصّ: الفريق يجب أن يعرف أنه لم ير الطلبية كاملة،
+  // وألّا نَعِده بلوحة إدارة قد لا تحمل الطلب أصلاً (الحفظ غير مؤكَّد).
+  test("عند القصّ تُذكر البقية مع المرجع وبديل الاتصال بالزبون", () => {
     const message = rescue(cart(200));
     expect(message).toMatch(/… و\d+ منتجاً آخر/);
-    expect(message).toContain("200 منتجاً");
+    expect(message).toContain("W-3F9A2C81");
+    expect(message).toContain("اتصلوا بالزبون");
   });
 
   test("سلة صغيرة لا تُقصّ إطلاقاً", () => {
     const message = rescue(cart(5));
     expect(message).not.toMatch(/منتجاً آخر/);
-    for (let i = 1; i <= 5; i++) {
-      expect(message).toContain(`TF-AC-${String(i).padStart(3, "0")}×2`);
-    }
+    expect(message.split("\n").filter((l) => l.startsWith("- "))).toHaveLength(5);
   });
 
   test("تقول صراحةً إنها نسخة إنقاذ غير مؤكَّدة الحفظ", () => {
-    expect(rescue(cart(2))).toContain("لم يُؤكَّد حفظها");
+    expect(rescue(cart(2))).toContain("لم يُؤكَّد الحفظ");
   });
 });

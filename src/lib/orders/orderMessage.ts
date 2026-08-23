@@ -88,9 +88,51 @@ export function buildConfirmedOrderMessage(params: {
 }
 
 /**
- * لم يتأكّد الحفظ — نحمل الطلب في الرسالة نفسها بصيغة مضغوطة.
- * تُقصَّر السطور عند بلوغ السقف، مع ذكر ما لم يُذكر صراحةً حتى لا يظن
- * الفريق أنه رأى الطلبية كاملة.
+ * يُقصّر الاسم مع الحفاظ على هويّة المنتج: القطع عند حدّ كلمة لا وسطها،
+ * فيبقى «غاز تبريد R410 للمكيفات…» مفهوماً لمن يجهّز الطلب.
+ */
+export function shortenProductName(name: string, maxChars: number): string {
+  const clean = name.trim().replace(/\s+/g, " ");
+  if (clean.length <= maxChars) return clean;
+  const cut = clean.slice(0, maxChars);
+  const lastSpace = cut.lastIndexOf(" ");
+  // لا نقبل قصّاً يمحو أكثر من ثلث المسموح، وإلا صار الاسم بلا معنى.
+  const base = lastSpace > maxChars * 0.6 ? cut.slice(0, lastSpace) : cut;
+  return `${base.trimEnd()}…`;
+}
+
+/**
+ * سُلّم الصيغ من الأغنى إلى الأقل، ونأخذ أول ما يدخل تحت السقف بكل سطوره.
+ * SKU زينة تُحذف أولاً، ثم يُقصَّر الاسم تدريجياً — والاسم آخر ما نتنازل
+ * عنه لأنه وحده ما يجعل البون قابلاً للتجهيز.
+ */
+const NAME_TIERS: { nameMax: number; withSku: boolean }[] = [
+  { nameMax: 60, withSku: true },
+  { nameMax: 60, withSku: false },
+  { nameMax: 36, withSku: false },
+];
+
+/**
+ * حين لا تسع السلةُ الرسالةَ مهما فعلنا، لا نُمعن في قصّ الأسماء: النزول
+ * إلى 16 حرفاً كان يشتري بضعة سطور فقط ويُفسد كل اسم فيها. الأفضل أسماء
+ * مقروءة لعدد أقل، والباقي يُطلَب بالمرجع.
+ */
+const OVERFLOW_TIER = { nameMax: 36, withSku: false };
+
+function itemLine(item: CartItem, nameMax: number, withSku: boolean): string {
+  const full = item.variantName ? `${item.name} — ${item.variantName}` : item.name;
+  const name = shortenProductName(full, nameMax);
+  return withSku ? `${name} (${item.sku}) × ${item.quantity}` : `${name} × ${item.quantity}`;
+}
+
+/**
+ * لم يتأكّد الحفظ — نحمل الطلب في الرسالة نفسها، **بأسماء بشرية**.
+ *
+ * الصيغة الأولى كانت `SKU×الكمية`. حمَت المتصفّح من الروابط الضخمة لكنها
+ * أهدرت البون: الموظّف لا يحفظ الأكواد، فوصلته ورقة أرقام لا طلبية. الاسم
+ * الآن هو الثابت الذي لا يُستبدَل أبداً؛ ما يُتنازل عنه عند ضيق السقف هو
+ * SKU ثم طول الاسم، وأخيراً عدد السطور المذكورة — مع إحالة صريحة إلى
+ * لوحة الإدارة تحت نفس المرجع.
  */
 export function buildRescueOrderMessage(params: {
   storeName: string;
@@ -104,27 +146,42 @@ export function buildRescueOrderMessage(params: {
   const { storeName, customer, reference, items, subtotal, whatsappNumber } = params;
   const budget = params.maxUrlBytes ?? MAX_WHATSAPP_URL_BYTES;
   const head = customerLines(storeName, customer, reference);
-  const skuLines = items.map((item) => `${item.sku}×${item.quantity}`);
+  const units = items.reduce((sum, item) => sum + item.quantity, 0);
 
-  const compose = (shown: string[], hiddenCount: number) => {
+  const compose = (lines: string[], hidden: number) => {
     const body = [
       ...head,
       "",
-      `الطلبية (${items.length} منتجاً — لم يُؤكَّد حفظها، هذه نسخة إنقاذ):`,
-      shown.join(" · "),
+      `الطلبية: ${items.length} منتجاً (${units} قطعة) — لم يُؤكَّد الحفظ، هذه نسخة إنقاذ:`,
+      ...lines.map((line) => `- ${line}`),
     ];
-    if (hiddenCount > 0) {
-      body.push(`… و${hiddenCount} منتجاً آخر — اتصلوا بالزبون لتأكيد الباقي.`);
+    if (hidden > 0) {
+      // صياغة لا تَعِد بما قد لا يوجد: هذه نسخة إنقاذ، أي أن الحفظ لم
+      // يُؤكَّد — فقد لا يكون الطلب في اللوحة أصلاً.
+      body.push(
+        `… و${hidden} منتجاً آخر. ابحثوا عن المرجع ${reference} في لوحة الإدارة، ` +
+          "وإن لم تجدوه فاتصلوا بالزبون لتأكيد الباقي."
+      );
     }
     body.push("", `المجموع ${formatMad(subtotal)}`, CLOSING_NOTE);
     return body.join("\n");
   };
 
-  // نُنقص سطراً سطراً حتى يدخل الرابط تحت السقف. الحلقة تنتهي حتماً: أسوأ
-  // حالة أن تبقى بيانات الزبون وحدها، وهي أهم ما يجب أن يصل.
-  for (let shown = skuLines.length; shown >= 0; shown--) {
-    const message = compose(skuLines.slice(0, shown), skuLines.length - shown);
-    if (buildWhatsAppLink(whatsappNumber, message).length <= budget) return message;
+  const fits = (message: string) =>
+    buildWhatsAppLink(whatsappNumber, message).length <= budget;
+
+  // ١) أغنى صيغة تدخل بكل المنتجات.
+  for (const tier of NAME_TIERS) {
+    const message = compose(items.map((i) => itemLine(i, tier.nameMax, tier.withSku)), 0);
+    if (fits(message)) return message;
   }
-  return compose([], skuLines.length);
+
+  // ٢) لا صيغة تسع الكل — نُبقي الأسماء (لا نستبدلها بأكواد أبداً) ونُنقص
+  //    عدد السطور، والباقي يُطلَب من اللوحة بالمرجع.
+  const all = items.map((i) => itemLine(i, OVERFLOW_TIER.nameMax, OVERFLOW_TIER.withSku));
+  for (let shown = all.length - 1; shown >= 1; shown--) {
+    const message = compose(all.slice(0, shown), all.length - shown);
+    if (fits(message)) return message;
+  }
+  return compose([], items.length);
 }
