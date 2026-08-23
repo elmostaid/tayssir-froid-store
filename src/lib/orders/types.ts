@@ -38,5 +38,5 @@ export type CreateOrderFieldError = {
 };
 
 export type CreateOrderResult =
-  | { ok: true; publicReference: string }
+  | { ok: true; publicReference: string; orderNumber: string }
   | { ok: false; errors: CreateOrderFieldError[] };

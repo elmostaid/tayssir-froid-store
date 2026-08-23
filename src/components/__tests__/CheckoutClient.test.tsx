@@ -10,10 +10,19 @@ vi.mock("@/lib/pixel/fbq", () => ({
   trackPurchase: (...args: unknown[]) => trackPurchaseMock(...args),
 }));
 
+// الحفظ صار يمرّ عبر fetch("/api/orders") بـkeepalive بدل Server Action،
+// لأن الأخيرة تُقطع لحظة مغادرة الزبون إلى واتساب فيضيع الطلب. نُحاكي fetch
+// نفسه حتى تبقى هذه الاختبارات على السلوك الحقيقي للواجهة.
 const submitOrderMock = vi.fn();
-vi.mock("@/app/(storefront)/checkout/actions", () => ({
-  submitOrder: (...args: unknown[]) => submitOrderMock(...args),
-}));
+vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+  if (String(url).includes("/api/orders")) {
+    return Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve(submitOrderMock(JSON.parse(String(init?.body ?? "{}")))),
+    } as Response);
+  }
+  return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+});
 
 const { CheckoutClient } = await import("@/components/CheckoutClient");
 
@@ -56,6 +65,8 @@ async function fillRequiredFields() {
 
 beforeEach(() => {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(CART_ITEMS));
+  // افتراضياً: الحفظ ينجح بسرعة.
+  submitOrderMock.mockReturnValue({ ok: true, publicReference: "TF-REF", orderNumber: "TF-2026-0001" });
 });
 
 afterEach(() => {
@@ -134,4 +145,73 @@ describe("CheckoutClient — Meta Pixel: InitiateCheckout مرة واحدة، Pu
     // استقرار العدد عند 1 رغم عدة إعادات رندر لاحقة).
     expect(trackPurchaseMock).toHaveBeenCalledTimes(1);
   });
+});
+
+/**
+ * العطل الذي تحرسه هذه المجموعة: الزبون كان يُحبس خلف قاعدة البيانات.
+ * الكود القديم ينتظر الحفظ كاملاً (3 محاولات بفواصل) قبل التحويل إلى
+ * واتساب — أي نحو 27 ثانية في أسوأ حالة على قاعدة بطيئة. المطلوب الآن أن
+ * يخرج الزبون دائماً وبسرعة، وألّا تضيع طلبيته مهما فعلت القاعدة.
+ */
+describe("CheckoutClient — الخروج إلى واتساب لا يرتهن بقاعدة البيانات", () => {
+  // URLSearchParams يرمّز الفراغ "+" لا "%20"، فنُرجعه قبل أي مقارنة نصّية.
+  const hrefOf = () =>
+    decodeURIComponent(
+      (screen.getByRole("link", { name: "فتح واتساب الآن" }) as HTMLAnchorElement).href
+    ).replace(/\+/g, " ");
+
+  async function submitAndWait() {
+    renderCheckout();
+    await screen.findByLabelText(/الاسم الكامل/);
+    await fillRequiredFields();
+    fireEvent.submit(screen.getByRole("button", { name: /إرسال الطلب/ }).closest("form")!);
+    await screen.findByText("تم فتح واتساب لإرسال طلبك", undefined, { timeout: 10000 });
+  }
+
+  test("حفظ سريع مؤكَّد: رسالة مختصرة برقم الطلب، وPurchase مرة واحدة", async () => {
+    submitOrderMock.mockReturnValue({
+      ok: true, publicReference: "TF-REF-1", orderNumber: "TF-2026-0044",
+    });
+    await submitAndWait();
+
+    const href = hrefOf();
+    expect(href).toContain("TF-2026-0044");
+    expect(href).not.toContain("TF-TEST-001");
+    expect(trackPurchaseMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("قاعدة بطيئة جداً: الزبون يخرج بنسخة إنقاذ فيها الطلبية، ولا Purchase", async () => {
+    // أبطأ من مهلة التأكيد بكثير — تحاكي 30 ثانية على قاعدة متعثّرة.
+    submitOrderMock.mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve({ ok: true }), 30000))
+    );
+    await submitAndWait();
+
+    const href = hrefOf();
+    expect(href).toContain("TF-TEST-001×2");
+    expect(href).toContain("لم يُؤكَّد حفظها");
+    // لا Purchase على طلب لم يُؤكَّد حفظه — لا شراء وهمي بمجرد ضغطة زر.
+    expect(trackPurchaseMock).not.toHaveBeenCalled();
+  }, 20000);
+
+  test("فشل الحفظ نهائياً: لا صفحة خطأ، ولا تضيع الطلبية، ولا Purchase", async () => {
+    submitOrderMock.mockImplementation(() => {
+      throw new Error("قاعدة البيانات غير متاحة");
+    });
+    await submitAndWait();
+
+    const href = hrefOf();
+    expect(href).toContain("TF-TEST-001×2");
+    expect(href).toContain("أحمد");
+    expect(trackPurchaseMock).not.toHaveBeenCalled();
+    expect(screen.queryByText(/تعذّر|خطأ/)).toBeNull();
+  });
+
+  test("الزبون لا يبقى عالقاً على «جارٍ الإرسال» في أي حالة", async () => {
+    submitOrderMock.mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve({ ok: true }), 30000))
+    );
+    await submitAndWait();
+    expect(screen.queryByText("جارٍ الإرسال…")).toBeNull();
+  }, 20000);
 });

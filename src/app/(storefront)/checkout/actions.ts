@@ -1,9 +1,8 @@
 "use server";
 
 import { headers, cookies } from "next/headers";
-import { createOrder } from "@/lib/orders/createOrder";
-import { revalidateCatalog } from "@/lib/queries/catalogCache";
-import type { CreateOrderResult, CartItemInput, CreateOrderRequestContext } from "@/lib/orders/types";
+import { runWebCheckout } from "@/lib/orders/webCheckout";
+import type { CreateOrderResult, CreateOrderRequestContext } from "@/lib/orders/types";
 
 export type CheckoutState = CreateOrderResult | { ok: null };
 
@@ -31,52 +30,19 @@ export async function submitOrder(
   _prevState: CheckoutState,
   formData: FormData
 ): Promise<CheckoutState> {
-  let items: CartItemInput[] = [];
-  try {
-    const raw = JSON.parse(String(formData.get("cartItems") ?? "[]"));
-    if (!Array.isArray(raw)) throw new Error("cartItems ليست مصفوفة");
-    items = raw.map((entry) => ({
-      productId: Number(entry.productId),
-      variantId: entry.variantId === null || entry.variantId === undefined
-        ? null
-        : Number(entry.variantId),
-      quantity: Number(entry.quantity),
-    }));
-  } catch (error) {
-    console.error("submitOrder: تعذّر قراءة محتوى السلة", error);
-    return {
-      ok: false,
-      errors: [
-        {
-          field: "items",
-          message: "تعذّر قراءة محتوى السلة. الرجاء إعادة تحميل الصفحة والمحاولة مرة أخرى.",
-        },
-      ],
-    };
-  }
-
-  const result = await createOrder({
-    items,
-    customer: {
-      fullName: String(formData.get("fullName") ?? ""),
-      phone: String(formData.get("phone") ?? ""),
-      city: String(formData.get("city") ?? ""),
-      address: String(formData.get("address") ?? ""),
-      notes: String(formData.get("notes") ?? "").trim() || null,
+  // المنطق كله في runWebCheckout، يشاركه مسار /api/orders الذي يستعمله
+  // المتصفح فعلياً (يقبل keepalive فيبقى حياً بعد مغادرة الزبون). تبقى هذه
+  // الدالة لأن اختبارات دورة الطلب تدخل من هنا.
+  return runWebCheckout(
+    {
+      cartItems: formData.get("cartItems"),
+      fullName: formData.get("fullName"),
+      phone: formData.get("phone"),
+      city: formData.get("city"),
+      address: formData.get("address"),
+      notes: formData.get("notes"),
+      idempotencyKey: formData.get("idempotencyKey"),
     },
-    idempotencyKey: String(formData.get("idempotencyKey") ?? ""),
-    requestContext: await readRequestContext(),
-  });
-
-  // كل طلب ناجح يُنقص المخزون فعلياً (createOrder يُحدِّث stock_quantity داخل
-  // معاملة). نُبطل ذاكرة الكتالوج فوراً حتى يرى الزبن التالي الكمية الصحيحة
-  // بدل كمية مُخزَّنة قديمة. ملاحظة: هذا يحسّن الدقة المعروضة فقط ولا يُعتمد
-  // عليه لمنع البيع الزائد — الحماية الحقيقية شرط "stock_quantity >= quantity"
-  // داخل UPDATE نفسه في createOrder، وهو يرفض أي طلب يتجاوز المتوفر مهما كان
-  // ما عُرض على الزبون.
-  if (result.ok) {
-    revalidateCatalog();
-  }
-
-  return result;
+    await readRequestContext()
+  );
 }

@@ -1,4 +1,4 @@
-import { updateTag } from "next/cache";
+import { revalidateTag, updateTag } from "next/cache";
 
 /**
  * وسم واحد لكل ما يقرأه الزبون من الكتالوج (تصنيفات، منتجات، صور، متغيّرات،
@@ -30,12 +30,23 @@ export const CATALOG_REVALIDATE_SECONDS = 60;
  *   - updateTag يُبطل الذاكرة فوراً، فأول طلب بعده ينتظر البيانات الطازجة
  *     (وهو سلوك read-your-own-writes الذي يوثّقه Next.js لهذه الحالة
  *     بالضبط).
- * ملاحظة: updateTag لا يعمل إلا داخل Server Actions — وكل مواضع الاستدعاء
- * هنا ملفات "use server" فعلاً. كما أنّ الصيغة أحادية الوسيط من
- * revalidateTag صارت مهجورة (deprecated) في Next.js 16.
+ * ملاحظة: updateTag لا يعمل إلا داخل Server Actions ويرمي خارجها. صار
+ * لإنشاء الطلب مستدعٍ ثانٍ ليس Server Action — مسار /api/orders الذي
+ * يستعمله المتصفح بـkeepalive لينجو الحفظ من مغادرة الصفحة إلى واتساب.
+ * هناك كان updateTag يرمي **بعد** أن يُنشأ الطلب فعلاً، فيرجع المسار 500
+ * على طلب ناجح، فتظنّ الواجهة أن الحفظ فشل وترسل نسخة إنقاذ بلا داعٍ.
+ *
+ * لذلك: updateTag حيث يعمل (لوحة الإدارة، حيث read-your-own-writes مطلوب
+ * فعلاً)، وrevalidateTag حيث لا يعمل. مسار الزبون لا يحتاج قراءة فورية
+ * لكتابته — يكفيه أن يرى الزائر التالي المخزون محدَّثاً.
+ * كما أنّ الصيغة أحادية الوسيط من revalidateTag صارت مهجورة في Next.js 16.
  */
 export function revalidateCatalog(): void {
-  updateTag(CATALOG_TAG);
+  try {
+    updateTag(CATALOG_TAG);
+  } catch {
+    revalidateTag(CATALOG_TAG, "max");
+  }
 }
 
 /**

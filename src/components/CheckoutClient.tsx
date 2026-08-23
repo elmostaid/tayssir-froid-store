@@ -6,66 +6,30 @@ import { useCart } from "@/components/CartProvider";
 import { formatMad } from "@/lib/format";
 import { cartItemKey } from "@/lib/cart/cartMath";
 import { isValidMoroccanPhone } from "@/lib/phone";
-import { buildOrderWhatsAppMessage, buildWhatsAppLink } from "@/lib/whatsapp";
-import { submitOrder, type CheckoutState } from "@/app/(storefront)/checkout/actions";
+import { buildWhatsAppLink } from "@/lib/whatsapp";
+import {
+  buildConfirmedOrderMessage,
+  buildRescueOrderMessage,
+  orderReferenceFromKey,
+} from "@/lib/orders/orderMessage";
+import type { CheckoutState } from "@/app/(storefront)/checkout/actions";
 import { trackInitiateCheckout, trackPurchase } from "@/lib/pixel/fbq";
 import { trackAnalyticsEvent } from "@/lib/analytics/track";
 
-const SAVE_ORDER_MAX_ATTEMPTS = 3;
-const SAVE_ORDER_RETRY_DELAYS_MS = [800, 2000];
+/**
+ * أقصى ما ننتظره تأكيد حفظ الطلب قبل أن نخرج بالزبون إلى واتساب.
+ *
+ * كان الكود ينتظر الحفظ كاملاً (3 محاولات بفواصل 800ms و2000ms) قبل
+ * التحويل. مع connect_timeout=5s وstatement_timeout=8s فـdb.ts، أسوأ حالة
+ * تُبقي الزبون أمام «جارٍ الإرسال…» نحو 27 ثانية — وقاعدة Production تُخطئ
+ * فعلاً بـCONNECT_TIMEOUT تحت الحِمل. الآن الحفظ يبدأ ولا نرتبط بمصيره:
+ * إن تأكّد داخل هذه المهلة أرسلنا رسالة مختصرة برقم الطلب، وإلا خرجنا
+ * فوراً برسالة تحمل الطلبية نفسها. الحفظ يُكمل في الخلفية بفضل keepalive.
+ */
+const SAVE_CONFIRM_TIMEOUT_MS = 2500;
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-// يعيد المحاولة فقط على فشل تقني عام (مشكلة اتصال بقاعدة البيانات مثلاً) —
-// وليس على أخطاء تحقق/منطق (سعر خاطئ، مخزون غير كافٍ، حد أدنى...) التي لن
-// تتغيّر نتيجتها بإعادة المحاولة بنفس البيانات. idempotencyKey الثابتة عبر
-// المحاولات تمنع أي طلب مكرر حتى لو نجحت محاولة سابقة قبل وصول جوابها.
-// إن فشلت كل المحاولات، نُسجّل خطأً واضحاً فـlogs الخادم بدل إخفاء المشكلة
-// بالكامل — هذا يبقى العلامة الوحيدة على أن طلباً وصل عبر واتساب دون أن
-// يُسجَّل بلوحة الإدارة، إلى أن يُصلَح سبب الفشل.
-// نفس منطق إعادة المحاولة بالضبط (بلا أي تعديل) — الإضافة الوحيدة هنا هي
-// إرجاع نتيجة submitOrder بدل تجاهلها، ليقدر handleSubmit وحده أن يقرر
-// إطلاق Purchase (Meta Pixel) فقط عند نجاح حقيقي مؤكَّد من قاعدة البيانات
-// (result.ok === true)، لا بمجرد الضغط على الزر. لا تأثير على قرار
-// إعادة المحاولة نفسه، ولا على مسار واتساب، ولا على أي منطق طلب/مخزون.
-async function saveOrderWithRetry(formData: FormData): Promise<CheckoutState | null> {
-  let lastFailure: unknown = null;
-  let lastResult: CheckoutState | null = null;
-
-  for (let attempt = 1; attempt <= SAVE_ORDER_MAX_ATTEMPTS; attempt++) {
-    try {
-      const result = await submitOrder({ ok: null }, formData);
-      if (result.ok !== false) {
-        return result;
-      }
-      lastResult = result;
-      const isGenericFailure = result.errors.some((err) => err.field === "general");
-      if (!isGenericFailure) {
-        console.error(
-          "submitOrder (خلفية، لا تؤثر على واتساب): فشل تحقق/منطق غير قابل لإعادة المحاولة",
-          result.errors
-        );
-        return result;
-      }
-      lastFailure = result.errors;
-    } catch (err) {
-      lastFailure = err;
-    }
-
-    if (attempt < SAVE_ORDER_MAX_ATTEMPTS) {
-      await delay(SAVE_ORDER_RETRY_DELAYS_MS[attempt - 1]);
-    }
-  }
-
-  console.error(
-    `submitOrder (خلفية): فشل حفظ الطلب نهائياً بعد ${SAVE_ORDER_MAX_ATTEMPTS} محاولات — ` +
-      "الطلب وصل عبر واتساب لكنه لم يُسجَّل في لوحة الإدارة، يلزم تسجيله يدوياً وفحص سبب الفشل",
-    lastFailure
-  );
-  return lastResult;
-}
+/** علامة "انتهت المهلة" — تميّزها عن جواب فشل حقيقي من الخادم. */
+const TIMED_OUT = Symbol("timed-out");
 
 // إتمام الطلب يفتح رسالة واتساب جاهزة بمعلومات الزبون والمنتجات مباشرة —
 // هذا هو المسار الذي يراه الزبون فعلياً ولا يتغيّر أبداً بنجاح الحفظ أو
@@ -115,16 +79,24 @@ export function CheckoutClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHydrated, items.length]);
 
+  // رابط احتياطي مسقوف الطول: يظهر في شاشة "تم الإرسال" وحين يكون استقبال
+  // الطلبات موقوفاً. كان يستعمل السرد الكامل، فيبلغ عشرات الكيلوبايتات في
+  // السلات الكبيرة — وهو نفس الرابط الذي كان يفشل فتحه.
+  const [sentHref, setSentHref] = useState<string | null>(null);
   const whatsappHref = useMemo(() => {
     if (items.length === 0) return null;
-    const message = buildOrderWhatsAppMessage({
-      storeName,
-      customer: { fullName, phone, city, address, notes },
-      items,
-      subtotal,
-    });
-    return buildWhatsAppLink(whatsappNumber, message);
-  }, [storeName, whatsappNumber, fullName, phone, city, address, notes, items, subtotal]);
+    return buildWhatsAppLink(
+      whatsappNumber,
+      buildRescueOrderMessage({
+        storeName,
+        customer: { fullName, phone, city, address, notes },
+        reference: orderReferenceFromKey(idempotencyKey),
+        items,
+        subtotal,
+        whatsappNumber,
+      })
+    );
+  }, [storeName, whatsappNumber, fullName, phone, city, address, notes, items, subtotal, idempotencyKey]);
 
   if (!isHydrated) {
     return (
@@ -158,9 +130,9 @@ export function CheckoutClient({
           إذا لم يفتح واتساب تلقائياً، اضغط على الزر أدناه لإرسال الطلب. سنتواصل
           معكم لتأكيد الطلب والمجموع النهائي شامل التوصيل.
         </p>
-        {whatsappHref && (
+        {(sentHref ?? whatsappHref) && (
           <a
-            href={whatsappHref}
+            href={sentHref ?? whatsappHref ?? undefined}
             target="_blank"
             rel="noopener noreferrer"
             className="mt-4 inline-block rounded-full bg-brand-orange px-5 py-2.5 text-sm font-semibold text-white"
@@ -196,74 +168,114 @@ export function CheckoutClient({
       return;
     }
 
-    const message = buildOrderWhatsAppMessage({
-      storeName,
-      customer: { fullName, phone, city, address, notes },
-      items,
-      subtotal,
-    });
-    const link = buildWhatsAppLink(whatsappNumber, message);
-
-    // محاولة حفظ الطلب فنظام الطلبات الحقيقي (رقم طلب + بون تحضير) بأفضل
-    // مجهود، قبل التوجه لواتساب — بانتظار انتهائها (نجحت أو فشلت) لضمان
-    // أكبر فرصة لإتمام الحفظ قبل أن يغادر المتصفح الصفحة، دون أن يرى الزبون
-    // أي أثر لنجاحها أو فشلها. idempotencyKey ثابتة عبر كل المحاولات، فحتى
-    // لو نجحت محاولة سابقة قبل أن يصلنا الجواب (خطأ شبكة مثلاً)، لن يتكرر
-    // الطلب أبداً — نفس الطلب فقط يُعاد إرجاعه.
     setIsSubmitting(true);
-    const formData = new FormData();
-    formData.set(
-      "cartItems",
-      JSON.stringify(
-        items.map((item) => ({
-          productId: item.productId,
-          variantId: item.variantId,
-          quantity: item.quantity,
-        }))
-      )
+
+    const customer = { fullName, phone, city, address, notes };
+    const reference = orderReferenceFromKey(idempotencyKey);
+
+    // رابط جاهز قبل أي اتصال بالخادم: يحمل الطلبية نفسها بصيغة مضغوطة. لو
+    // انهار كل ما بعده، الزبون يخرج بهذا ولا تضيع طلبيته.
+    let link = buildWhatsAppLink(
+      whatsappNumber,
+      buildRescueOrderMessage({ storeName, customer, reference, items, subtotal, whatsappNumber })
     );
-    formData.set("fullName", fullName);
-    formData.set("phone", phone);
-    formData.set("city", city);
-    formData.set("address", address);
-    formData.set("notes", notes);
-    formData.set("idempotencyKey", idempotencyKey);
 
-    const saveResult = await saveOrderWithRetry(formData);
+    try {
+      // نبدأ الحفظ ولا نُعلّق مصير الزبون عليه. keepalive هو المهمّ هنا: مع
+      // Server Action كان الطلب يُقطع لحظة مغادرة الصفحة إلى واتساب فيضيع؛
+      // بهذا يتكفّل المتصفح بإتمامه بعد اختفاء الصفحة.
+      const savePromise = fetch("/api/orders", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        keepalive: true,
+        body: JSON.stringify({
+          cartItems: items.map((item) => ({
+            productId: item.productId,
+            variantId: item.variantId,
+            quantity: item.quantity,
+          })),
+          fullName,
+          phone,
+          city,
+          address,
+          notes,
+          idempotencyKey,
+        }),
+      })
+        .then((response) => (response.ok ? response.json() : null))
+        .catch(() => null);
 
-    // Purchase: فقط بعد نجاح حقيقي مؤكَّد من قاعدة البيانات (createOrder
-    // أرجعت ok:true فعلاً)، وليس بمجرد الضغط على "إرسال الطلب" — طلب فشل
-    // حفظه (مشكلة اتصال مثلاً) لا يُطلِق Purchase أبداً، رغم أن رسالة
-    // واتساب تُرسَل فكلتا الحالتين (سلوك واتساب بلا أي تغيير). event_id هو
-    // idempotencyKey نفسه (ثابت عبر كل محاولات إعادة الحفظ لنفس الطلب)،
-    // ليُستعمَل لاحقاً كـevent_id لنفس الحدث عبر Conversions API فـ
-    // deduplication. الـref يمنع أي إطلاق مزدوج حتى لو استُدعيت handleSubmit
-    // مرتين (نقر مزدوج سريع قبل تعطيل الزر).
-    if (saveResult?.ok === true && !hasTrackedPurchase.current) {
-      hasTrackedPurchase.current = true;
-      trackPurchase({
-        items: items.map((item) => ({ sku: item.sku, quantity: item.quantity, price: item.unitPrice })),
-        value: subtotal,
-        eventId: idempotencyKey,
-      });
-      // القياس الداخلي للشراء. عمداً هنا وليس داخل createOrder: مسار إنشاء
-      // الطلب لا يُلمس في هذه المرحلة إطلاقاً. immediate: true لأن السطر
-      // التالي بعد قليل ينقل المتصفح إلى واتساب — sendBeacon تُرسَل فوراً
-      // ويتكفّل المتصفح بإتمامها بعد مغادرة الصفحة.
-      // publicReference ليس بيانات شخصية؛ الخادم يستعمله للبحث عن رقم الطلب
-      // ثم يرميه، ولا يُخزَّن في جدول القياس.
-      trackAnalyticsEvent(
-        "purchase",
-        {
-          orderRef: saveResult.publicReference,
-          orderValue: subtotal,
-          cartValue: subtotal,
-          quantity: items.reduce((sum, item) => sum + item.quantity, 0),
-        },
-        { immediate: true }
-      );
+      const outcome = await Promise.race([
+        savePromise,
+        new Promise<typeof TIMED_OUT>((resolve) =>
+          window.setTimeout(() => resolve(TIMED_OUT), SAVE_CONFIRM_TIMEOUT_MS)
+        ),
+      ]);
+
+      const confirmed =
+        outcome !== TIMED_OUT && outcome && (outcome as CheckoutState).ok === true
+          ? (outcome as Extract<CheckoutState, { ok: true }>)
+          : null;
+
+      if (confirmed) {
+        // الطلب محفوظ ومعروف برقمه — لا داعي لسرد المنتجات على واتساب.
+        link = buildWhatsAppLink(
+          whatsappNumber,
+          buildConfirmedOrderMessage({
+            storeName,
+            customer,
+            reference,
+            orderNumber: confirmed.orderNumber,
+            items,
+            subtotal,
+          })
+        );
+
+        // Purchase: على طلب محفوظ فعلاً فقط، لا على مجرد ضغطة زر — نفس
+        // القاعدة السابقة بلا تغيير. event_id يبقى idempotencyKey لأجل
+        // deduplication مع Conversions API.
+        if (!hasTrackedPurchase.current) {
+          hasTrackedPurchase.current = true;
+          try {
+            trackPurchase({
+              items: items.map((item) => ({
+                sku: item.sku,
+                quantity: item.quantity,
+                price: item.unitPrice,
+              })),
+              value: subtotal,
+              eventId: idempotencyKey,
+            });
+          } catch (err) {
+            console.error("trackPurchase فشل — لا يؤثّر على الطلب", err);
+          }
+          try {
+            trackAnalyticsEvent(
+              "purchase",
+              {
+                orderRef: confirmed.publicReference,
+                orderValue: subtotal,
+                cartValue: subtotal,
+                quantity: items.reduce((sum, item) => sum + item.quantity, 0),
+              },
+              { immediate: true }
+            );
+          } catch (err) {
+            console.error("قياس purchase فشل — لا يؤثّر على الطلب", err);
+          }
+        }
+      } else {
+        console.error(
+          `الطلب ${reference}: لم يتأكّد الحفظ قبل الخروج إلى واتساب — ` +
+            "أُرسلت نسخة إنقاذ بمحتوى الطلبية، والحفظ يُكمل في الخلفية."
+        );
+      }
+    } catch (err) {
+      // لا شيء هنا يُبرِّر حبس الزبون أو إظهار صفحة خطأ له.
+      console.error("خطأ غير متوقّع أثناء إرسال الطلب — نخرج بنسخة الإنقاذ", err);
     }
 
+    setSentHref(link);
     clearCart();
     setSent(true);
     window.location.href = link;

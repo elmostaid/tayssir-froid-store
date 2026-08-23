@@ -256,7 +256,13 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       });
     }
 
-    return { ok: true, publicReference: result.publicReference };
+    return {
+      ok: true,
+      publicReference: result.publicReference,
+      // رقم الطلب المقروء — تحتاجه رسالة واتساب لتُحيل الفريق إلى اللوحة
+      // بدل سرد المنتجات، فلم يعد يكفي أن يبقى داخل المعاملة.
+      orderNumber: result.orderNumber,
+    };
   } catch (error) {
     console.error("createOrder: خطأ غير متوقع أثناء إنشاء الطلب", error);
     return GENERIC_ERROR;
