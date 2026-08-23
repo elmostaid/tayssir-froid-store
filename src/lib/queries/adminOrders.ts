@@ -44,6 +44,9 @@ export type AdminOrderItem = {
   quantity: number;
   lineTotal: string;
   unitLabel: string | null;
+  /** reserved = حُجز مخزونه · out_of_stock · invalid */
+  lineStatus: string;
+  lineStatusReason: string | null;
 };
 
 export type AdminOrderStatusHistoryEntry = {
@@ -191,6 +194,7 @@ export async function getDashboardOrderStats(): Promise<DashboardOrderStats> {
       sales_7d: string;
       sales_month: string;
       count_new: number;
+      count_needs_review: number;
       count_confirmed: number;
       count_preparing: number;
       count_shipped: number;
@@ -227,6 +231,7 @@ export async function getDashboardOrderStats(): Promise<DashboardOrderStats> {
     salesThisMonthMad: row?.sales_month ?? "0",
     countsByStatus: {
       new: row?.count_new ?? 0,
+      needs_review: row?.count_needs_review ?? 0,
       confirmed: row?.count_confirmed ?? 0,
       preparing: row?.count_preparing ?? 0,
       shipped: row?.count_shipped ?? 0,
@@ -294,6 +299,8 @@ export async function getAdminOrderItems(orderId: number): Promise<AdminOrderIte
       product_id: number | null;
       variant_id: number | null;
       product_name_snapshot: string;
+      line_status: string;
+      line_status_reason: string | null;
       sku_snapshot: string;
       unit_price_snapshot: string;
       quantity: number;
@@ -302,7 +309,8 @@ export async function getAdminOrderItems(orderId: number): Promise<AdminOrderIte
     }[]
   >`
     select oi.id, oi.product_id, oi.variant_id, oi.product_name_snapshot, oi.sku_snapshot,
-      oi.unit_price_snapshot, oi.quantity, oi.line_total, p.unit_label
+      oi.unit_price_snapshot, oi.quantity, oi.line_total, p.unit_label,
+      oi.line_status, oi.line_status_reason
     from public.order_items oi
     left join public.products p on p.id = oi.product_id
     where oi.order_id = ${orderId}
@@ -319,6 +327,8 @@ export async function getAdminOrderItems(orderId: number): Promise<AdminOrderIte
     quantity: r.quantity,
     lineTotal: r.line_total,
     unitLabel: r.unit_label,
+    lineStatus: r.line_status,
+    lineStatusReason: r.line_status_reason,
   }));
 }
 

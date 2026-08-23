@@ -48,6 +48,8 @@ const fixtureItems: AdminOrderItem[] = [
     quantity: 3,
     lineTotal: "240.00",
     unitLabel: "قطعة",
+    lineStatus: "reserved",
+    lineStatusReason: null,
   },
 ];
 

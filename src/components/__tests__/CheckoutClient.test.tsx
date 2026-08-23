@@ -176,7 +176,8 @@ describe("CheckoutClient — الخروج إلى واتساب لا يرتهن ب
 
     const href = hrefOf();
     expect(href).toContain("TF-2026-0044");
-    expect(href).not.toContain("TF-TEST-001");
+    // البون مقروء بالاسم في الحالتين، لا أكواد وحدها.
+    expect(href).toContain("منتج اختبار");
     expect(trackPurchaseMock).toHaveBeenCalledTimes(1);
   });
 

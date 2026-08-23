@@ -5,7 +5,9 @@ import { isRateLimited } from "@/lib/orders/rateLimit";
 import {
   StockConflictError,
   sumLines,
-  writeNewOrderLines,
+  writeWebsiteOrderLines,
+  type OrderLine,
+  type RejectedLine,
 } from "@/lib/orders/orderLines";
 import { resolveOrderLines, WEBSITE_LINE_RULES } from "@/lib/orders/resolveLines";
 import { notifyNewOrder } from "@/lib/notifications/notifyNewOrder";
@@ -113,7 +115,11 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
 
     // نفس المُحلِّل الذي يستعمله الطلب اليدوي وتعديل الطلب، بقواعد الموقع:
     // لا ثمن خاص، والكمية الدنيا ومضاعفاتها مُلزِمة، والتوفّر مُلزِم.
-    const { lines: lineItems, errors: itemErrors } = await resolveOrderLines(
+    const {
+      lines: lineItems,
+      errors: itemErrors,
+      rejected: preRejected,
+    } = await resolveOrderLines(
       input.items.map((item) => ({
         productId: item.productId,
         variantId: item.variantId,
@@ -126,6 +132,16 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       return { ok: false, errors: itemErrors };
     }
 
+    // كل السطور مرفوضة: لا معنى لطلب فارغ.
+    if (lineItems.length === 0) {
+      return {
+        ok: false,
+        errors: preRejected.length > 0
+          ? preRejected.map((r) => ({ field: `item:${r.line.productId}:base`, message: r.reason }))
+          : [{ field: "items", message: "السلة فارغة." }],
+      };
+    }
+
     const subtotal = sumLines(lineItems);
 
     // حُذف حاجز الحد الأدنى للطلب عمداً: كان يمنع زبوناً اختار فعلاً ما
@@ -136,6 +152,8 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     const normalizedPhone = normalizePhone(input.customer.phone);
 
     let stockConflict: CreateOrderFieldError | null = null;
+    let outcome: { reserved: OrderLine[]; rejected: RejectedLine[] } | null = null;
+    const readOutcome = () => outcome as { reserved: OrderLine[]; rejected: RejectedLine[] } | null;
 
     const result = await sql.begin(async (trx) => {
       const inserted = await trx<{ id: number; public_reference: string; order_number: string }[]>`
@@ -154,13 +172,23 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       if (inserted.length > 0) {
         const orderId = inserted[0].id;
 
-        // نفس المنطق بالضبط الذي يستعمله الطلب اليدوي وتعديل الطلب —
-        // حجز ذرّي بشرط داخل UPDATE، ثم السطر، ثم حركة المخزون.
-        await writeNewOrderLines(trx, orderId, lineItems);
+        // الطلب يُحفظ كما اختاره الزبون كاملاً: ما تَوفّر يُحجز مخزونه،
+        // وما لم يتوفّر يُكتب بحالته وسببه بلا خصم. سطر واحد ناقص لم يعد
+        // يُسقط 154 سطراً كما كان يحدث.
+        const written = await writeWebsiteOrderLines(trx, orderId, lineItems, preRejected);
+        outcome = written;
+
+        const note =
+          written.rejected.length > 0
+            ? `طلب جديد من الموقع — ${written.rejected.length} منتجاً يحتاج مراجعة مخزون`
+            : "طلب جديد من الموقع";
+        if (written.rejected.length > 0) {
+          await trx`update public.orders set status = 'needs_review' where id = ${orderId}`;
+        }
 
         await trx`
           insert into public.order_status_history (order_id, status, note)
-          values (${orderId}, 'new', 'طلب جديد من الموقع')
+          values (${orderId}, ${written.rejected.length > 0 ? "needs_review" : "new"}, ${note})
         `;
 
         return {
@@ -206,7 +234,10 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       return GENERIC_ERROR;
     }
 
-    if (result.isNew) {
+    // طلب فيه سطر يحتاج مراجعة ليس بيعاً مكتملاً: لا Purchase له.
+    const needsReview = (readOutcome()?.rejected.length ?? 0) > 0;
+
+    if (result.isNew && !needsReview) {
       const siteUrl = getSiteUrl();
       const base = siteUrl ?? "";
       // إشعار "أفضل مجهود": لا ننتظره (fire-and-forget) ولا يمكن أبداً أن
@@ -258,6 +289,13 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
 
     return {
       ok: true,
+      needsReview,
+      rejectedLines: (readOutcome()?.rejected ?? []).map((r) => ({
+        name: r.line.nameSnapshot,
+        sku: r.line.skuSnapshot,
+        quantity: r.line.quantity,
+        reason: r.reason,
+      })),
       publicReference: result.publicReference,
       // رقم الطلب المقروء — تحتاجه رسالة واتساب لتُحيل الفريق إلى اللوحة
       // بدل سرد المنتجات، فلم يعد يكفي أن يبقى داخل المعاملة.

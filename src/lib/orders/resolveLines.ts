@@ -1,6 +1,6 @@
 import { sql } from "@/lib/db";
 import { isValidQuantity } from "@/lib/cart/cartMath";
-import type { OrderLine } from "@/lib/orders/orderLines";
+import type { OrderLine, RejectedLine } from "@/lib/orders/orderLines";
 import type { CreateOrderFieldError } from "@/lib/orders/types";
 import type { CatalogProduct, CatalogProductVariant } from "@/lib/types";
 
@@ -39,12 +39,20 @@ export type ResolveLinesOptions = {
    * الذرّي في orderLines.reserveStock — فلا يصير سالباً أبداً.
    */
   enforceAvailability: boolean;
+  /**
+   * بدل إسقاط الطلب كلِّه عند أوّل سطر مرفوض، نُرجع السطر بحالته وسببه
+   * فيُحفظ داخل الطلب. طلب الموقع وحده يحتاج هذا: الزبون يكون قد غادر إلى
+   * واتساب، فرفضٌ صامت يعني ضياع الطلبية كلها — وهو ما وقع فعلاً على سلة
+   * من 154 منتجاً بسبب منتج واحد نفد.
+   */
+  rejectLinesInsteadOfFailing?: boolean;
 };
 
 export const WEBSITE_LINE_RULES: ResolveLinesOptions = {
   allowPriceOverride: false,
   enforceQuantityRules: true,
   enforceAvailability: true,
+  rejectLinesInsteadOfFailing: true,
 };
 
 export const MANUAL_LINE_RULES: ResolveLinesOptions = {
@@ -56,6 +64,8 @@ export const MANUAL_LINE_RULES: ResolveLinesOptions = {
 export type ResolvedLines = {
   lines: OrderLine[];
   errors: CreateOrderFieldError[];
+  /** سطور اختارها الزبون ورُفضت، تُحفظ في الطلب بحالتها بدل أن تختفي. */
+  rejected: RejectedLine[];
 };
 
 export async function resolveOrderLines(
@@ -96,6 +106,38 @@ export async function resolveOrderLines(
 
   const lines: OrderLine[] = [];
   const errors: CreateOrderFieldError[] = [];
+  const rejected: RejectedLine[] = [];
+
+  /** سطر مرفوض لكنّ بياناته معروفة — يُحفظ في الطلب أو يُرفع كخطأ حسب الوضع. */
+  const reject = (
+    product: CatalogProduct,
+    variantName: string | null,
+    price: number,
+    quantity: number,
+    variantId: number | null,
+    status: "out_of_stock" | "invalid",
+    reason: string,
+    fieldKey: string
+  ) => {
+    if (!options.rejectLinesInsteadOfFailing) {
+      errors.push({ field: fieldKey, message: reason });
+      return;
+    }
+    rejected.push({
+      status,
+      reason,
+      line: {
+        productId: product.id,
+        variantId,
+        nameSnapshot: variantName ? `${product.name_ar} — ${variantName}` : product.name_ar,
+        skuSnapshot: product.sku,
+        unitPrice: price,
+        quantity,
+        lineTotal: price * quantity,
+        purchasePriceSnapshot: null,
+      },
+    });
+  };
 
   for (const item of items) {
     const fieldKey = `item:${item.productId}:${item.variantId ?? "base"}`;
@@ -133,27 +175,23 @@ export async function resolveOrderLines(
 
     if (options.enforceAvailability) {
       if (product.status === "out_of_stock") {
-        errors.push({
-          field: fieldKey,
-          message: `"${product.name_ar}" غير متوفر للطلب حالياً. الرجاء إزالته من السلة.`,
-        });
+        reject(product, variantName, effectivePrice, item.quantity, item.variantId,
+          "out_of_stock", `"${product.name_ar}" غير متوفر للطلب حالياً.`, fieldKey);
         continue;
       }
       if (effectiveStock <= 0) {
-        errors.push({
-          field: fieldKey,
-          message: `"${product.name_ar}" نفدت كميته حالياً. الرجاء إزالته من السلة.`,
-        });
+        reject(product, variantName, effectivePrice, item.quantity, item.variantId,
+          "out_of_stock", `"${product.name_ar}" نفدت كميته حالياً.`, fieldKey);
         continue;
       }
     }
 
     if (options.enforceQuantityRules) {
       if (!isValidQuantity(item.quantity, effectiveMinQty, effectiveIncrement)) {
-        errors.push({
-          field: fieldKey,
-          message: `الكمية المطلوبة من "${product.name_ar}" غير صحيحة (الحد الأدنى ${effectiveMinQty}، بمضاعفات ${effectiveIncrement}).`,
-        });
+        reject(product, variantName, effectivePrice, item.quantity, item.variantId,
+          "invalid",
+          `الكمية المطلوبة من "${product.name_ar}" غير صحيحة (الحد الأدنى ${effectiveMinQty}، بمضاعفات ${effectiveIncrement}).`,
+          fieldKey);
         continue;
       }
     } else if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
@@ -199,5 +237,5 @@ export async function resolveOrderLines(
     });
   }
 
-  return { lines, errors };
+  return { lines, errors, rejected };
 }

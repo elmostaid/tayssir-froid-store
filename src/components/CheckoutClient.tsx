@@ -228,13 +228,16 @@ export function CheckoutClient({
             orderNumber: confirmed.orderNumber,
             items,
             subtotal,
+            whatsappNumber,
+            needsReview: confirmed.needsReview === true,
           })
         );
 
         // Purchase: على طلب محفوظ فعلاً فقط، لا على مجرد ضغطة زر — نفس
         // القاعدة السابقة بلا تغيير. event_id يبقى idempotencyKey لأجل
         // deduplication مع Conversions API.
-        if (!hasTrackedPurchase.current) {
+        // طلب فيه سطر ينتظر مراجعة مخزون ليس بيعاً مكتملاً.
+        if (!hasTrackedPurchase.current && confirmed.needsReview !== true) {
           hasTrackedPurchase.current = true;
           try {
             trackPurchase({

@@ -29,11 +29,11 @@ import { buildWhatsAppLink } from "@/lib/whatsapp";
 /**
  * سقف طول رابط واتساب بالبايت.
  *
- * 3500 ليست رقماً اعتباطياً: تحت كل حدود المتصفحات ووسطاء الروابط المعروفة
- * بهامش واسع (السلة التي تعمل اليوم بلا شكوى تُنتج ~1.6 كيلوبايت)، وتكفي
- * لنحو 40 سطر SKU مضغوط في نسخة الإنقاذ.
+ * 6500 هامش أمان واسع: السلال التي لم تفشل قطّ تُنتج ~1.6 كيلوبايت، بينما
+ * التي أسقطت متصفّح فيسبوك كانت 16-43 كيلوبايت. عند هذا السقف تدخل سلة
+ * الأربعين منتجاً كاملةً بالأسماء، ويظهر من السلال الأكبر نحو خمسين اسماً.
  */
-export const MAX_WHATSAPP_URL_BYTES = 3500;
+export const MAX_WHATSAPP_URL_BYTES = 6500;
 
 const CLOSING_NOTE =
   "(المجموع لا يشمل التوصيل — يُحسب بعد تجهيز الطلب)";
@@ -64,27 +64,6 @@ function customerLines(storeName: string, customer: MessageCustomer, reference: 
   ];
   if (customer.notes.trim()) lines.push(`ملاحظات: ${customer.notes.trim()}`);
   return lines;
-}
-
-/** الطلب محفوظ وله رقم — التفاصيل في اللوحة، فلا نكرّرها هنا. */
-export function buildConfirmedOrderMessage(params: {
-  storeName: string;
-  customer: MessageCustomer;
-  reference: string;
-  orderNumber: string;
-  items: CartItem[];
-  subtotal: number;
-}): string {
-  const { storeName, customer, reference, orderNumber, items, subtotal } = params;
-  const units = items.reduce((sum, item) => sum + item.quantity, 0);
-  return [
-    ...customerLines(storeName, customer, reference),
-    "",
-    `رقم الطلب: ${orderNumber}`,
-    `${items.length} منتجاً (${units} قطعة) — المجموع ${formatMad(subtotal)}`,
-    "التفاصيل الكاملة محفوظة في لوحة الإدارة.",
-    CLOSING_NOTE,
-  ].join("\n");
 }
 
 /**
@@ -123,6 +102,62 @@ function itemLine(item: CartItem, nameMax: number, withSku: boolean): string {
   const full = item.variantName ? `${item.name} — ${item.variantName}` : item.name;
   const name = shortenProductName(full, nameMax);
   return withSku ? `${name} (${item.sku}) × ${item.quantity}` : `${name} × ${item.quantity}`;
+}
+
+/** الطلب محفوظ وله رقم — التفاصيل في اللوحة، فلا نكرّرها هنا. */
+export function buildConfirmedOrderMessage(params: {
+  storeName: string;
+  customer: MessageCustomer;
+  reference: string;
+  orderNumber: string;
+  items: CartItem[];
+  subtotal: number;
+  whatsappNumber: string;
+  /** سطور لم يُحجز مخزونها — الطلب مسجَّل لكنه يحتاج مراجعة قبل التجهيز. */
+  needsReview?: boolean;
+  maxUrlBytes?: number;
+}): string {
+  const { storeName, customer, reference, orderNumber, items, subtotal, whatsappNumber } = params;
+  const budget = params.maxUrlBytes ?? MAX_WHATSAPP_URL_BYTES;
+  const units = items.reduce((sum, item) => sum + item.quantity, 0);
+  const head = customerLines(storeName, customer, reference);
+
+  // المجموع لا يُسمّى نهائياً ما دام سطرٌ ينتظر مراجعة المخزون.
+  const totalLabel = params.needsReview
+    ? `المجموع المطلوب قبل مراجعة المخزون ${formatMad(subtotal)}`
+    : `المجموع ${formatMad(subtotal)}`;
+
+  const compose = (lines: string[], hidden: number) => {
+    const body = [
+      ...head,
+      "",
+      `رقم الطلب: ${orderNumber}`,
+      `${items.length} منتجاً (${units} قطعة)`,
+    ];
+    if (params.needsReview) {
+      body.push("⚠ الطلب تسجّل ويحتاج مراجعة مخزون بعض المنتجات قبل التجهيز.");
+    }
+    body.push(...lines.map((line) => `- ${line}`));
+    if (hidden > 0) {
+      body.push(`+${hidden} منتجات أخرى محفوظة كاملة في الطلب ${orderNumber}`);
+    }
+    body.push("", totalLabel, CLOSING_NOTE);
+    return body.join("\n");
+  };
+
+  const fits = (message: string) =>
+    buildWhatsAppLink(whatsappNumber, message).length <= budget;
+
+  for (const tier of NAME_TIERS) {
+    const message = compose(items.map((i) => itemLine(i, tier.nameMax, tier.withSku)), 0);
+    if (fits(message)) return message;
+  }
+  const all = items.map((i) => itemLine(i, OVERFLOW_TIER.nameMax, OVERFLOW_TIER.withSku));
+  for (let shown = all.length - 1; shown >= 1; shown--) {
+    const message = compose(all.slice(0, shown), all.length - shown);
+    if (fits(message)) return message;
+  }
+  return compose([], items.length);
 }
 
 /**

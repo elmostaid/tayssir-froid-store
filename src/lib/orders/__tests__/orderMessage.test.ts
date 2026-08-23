@@ -73,6 +73,7 @@ describe("سقف طول رابط واتساب", () => {
         orderNumber: "TF-2026-0031",
         items,
         subtotal: total(items),
+        whatsappNumber: NUMBER,
       })
     );
     expect(link.length).toBeLessThanOrEqual(MAX_WHATSAPP_URL_BYTES);
@@ -88,6 +89,7 @@ describe("الرسالة المؤكَّدة — الطلب محفوظ", () => {
     orderNumber: "TF-2026-0031",
     items,
     subtotal: total(items),
+    whatsappNumber: NUMBER,
   });
 
   test("تحمل رقم الطلب والمرجع وبيانات الزبون والمجموع", () => {
@@ -97,11 +99,33 @@ describe("الرسالة المؤكَّدة — الطلب محفوظ", () => {
     expect(message).toContain("حي المحاميد زنقة 12 رقم 45");
     expect(message).toContain("2.100,00 درهم");
     expect(message).toContain("3 منتجاً (6 قطعة)");
-    expect(message).toContain("لوحة الإدارة");
   });
 
-  test("لا تسرد المنتجات — التفاصيل في اللوحة", () => {
-    expect(message).not.toContain("TF-AC-001");
+  // البون يجب أن يبقى مفهوماً للموظّف حتى حين يكون الطلب محفوظاً.
+  test("تسرد المنتجات بأسمائها وكمياتها", () => {
+    expect(message).toMatch(/غاز تبريد R410 للمكيفات المنزلية سبليت.*× 2/);
+  });
+
+  test("طلب يحتاج مراجعة: تنبيه صريح ومجموع غير نهائي", () => {
+    const items = cart(3);
+    const msg = buildConfirmedOrderMessage({
+      storeName: "Tayssir Froid", customer: CUSTOMER, reference: "W-3F9A2C81",
+      orderNumber: "TF-2026-0031", items, subtotal: total(items),
+      whatsappNumber: NUMBER, needsReview: true,
+    });
+    expect(msg).toContain("يحتاج مراجعة مخزون");
+    expect(msg).toContain("المجموع المطلوب قبل مراجعة المخزون");
+    expect(msg).not.toMatch(/^المجموع [\d.]/m);
+  });
+
+  test("سلة ضخمة: الباقي يُحال إلى رقم الطلب لا إلى أكواد", () => {
+    const items = cart(400);
+    const msg = buildConfirmedOrderMessage({
+      storeName: "Tayssir Froid", customer: CUSTOMER, reference: "W-3F9A2C81",
+      orderNumber: "TF-2026-0031", items, subtotal: total(items), whatsappNumber: NUMBER,
+    });
+    expect(msg).toMatch(/\+\d+ منتجات أخرى محفوظة كاملة في الطلب TF-2026-0031/);
+    expect(buildWhatsAppLink(NUMBER, msg).length).toBeLessThanOrEqual(MAX_WHATSAPP_URL_BYTES);
   });
 });
 

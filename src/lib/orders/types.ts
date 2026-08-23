@@ -37,6 +37,20 @@ export type CreateOrderFieldError = {
   message: string;
 };
 
+export type RejectedLineSummary = {
+  name: string;
+  sku: string;
+  quantity: number;
+  reason: string;
+};
+
 export type CreateOrderResult =
-  | { ok: true; publicReference: string; orderNumber: string }
+  | {
+      ok: true;
+      publicReference: string;
+      orderNumber: string;
+      /** فيه سطر أو أكثر لم يُحجز مخزونه — طلب مسجَّل لا بيع مكتمل. */
+      needsReview: boolean;
+      rejectedLines: RejectedLineSummary[];
+    }
   | { ok: false; errors: CreateOrderFieldError[] };
