@@ -208,11 +208,20 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
         limit 1
       `;
       if (!existing[0]) return null;
+
+      // حالة المراجعة تُقرأ من الطلب المحفوظ نفسه، لا من هذه المحاولة.
+      // بدونها كانت إعادة الإرسال بنفس المفتاح تُرجع needsReview=false على
+      // طلب جزئي، فيُطلق العميل Purchase على بيع لم يكتمل.
+      const [{ pending }] = await trx<{ pending: number }[]>`
+        select count(*)::int as pending from public.order_items
+        where order_id = ${existing[0].id} and line_status <> 'reserved'
+      `;
       return {
         id: existing[0].id,
         publicReference: existing[0].public_reference,
         orderNumber: existing[0].order_number,
         isNew: false as const,
+        pendingLines: pending,
       };
     }).catch((error) => {
       if (error instanceof StockConflictError) {
@@ -235,7 +244,8 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     }
 
     // طلب فيه سطر يحتاج مراجعة ليس بيعاً مكتملاً: لا Purchase له.
-    const needsReview = (readOutcome()?.rejected.length ?? 0) > 0;
+    const needsReview =
+      (readOutcome()?.rejected.length ?? 0) > 0 || (result.pendingLines ?? 0) > 0;
 
     if (result.isNew && !needsReview) {
       const siteUrl = getSiteUrl();
