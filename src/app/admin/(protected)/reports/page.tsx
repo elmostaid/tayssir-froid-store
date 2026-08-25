@@ -7,6 +7,8 @@ import {
   getBestSellingProducts,
 } from "@/lib/queries/adminReports";
 import { getDashboardOrderStats } from "@/lib/queries/adminOrders";
+import { getExpensesTotal } from "@/lib/queries/adminExpenses";
+import { expenseCategoryLabel } from "@/lib/expenses/expenseCategories";
 import { formatMad } from "@/lib/format";
 import Link from "next/link";
 import { RANGE_LABELS, RANGE_PRESETS, resolveRange } from "@/lib/analytics/dateRange";
@@ -83,6 +85,24 @@ export default async function AdminReportsPage({
           pendingRevenueMad: 0,
         },
       };
+  // المصاريف بنفس المدى المختار بالضبط (range.fromDay/toDay) — فلا يمكن أن
+  // يعرض الربح الخام أسبوعاً والمصاريف أسبوعاً آخر. وكبقية استعلامات هذه
+  // الصفحة: تعثّرُه لا يُسقط الصفحة كلها.
+  const expensesResult = await getExpensesTotal(range.fromDay, range.toDay).then(
+    (value) => ({ ok: true as const, value }),
+    (error: unknown) => {
+      console.error("adminReports.getExpensesTotal: تعذّر حساب المصاريف", error);
+      return { ok: false as const };
+    }
+  );
+  const expenses = expensesResult.ok
+    ? expensesResult.value
+    : { totalMad: 0, count: 0, byCategory: [] };
+
+  // صافي الربح = الربح الخام − مصاريف التشغيل. لا يدخل هنا ثمن شراء
+  // البضاعة: هو مطروح أصلاً داخل الربح الخام، وطرحُه ثانيةً يخترع خسارة.
+  const netProfitMad = bySource.totals.grossProfitMad - expenses.totalMad;
+
   const websiteRow = bySource.rows.find((row) => row.source === "website");
   const manualRevenue = bySource.rows
     .filter((row) => row.source !== "website")
@@ -160,6 +180,69 @@ export default async function AdminReportsPage({
         <StatCard label="الربح الخام" value={formatMad(bySource.totals.grossProfitMad)} accent />
         <StatCard label="مصاريف التوصيل المحصَّلة" value={formatMad(bySource.totals.deliveryFeesMad)} />
       </div>
+
+      {/* المصاريف وصافي الربح — نفس المدى المختار أعلاه بالضبط. */}
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="rounded-xl border border-neutral-200 bg-white p-4">
+          <p className="text-xs text-neutral-500">مصاريف التشغيل</p>
+          <p className="mt-1 text-xl font-bold text-neutral-800">
+            {formatMad(expenses.totalMad)}
+          </p>
+          {expenses.byCategory.length > 0 ? (
+            <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-neutral-500">
+              {expenses.byCategory.slice(0, 4).map((row) => (
+                <li key={row.category}>
+                  {expenseCategoryLabel(row.category)}:{" "}
+                  <span className="font-semibold tabular-nums">{formatMad(row.totalMad)}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 text-[11px] text-neutral-500">
+              لا مصاريف مسجَّلة في هذا المدى.{" "}
+              <Link href="/admin/expenses" className="font-semibold text-brand-turquoise-dark underline">
+                سجّل مصروفاً
+              </Link>
+            </p>
+          )}
+        </div>
+
+        <div
+          className={`rounded-xl border-2 p-4 ${
+            netProfitMad < 0 ? "border-red-400 bg-red-50" : "border-brand-orange/40 bg-brand-orange-tint"
+          }`}
+        >
+          <p className="text-xs font-semibold text-neutral-600">صافي الربح</p>
+          <p
+            className={`mt-1 text-2xl font-bold tabular-nums ${
+              netProfitMad < 0 ? "text-red-700" : "text-brand-orange"
+            }`}
+          >
+            {formatMad(netProfitMad)}
+          </p>
+          <p className="mt-1 text-[11px] leading-relaxed text-neutral-600">
+            الربح الخام {formatMad(bySource.totals.grossProfitMad)} − مصاريف التشغيل{" "}
+            {formatMad(expenses.totalMad)}
+            {netProfitMad < 0 && (
+              <span className="mt-1 block font-bold text-red-700">
+                المصاريف تجاوزت الربح الخام في هذا المدى.
+              </span>
+            )}
+          </p>
+        </div>
+      </div>
+
+      {!expensesResult.ok && (
+        <p className="mt-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-semibold text-amber-800">
+          تعذّر حساب المصاريف الآن، فصافي الربح أعلاه يساوي الربح الخام مؤقتاً. حدّث الصفحة بعد قليل.
+        </p>
+      )}
+
+      <p className="mt-2 text-[11px] leading-relaxed text-neutral-500">
+        صافي الربح يطرح <span className="font-semibold">مصاريف التشغيل</span> وحدها (إشهار، كراء،
+        نقل، أجور…). ثمن شراء البضاعة ليس منها — هو مخصوم أصلاً داخل الربح الخام، فطرحه ثانيةً
+        يُظهر خسارة لا وجود لها.
+      </p>
 
       {!bySourceResult.ok && (
         <p className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-semibold text-amber-800">

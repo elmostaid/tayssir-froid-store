@@ -8,7 +8,7 @@ import { REPORT_TIME_ZONE } from "@/lib/queries/adminAnalytics";
  * لكل تاريخ على حدة، فيبقى الحساب صحيحاً في رمضان وخارجه بلا أي صيانة.
  */
 
-export const RANGE_PRESETS = ["today", "yesterday", "7d", "30d", "custom"] as const;
+export const RANGE_PRESETS = ["today", "yesterday", "7d", "30d", "month", "custom"] as const;
 export type RangePreset = (typeof RANGE_PRESETS)[number];
 
 export const RANGE_LABELS: Record<RangePreset, string> = {
@@ -16,6 +16,7 @@ export const RANGE_LABELS: Record<RangePreset, string> = {
   yesterday: "أمس",
   "7d": "آخر 7 أيام",
   "30d": "آخر 30 يوم",
+  month: "الشهر الحالي",
   custom: "مدة مخصّصة",
 };
 
@@ -127,6 +128,12 @@ export function resolveRange(
     toDay = fromDay;
   } else if (preset === "30d") {
     fromDay = addDays(today, -29);
+    toDay = today;
+  } else if (preset === "month") {
+    // من أول الشهر المحلي إلى اليوم. نشتقّه من نصّ اليوم نفسه لا من كائن
+    // Date جديد: `today` محسوب أصلاً بتوقيت المغرب، فاشتقاق الشهر منه يبقى
+    // صحيحاً ولو كان الخادم في منطقة أخرى.
+    fromDay = `${today.slice(0, 7)}-01`;
     toDay = today;
   } else {
     fromDay = addDays(today, -6);
