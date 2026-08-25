@@ -14,6 +14,7 @@ import { notifyNewOrder } from "@/lib/notifications/notifyNewOrder";
 import { sendCapiEvent } from "@/lib/pixel/capi";
 import { toInternationalDigits } from "@/lib/phone";
 import { getSiteUrl } from "@/lib/siteUrl";
+import { customerAddressOrNull } from "@/lib/orders/customerAddress";
 import type {
   CreateOrderFieldError,
   CreateOrderInput,
@@ -57,9 +58,9 @@ function validateStructure(input: CreateOrderInput): CreateOrderFieldError[] {
     errors.push({ field: "city", message: "اسم المدينة طويل جداً (100 حرف كحد أقصى)." });
   }
 
-  if (!input.customer.address?.trim()) {
-    errors.push({ field: "address", message: "العنوان إجباري." });
-  } else if (input.customer.address.trim().length > 300) {
+  // العنوان اختياري: يُؤكَّد مكان التسليم في مكالمة التأكيد. الطول وحده
+  // يبقى محروساً، لأنه قيد في القاعدة أيضاً ولا نريد رفضاً من هناك.
+  if (input.customer.address && input.customer.address.trim().length > 300) {
     errors.push({ field: "address", message: "العنوان طويل جداً (300 حرف كحد أقصى)." });
   }
 
@@ -162,7 +163,7 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
           customer_notes, items_subtotal, status, source, idempotency_key
         ) values (
           ${input.customer.fullName.trim()}, ${normalizedPhone}, ${input.customer.city.trim()},
-          ${input.customer.address.trim()}, ${input.customer.notes?.trim() || null},
+          ${customerAddressOrNull(input.customer.address)}, ${input.customer.notes?.trim() || null},
           ${subtotal}, 'new', 'website', ${input.idempotencyKey}
         )
         on conflict (idempotency_key) do nothing

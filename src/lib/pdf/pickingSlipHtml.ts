@@ -1,3 +1,4 @@
+import { displayCustomerAddress } from "@/lib/orders/customerAddress";
 import { escapeHtml } from "@/lib/pdf/htmlFallback";
 import { splitProductNameSnapshot } from "@/lib/orders/productNameSnapshot";
 import { formatMad } from "@/lib/format";
@@ -36,7 +37,7 @@ export function buildPickingSlipBodyHtml(order: AdminOrderDetail, items: AdminOr
     <div class="field"><span>اسم الزبون</span><span>${escapeHtml(order.customerName)}</span></div>
     <div class="field"><span>رقم الهاتف</span><span>${escapeHtml(order.customerPhone)}</span></div>
     <div class="field"><span>المدينة</span><span>${escapeHtml(order.customerCity)}</span></div>
-    <div class="field"><span>العنوان</span><span>${escapeHtml(order.customerAddress)}</span></div>
+    <div class="field"><span>العنوان</span><span>${escapeHtml(displayCustomerAddress(order.customerAddress))}</span></div>
     ${order.customerNotes ? `<div class="field"><span>ملاحظة الزبون</span><span>${escapeHtml(order.customerNotes)}</span></div>` : ""}
     <table>
       <thead><tr><th>المنتج</th><th>SKU</th><th>المتغير</th><th>الكمية</th><th>ثمن الوحدة</th><th>المجموع</th><th>✓</th></tr></thead>

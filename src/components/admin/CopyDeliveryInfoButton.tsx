@@ -1,5 +1,6 @@
 "use client";
 
+import { displayCustomerAddress } from "@/lib/orders/customerAddress";
 import { useState } from "react";
 import type { AdminOrderDetail } from "@/lib/queries/adminOrders";
 
@@ -8,7 +9,7 @@ function buildDeliveryInfoText(order: AdminOrderDetail): string {
     `الاسم: ${order.customerName}`,
     `الهاتف: ${order.customerPhone}`,
     `المدينة: ${order.customerCity}`,
-    `العنوان: ${order.customerAddress}`,
+    `العنوان: ${displayCustomerAddress(order.customerAddress)}`,
   ];
   if (order.customerNotes) lines.push(`ملاحظة: ${order.customerNotes}`);
   return lines.join("\n");

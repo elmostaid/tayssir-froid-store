@@ -1,3 +1,4 @@
+import { displayCustomerAddress } from "@/lib/orders/customerAddress";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
@@ -139,7 +140,7 @@ export default async function AdminOrderDetailPage({ params }: Props) {
           </div>
           <div className="col-span-2">
             <dt className="text-neutral-500">العنوان</dt>
-            <dd className="font-medium text-neutral-800">{order.customerAddress}</dd>
+            <dd className="font-medium text-neutral-800">{displayCustomerAddress(order.customerAddress)}</dd>
           </div>
           {order.customerNotes && (
             <div className="col-span-2">

@@ -1,12 +1,11 @@
 import { sql } from "@/lib/db";
 import { RESTOCKING_STATUSES } from "@/lib/orders/orderStatus";
 import {
-  StockConflictError,
   insertOrderItem,
   recordStockMovement,
   releaseStock,
-  reserveStock,
   sumLines,
+  tryReserveStock,
   type OrderLine,
 } from "@/lib/orders/orderLines";
 import { MANUAL_LINE_RULES, resolveOrderLines, type LineRequest } from "@/lib/orders/resolveLines";
@@ -31,6 +30,13 @@ import type { OrderStatus } from "@/lib/orders/orderStatus";
  * من مخزون لم يُحجز قط. لذلك يُمنع التعديل عليهما منعاً باتاً — لا كتحفّظ
  * تصميمي بل لأنه الطريق الوحيد المتبقّي إلى خصم مزدوج.
  *
+ * ── نقص المخزون لا يُسقط التعديل ────────────────────────────────────────
+ * كان السطر الذي لا يكفي مخزونه يُلغي الحفظ كلَّه: مديرٌ يضيف عشرة منتجات
+ * فيخسرها جميعاً لأن واحداً نفد. صار السطر يُحفظ بحالته `out_of_stock`
+ * وسببه، ويُرفع الطلب إلى `needs_review` — نفس ما يفعله طلب الموقع منذ
+ * هجرة 20260824000000، وبنفس المنطق: الطلب المسجَّل الناقص خيرٌ من طلب
+ * ضائع.
+ *
  * ── لماذا نُعيد كتابة كل السطور ─────────────────────────────────────────
  * نحذف سطور الطلب ونكتبها من جديد داخل نفس المعاملة، بعد أن نكون قد حسبنا
  * فروق المخزون من الحالة القديمة. أبسط من مطابقة سطر بسطر، ونتيجته نفسها
@@ -53,6 +59,9 @@ export type UpdateOrderLinesResult =
       itemsSubtotal: number;
       deliveryFee: number;
       finalTotal: number;
+      /** سطور حُفظت بلا حجز مخزون — الطلب صار needs_review بسببها. */
+      outOfStock: { name: string; quantity: number }[];
+      needsReview: boolean;
     }
   | { ok: false; errors: CreateOrderFieldError[] };
 
@@ -118,11 +127,14 @@ export async function updateOrderLines(
       if (!order) throw new Error("ORDER_NOT_FOUND");
       if (RESTOCKING_STATUSES.includes(order.status)) throw new Error("ORDER_RESTOCKED");
 
+      // **السطور المحجوزة وحدها** تُحتسب في الحالة القديمة. السطر المكتوب
+      // بـout_of_stock لم يخصم مخزوناً قط، فاحتسابه هنا كان سيُرجع إلى
+      // المخزون كمية لم تُؤخذ منه أصلاً — أي تضخيمَه بلا بيع ولا إلغاء.
       const previous = await trx<
         { product_id: number | null; variant_id: number | null; quantity: number }[]
       >`
         select product_id, variant_id, quantity from public.order_items
-        where order_id = ${input.orderId}
+        where order_id = ${input.orderId} and line_status = 'reserved'
       `;
 
       const before = new Map<string, number>();
@@ -136,28 +148,50 @@ export async function updateOrderLines(
         after.set(stockKey(line.productId, line.variantId), line.quantity);
       }
 
+      /** مفاتيح تعذّر تأمين كميتها الجديدة — تُكتب out_of_stock بدل إسقاط التعديل. */
+      const unreserved = new Map<string, string>();
+
       // الفرق لكل قطعة، على اتحاد المفتاحين حتى لا يفوتنا سطر محذوف.
       for (const key of new Set([...before.keys(), ...after.keys()])) {
-        const delta = (after.get(key) ?? 0) - (before.get(key) ?? 0);
+        const held = before.get(key) ?? 0;
+        const want = after.get(key) ?? 0;
+        const delta = want - held;
         if (delta === 0) continue;
 
         const [productPart, variantPart] = key.split(":");
         const productId = productPart === "none" ? null : Number(productPart);
         const variantId = variantPart === "base" ? null : Number(variantPart);
         const target = { productId, variantId };
+        const line = nextLines.find((l) => stockKey(l.productId, l.variantId) === key) ?? null;
+        const name = line?.nameSnapshot ?? "منتج";
 
         if (delta > 0) {
-          const line =
-            nextLines.find((l) => stockKey(l.productId, l.variantId) === key) ?? null;
-          await reserveStock(
+          const reserved = await tryReserveStock(
             trx,
-            {
-              productId: productId ?? 0,
-              variantId,
-              nameSnapshot: line?.nameSnapshot ?? "منتج",
-            },
+            { productId: productId ?? 0, variantId, nameSnapshot: name },
             delta
           );
+
+          if (!reserved) {
+            // النقص لا يُسقط التعديل: نُرجع ما كان محجوزاً لهذا السطر
+            // ونكتبه out_of_stock بكميته الجديدة كما طلبها المدير.
+            //
+            // ولماذا نُرجع الجزء المحجوز بدل الاحتفاظ به؟ لأن الحالة في
+            // order_items واحدة للسطر كلِّه، فسطرٌ محجوزٌ جزئياً لا يمكن
+            // التعبير عنه: سيبدو out_of_stock بينما يمسك مخزوناً، وعند
+            // الإلغاء يُرجَع ما لم يُؤخذ. حساب صادق ومرئي أهون من رقم
+            // خفيّ ينحرف. المدير يرى السطر أحمرَ فوراً ويصحّح المخزون أو
+            // الكمية ثم يحفظ من جديد.
+            if (held > 0) {
+              await releaseStock(trx, target, held);
+              await recordStockMovement(trx, target, input.orderId, held, "manual_adjustment");
+            }
+            unreserved.set(
+              key,
+              `الكمية المطلوبة (${want}) غير متوفرة في المخزون وقت التعديل.`
+            );
+            continue;
+          }
         } else {
           await releaseStock(trx, target, -delta);
         }
@@ -175,7 +209,14 @@ export async function updateOrderLines(
 
       await trx`delete from public.order_items where order_id = ${input.orderId}`;
       for (const line of nextLines) {
-        await insertOrderItem(trx, input.orderId, line);
+        const reason = unreserved.get(stockKey(line.productId, line.variantId)) ?? null;
+        await insertOrderItem(
+          trx,
+          input.orderId,
+          line,
+          reason === null ? "reserved" : "out_of_stock",
+          reason
+        );
       }
 
       const itemsSubtotal = sumLines(nextLines);
@@ -183,34 +224,46 @@ export async function updateOrderLines(
         input.deliveryFee ?? (order.delivery_fee === null ? null : Number(order.delivery_fee));
       const finalTotal = deliveryFee === null ? null : itemsSubtotal + deliveryFee;
 
+      // سطرٌ بلا مخزون يعني طلباً ينتظر قراراً بشرياً، لا طلباً جاهزاً
+      // للتجهيز. نرفعه إلى needs_review كما يفعل طلب الموقع تماماً.
+      //
+      // ولا نُنزله تلقائياً حين يصير كل شيء متوفراً: العودة من "يحتاج
+      // مراجعة" قرارُ الموظّف بعد أن يتصل بالزبون، لا أثرٌ جانبي لحفظ.
+      const nextStatus: OrderStatus = unreserved.size > 0 ? "needs_review" : order.status;
+
       await trx`
         update public.orders
         set items_subtotal = ${itemsSubtotal},
             delivery_fee = ${deliveryFee},
-            final_total = ${finalTotal}
+            final_total = ${finalTotal},
+            status = ${nextStatus}
         where id = ${input.orderId}
       `;
 
+      const note =
+        unreserved.size > 0
+          ? `تعديل محتوى الطلب — المجموع الجديد ${itemsSubtotal.toFixed(2)} درهم · ${unreserved.size} سطر بلا مخزون كافٍ، الطلب يحتاج مراجعة`
+          : `تعديل محتوى الطلب — المجموع الجديد ${itemsSubtotal.toFixed(2)} درهم`;
+
       await trx`
         insert into public.order_status_history (order_id, status, note, changed_by)
-        values (
-          ${input.orderId}, ${order.status},
-          ${`تعديل محتوى الطلب — المجموع الجديد ${itemsSubtotal.toFixed(2)} درهم`},
-          ${input.changedByEmail}
-        )
+        values (${input.orderId}, ${nextStatus}, ${note}, ${input.changedByEmail})
       `;
 
-      return { itemsSubtotal, deliveryFee: deliveryFee ?? 0, finalTotal: finalTotal ?? itemsSubtotal };
+      const outOfStock = nextLines
+        .filter((line) => unreserved.has(stockKey(line.productId, line.variantId)))
+        .map((line) => ({ name: line.nameSnapshot, quantity: line.quantity }));
+
+      return {
+        itemsSubtotal,
+        deliveryFee: deliveryFee ?? 0,
+        finalTotal: finalTotal ?? itemsSubtotal,
+        outOfStock,
+      };
     });
 
-    return { ok: true, ...totals };
+    return { ok: true, ...totals, needsReview: totals.outOfStock.length > 0 };
   } catch (err) {
-    if (err instanceof StockConflictError) {
-      return error(
-        `item:${err.line.productId}:${err.line.variantId ?? "base"}`,
-        `المخزون المتوفر من "${err.line.nameSnapshot}" لا يكفي للزيادة المطلوبة. صحّح المخزون أو أنقص الكمية.`
-      );
-    }
     if (err instanceof Error && err.message === "ORDER_NOT_FOUND") {
       return error("general", "الطلب غير موجود.");
     }

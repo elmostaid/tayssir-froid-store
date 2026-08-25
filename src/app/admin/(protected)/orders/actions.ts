@@ -25,6 +25,7 @@ import {
 
 export type OrderActionState = { error: string | null };
 
+
 export async function updateOrderStatus(
   _prevState: OrderActionState,
   formData: FormData
@@ -161,10 +162,14 @@ async function restockOrderInternal(
         throw new Error("ALREADY_RESTOCKED");
       }
 
+      // المحجوز وحده يُرجَع. السطر المكتوب out_of_stock لم يُخصم من المخزون
+      // قط (طلب موقع نفدت قطعته، أو تعديل لم تكفِ كميته)، فإرجاعه كان
+      // سيُضيف إلى المخزون قطعاً لا وجود لها.
       const items = await trx<
         { product_id: number | null; variant_id: number | null; quantity: number }[]
       >`
-        select product_id, variant_id, quantity from public.order_items where order_id = ${orderId}
+        select product_id, variant_id, quantity from public.order_items
+        where order_id = ${orderId} and line_status = 'reserved'
       `;
 
       for (const item of items) {
@@ -284,7 +289,12 @@ export async function deleteOrder(orderId: number): Promise<DeleteOrderResult> {
 
 // ───────────────────── الطلبات اليدوية وتعديل الطلبات ─────────────────────
 
-export type OrderEditState = { error: string | null; fieldErrors?: CreateOrderFieldError[] };
+export type OrderEditState = {
+  error: string | null;
+  fieldErrors?: CreateOrderFieldError[];
+  /** سطور حُفظت بلا حجز مخزون — الطلب صار «يحتاج مراجعة» بسببها. */
+  outOfStock?: { name: string; quantity: number }[];
+};
 
 /**
  * حارس واحد لكل ما يمسّ المال أو المخزون.
@@ -393,7 +403,7 @@ export async function updateOrderLinesAction(
   revalidatePath(`/admin/orders/${orderId}`);
   revalidatePath("/admin/orders");
   revalidatePath("/admin/reports");
-  return { error: null };
+  return { error: null, outOfStock: result.outOfStock };
 }
 
 /**

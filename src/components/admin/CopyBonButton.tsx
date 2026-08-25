@@ -1,5 +1,6 @@
 "use client";
 
+import { displayCustomerAddress } from "@/lib/orders/customerAddress";
 import { useState } from "react";
 import { formatMad } from "@/lib/format";
 import { splitProductNameSnapshot } from "@/lib/orders/productNameSnapshot";
@@ -14,7 +15,7 @@ function buildBonText(order: AdminOrderDetail, items: AdminOrderItem[]): string 
   lines.push(`اسم الزبون: ${order.customerName}`);
   lines.push(`رقم الهاتف: ${order.customerPhone}`);
   lines.push(`المدينة: ${order.customerCity}`);
-  lines.push(`العنوان: ${order.customerAddress}`);
+  lines.push(`العنوان: ${displayCustomerAddress(order.customerAddress)}`);
   if (order.customerNotes) lines.push(`ملاحظة الزبون: ${order.customerNotes}`);
   lines.push("");
   lines.push("المنتجات:");

@@ -265,7 +265,8 @@ export function OrderLinesEditor({
 
                 {overStock && (
                   <p className="mt-1 text-[11px] font-semibold text-red-600">
-                    الكمية تتجاوز المتاح — الخادم سيرفض الحفظ حتى لا يصير المخزون سالباً.
+                    الكمية تتجاوز المتاح — سيُحفظ السطر بحالة «غير متوفر» بلا حجز مخزون،
+                    وينتقل الطلب إلى «يحتاج مراجعة». باقي السطور تُحفظ عادياً.
                   </p>
                 )}
                 {line.purchasePrice !== null && line.unitPrice < line.purchasePrice && (

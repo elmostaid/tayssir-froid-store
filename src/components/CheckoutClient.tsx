@@ -163,7 +163,10 @@ export function CheckoutClient({
       setError("رقم الهاتف غير صحيح. يجب أن يكون رقماً مغربياً صالحاً (مثال: 0612345678).");
       return;
     }
-    if (!fullName.trim() || !city.trim() || !address.trim()) {
+    // العنوان ليس ضمن هذا الشرط: الاسم والهاتف والمدينة تكفي لتأكيد الطلب،
+    // ومكان التسليم يُتَّفق عليه في المكالمة. كان فرضُه يوقف الزبون عند آخر
+    // حقل قبل واتساب.
+    if (!fullName.trim() || !city.trim()) {
       setError("الرجاء تعبئة جميع الحقول الإجبارية.");
       return;
     }
@@ -397,11 +400,10 @@ export function CheckoutClient({
 
         <label className="text-sm">
           <span className="mb-1 block font-medium text-neutral-700">
-            العنوان الكامل *
+            العنوان الكامل (اختياري)
           </span>
           <textarea
             name="address"
-            required
             rows={2}
             maxLength={300}
             value={address}

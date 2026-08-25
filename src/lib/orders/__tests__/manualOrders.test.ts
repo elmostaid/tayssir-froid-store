@@ -42,8 +42,10 @@ async function itemsOf(orderId: number) {
       unit_price_snapshot: string;
       line_total: string;
       purchase_price_snapshot: string | null;
+      line_status: string;
     }[]
-  >`select sku_snapshot, quantity, unit_price_snapshot, line_total, purchase_price_snapshot
+  >`select sku_snapshot, quantity, unit_price_snapshot, line_total, purchase_price_snapshot,
+      line_status
     from public.order_items where order_id = ${orderId} order by sku_snapshot`;
 }
 
@@ -364,7 +366,10 @@ describe("تعديل طلب قائم — المخزون بالفرق وحده", 
     expect(await stockOf("MAN-FIX-001")).toBe(stockBefore);
   });
 
-  test("زيادة تتجاوز المخزون تُرفض والطلب يبقى كما كان", async () => {
+  // كان هذا الاختبار يحرس رفضَ التعديل كلِّه عند نقص المخزون. تغيّر العقد
+  // عمداً: مديرٌ يضيف عشرة منتجات لا يجوز أن يخسرها لأن واحداً نفد. السطر
+  // الناقص يُحفظ بحالته والطلب يُرفع إلى «يحتاج مراجعة».
+  test("زيادة تتجاوز المخزون تُحفظ out_of_stock وترفع الطلب إلى needs_review", async () => {
     const { orderId, productId } = await seedOrder(5);
     const available = await stockOf("MAN-FIX-001");
 
@@ -375,9 +380,22 @@ describe("تعديل طلب قائم — المخزون بالفرق وحده", 
       changedByEmail: "admin@test.local",
     });
 
-    expect(result.ok).toBe(false);
-    expect(await stockOf("MAN-FIX-001")).toBe(available);
-    expect((await itemsOf(orderId))[0].quantity).toBe(5);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.needsReview).toBe(true);
+    expect(result.outOfStock).toHaveLength(1);
+
+    // الحجز السابق (5) عاد إلى المخزون، ولا شيء بقي محجوزاً لسطرٍ لا يمسك شيئاً.
+    expect(await stockOf("MAN-FIX-001")).toBe(available + 5);
+
+    const [item] = await itemsOf(orderId);
+    expect(item.quantity).toBe(5 + available + 1);
+    expect(item.line_status).toBe("out_of_stock");
+
+    const [order] = await sql<{ status: string }[]>`
+      select status from public.orders where id = ${orderId}
+    `;
+    expect(order.status).toBe("needs_review");
   });
 
   test("تفريغ الطلب من كل منتجاته مرفوض", async () => {

@@ -65,7 +65,29 @@ export function OrderItemsEditForm({
           {state.error}
         </p>
       )}
-      {state.error === null && !pending && (
+      {state.error === null && !pending && state.outOfStock && state.outOfStock.length > 0 && (
+        <div
+          role="status"
+          className="mt-3 rounded-lg border-2 border-red-400 bg-red-50 p-3 text-sm text-red-700"
+        >
+          <p className="font-bold">
+            تم الحفظ، والطلب انتقل إلى «يحتاج مراجعة»: لم يكفِ المخزون لـ
+            {state.outOfStock.length === 1 ? " سطر واحد" : ` ${state.outOfStock.length} سطور`}.
+          </p>
+          <ul className="mt-1 list-inside list-disc space-y-0.5 text-xs">
+            {state.outOfStock.map((line) => (
+              <li key={line.name}>
+                <span className="font-semibold">{line.name}</span> — الكمية {line.quantity} محفوظة
+                بلا حجز مخزون
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1 text-[11px]">
+            صحّح المخزون أو أنقص الكمية ثم احفظ من جديد ليُحجز السطر.
+          </p>
+        </div>
+      )}
+      {state.error === null && !pending && !state.outOfStock?.length && (
         <p className="sr-only" role="status">
           تم الحفظ
         </p>

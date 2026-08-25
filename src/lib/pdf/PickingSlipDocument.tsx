@@ -1,3 +1,4 @@
+import { displayCustomerAddress } from "@/lib/orders/customerAddress";
 import { Document, Page, Text, View, Image } from "@react-pdf/renderer";
 import { pdfStyles, LOGO_PATH } from "@/lib/pdf/theme";
 import type { AdminOrderDetail, AdminOrderItem } from "@/lib/queries/adminOrders";
@@ -42,7 +43,7 @@ export function PickingSlipDocument({
           <Field label="اسم الزبون" value={order.customerName} />
           <Field label="رقم الهاتف" value={order.customerPhone} />
           <Field label="المدينة" value={order.customerCity} />
-          <Field label="العنوان" value={order.customerAddress} />
+          <Field label="العنوان" value={displayCustomerAddress(order.customerAddress)} />
           {order.customerNotes && <Field label="ملاحظة الزبون" value={order.customerNotes} />}
         </View>
 

@@ -1,6 +1,7 @@
 import type { CartItem } from "@/lib/cart/types";
 import { formatMad } from "@/lib/format";
 import { toInternationalDigits } from "@/lib/phone";
+import { customerAddressOrNull } from "@/lib/orders/customerAddress";
 
 // رقم واتساب المتجر ورسائله لم تعد ثوابت مكتوبة هنا — تأتي من settings
 // (رقم واتساب المتجر) عبر getSettings()، من مصدر واحد فقط، حتى ينعكس أي
@@ -83,8 +84,12 @@ export function buildOrderWhatsAppMessage(params: {
     `الاسم الكامل: ${customer.fullName}`,
     `الهاتف: ${customer.phone}`,
     `المدينة: ${customer.city}`,
-    `العنوان: ${customer.address}`,
   ];
+
+  // العنوان اختياري — سطرٌ بلا معلومة لا يُكتب. (نفس القاعدة في
+  // lib/orders/orderMessage.ts، ومصدر القرار واحد.)
+  const address = customerAddressOrNull(customer.address);
+  if (address) lines.push(`العنوان: ${address}`);
 
   if (customer.notes.trim()) {
     lines.push(`ملاحظات: ${customer.notes.trim()}`);

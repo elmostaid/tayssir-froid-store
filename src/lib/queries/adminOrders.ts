@@ -29,7 +29,7 @@ export type AdminOrderListItem = {
 };
 
 export type AdminOrderDetail = AdminOrderListItem & {
-  customerAddress: string;
+  customerAddress: string | null;
   customerNotes: string | null;
   cartonCount: number | null;
 };
@@ -252,7 +252,7 @@ export async function getAdminOrderById(id: number): Promise<AdminOrderDetail | 
       customer_name: string;
       customer_phone: string;
       customer_city: string;
-      customer_address: string;
+      customer_address: string | null;
       customer_notes: string | null;
       items_subtotal: string;
       carton_count: number | null;

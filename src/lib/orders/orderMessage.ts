@@ -1,6 +1,7 @@
 import type { CartItem } from "@/lib/cart/types";
 import { formatMad } from "@/lib/format";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
+import { customerAddressOrNull } from "@/lib/orders/customerAddress";
 
 /**
  * رسالة الطلب على واتساب — بسقف صارم لطول الرابط.
@@ -60,8 +61,12 @@ function customerLines(storeName: string, customer: MessageCustomer, reference: 
     `الاسم الكامل: ${customer.fullName}`,
     `الهاتف: ${customer.phone}`,
     `المدينة: ${customer.city}`,
-    `العنوان: ${customer.address}`,
   ];
+  // بلا عنوان لا نكتب سطراً فارغاً ولا «غير محدد»: من يجهّز الطلب يقرأ
+  // الرسالة على الهاتف، وسطرٌ لا يحمل معلومة يزاحم ما يحمل — وكل بايت
+  // محسوب هنا لأن الرسالة كلها محكومة بسقف MAX_WHATSAPP_URL_BYTES.
+  const address = customerAddressOrNull(customer.address);
+  if (address) lines.push(`العنوان: ${address}`);
   if (customer.notes.trim()) lines.push(`ملاحظات: ${customer.notes.trim()}`);
   return lines;
 }

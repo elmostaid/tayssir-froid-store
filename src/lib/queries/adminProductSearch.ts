@@ -102,11 +102,12 @@ export async function getEditableOrderLines(orderId: number): Promise<
       unit_price_snapshot: string;
       purchase_price: string | null;
       stock_quantity: number | null;
+      line_status: string;
     }[]
   >`
     select
       oi.product_id, oi.sku_snapshot, oi.product_name_snapshot, oi.quantity,
-      oi.unit_price_snapshot, p.purchase_price, p.stock_quantity
+      oi.unit_price_snapshot, oi.line_status, p.purchase_price, p.stock_quantity
     from public.order_items oi
     left join public.products p on p.id = oi.product_id
     where oi.order_id = ${orderId}
@@ -125,6 +126,9 @@ export async function getEditableOrderLines(orderId: number): Promise<
       unitPrice: Number(r.unit_price_snapshot),
       purchasePrice: r.purchase_price === null ? null : Number(r.purchase_price),
       stockQuantity: r.stock_quantity ?? 0,
-      reservedQuantity: r.quantity,
+      // السطر غير المحجوز لا يمسك شيئاً من المخزون. اعتبارُ كميته محجوزة
+      // كان يجعل المحرّر يعرض «المتاح» أكبر مما هو، فيَعِد المديرَ بكمية
+      // لن يجدها عند الحفظ.
+      reservedQuantity: r.line_status === "reserved" ? r.quantity : 0,
     }));
 }
