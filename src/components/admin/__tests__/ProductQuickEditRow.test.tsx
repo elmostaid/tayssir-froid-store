@@ -27,6 +27,12 @@ const PRODUCT: AdminProduct = {
   stock_quantity: 10,
   status: "published",
   sort_order: 3,
+  pricing_mode: "single",
+  tier2_min_qty: null,
+  tier2_price: null,
+  tier3_min_qty: null,
+  tier3_price: null,
+  show_bulk_whatsapp: false,
 };
 
 function renderRow(overrides: Partial<{ isFirstInCategory: boolean; isLastInCategory: boolean }> = {}) {

@@ -1,11 +1,32 @@
 import type { CartItem } from "@/lib/cart/types";
+import { resolveLineTotal, resolveUnitPrice, roundMoney } from "@/lib/pricing/tierPricing";
 
 export function cartItemKey(productId: number, variantId: number | null): string {
   return `${productId}:${variantId ?? "base"}`;
 }
 
+/**
+ * ثمن الوحدة المطبَّق فعلياً على هذا السطر بكميته الحالية.
+ *
+ * لا يُقرأ item.unitPrice مباشرة في أي مكان للعرض — يمر كل شيء من هنا، حتى
+ * يتغيّر الثمن تلقائياً بمجرد تغيّر الكمية (9 → 10 يخفّض الثمن فوراً،
+ * و10 → 9 يُرجعه) في السلة وصفحة المنتج وCheckout بنفس الحساب بالضبط.
+ *
+ * عنصر سلَّة قديم (محفوظ في localStorage قبل هذه الميزة) لا يحمل pricing،
+ * فنرجع لثمنه المخزَّن كما هو — سلوكه القديم بلا كسر.
+ */
+export function cartItemUnitPrice(item: CartItem): number {
+  if (!item.pricing) return item.unitPrice;
+  return resolveUnitPrice(item.pricing, item.quantity);
+}
+
+export function cartItemLineTotal(item: CartItem): number {
+  if (!item.pricing) return roundMoney(item.unitPrice * item.quantity);
+  return resolveLineTotal(item.pricing, item.quantity);
+}
+
 export function computeSubtotal(items: CartItem[]): number {
-  return items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+  return roundMoney(items.reduce((sum, item) => sum + cartItemLineTotal(item), 0));
 }
 
 export function meetsMinimumOrder(subtotal: number, minOrderAmount: number): boolean {

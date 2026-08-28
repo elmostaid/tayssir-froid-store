@@ -1,4 +1,5 @@
 import type { CartItem } from "@/lib/cart/types";
+import { cartItemLineTotal } from "@/lib/cart/cartMath";
 import { formatMad } from "@/lib/format";
 import { toInternationalDigits } from "@/lib/phone";
 
@@ -94,7 +95,7 @@ export function buildOrderWhatsAppMessage(params: {
   for (const item of items) {
     const name = item.variantName ? `${item.name} — ${item.variantName}` : item.name;
     lines.push(
-      `- ${name} (${item.sku}) × ${item.quantity} = ${formatMad(item.unitPrice * item.quantity)}`
+      `- ${name} (${item.sku}) × ${item.quantity} = ${formatMad(cartItemLineTotal(item))}`
     );
   }
 

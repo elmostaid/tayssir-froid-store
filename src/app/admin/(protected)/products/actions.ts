@@ -17,9 +17,41 @@ export type ProductFormState = {
   fieldErrors?: Record<string, string>;
 };
 
+/** رقم اختياري من حقل نصي: فارغ/غائب => null (لا 0، فـ0 ثمن صالح). */
+function optionalNumber(formData: FormData, field: string): number | null {
+  const raw = formData.get(field);
+  if (raw === null || String(raw).trim() === "") return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * حقول التسعير المتدرِّج.
+ *
+ * التصفير المقصود: الحقول غير المستعملة في النمط المختار تُحفظ null دائماً،
+ * أياً كان ما بقي في الفورم. فلو بدَّل المدير منتجاً من "3 مستويات" إلى
+ * "مستويين" لا يبقى مستوى ثالث يتيم في قاعدة البيانات (وهو أصلاً ما يرفضه
+ * قيد products_pricing_mode_coherent).
+ */
+function parseTierPricing(formData: FormData) {
+  const pricingMode = String(formData.get("pricingMode") ?? "single");
+  const isTiered = pricingMode === "two_tier" || pricingMode === "three_tier";
+  const isThreeTier = pricingMode === "three_tier";
+
+  return {
+    pricingMode,
+    tier2MinQty: isTiered ? optionalNumber(formData, "tier2MinQty") : null,
+    tier2Price: isTiered ? optionalNumber(formData, "tier2Price") : null,
+    tier3MinQty: isThreeTier ? optionalNumber(formData, "tier3MinQty") : null,
+    tier3Price: isThreeTier ? optionalNumber(formData, "tier3Price") : null,
+    showBulkWhatsapp: formData.get("showBulkWhatsapp") === "on",
+  };
+}
+
 function parseProductForm(formData: FormData) {
   const purchasePriceRaw = formData.get("purchasePrice");
   return productSchema.safeParse({
+    ...parseTierPricing(formData),
     sku: formData.get("sku"),
     slug: formData.get("slug"),
     categoryId: Number(formData.get("categoryId")),
@@ -100,13 +132,16 @@ export async function createProduct(
     insert into public.products (
       sku, slug, category_id, name_ar, name_fr, description_ar, technical_specs,
       unit_label, min_order_qty, qty_increment, purchase_price, sale_price,
-      stock_quantity, status, sort_order
+      stock_quantity, status, sort_order,
+      pricing_mode, tier2_min_qty, tier2_price, tier3_min_qty, tier3_price, show_bulk_whatsapp
     ) values (
       ${parsed.data.sku}, ${parsed.data.slug}, ${parsed.data.categoryId}, ${parsed.data.nameAr},
       ${parsed.data.nameFr || null}, ${parsed.data.descriptionAr || null}, ${parsed.data.technicalSpecs || null},
       ${parsed.data.unitLabel}, ${parsed.data.minOrderQty}, ${parsed.data.qtyIncrement},
       ${parsed.data.purchasePrice}, ${parsed.data.salePrice}, ${parsed.data.stockQuantity}, ${parsed.data.status},
-      coalesce((select max(sort_order) from public.products where category_id = ${parsed.data.categoryId}), 0) + 1
+      coalesce((select max(sort_order) from public.products where category_id = ${parsed.data.categoryId}), 0) + 1,
+      ${parsed.data.pricingMode}, ${parsed.data.tier2MinQty}, ${parsed.data.tier2Price},
+      ${parsed.data.tier3MinQty}, ${parsed.data.tier3Price}, ${parsed.data.showBulkWhatsapp}
     )
     returning id
   `;
@@ -151,7 +186,13 @@ export async function updateProduct(
       purchase_price = ${parsed.data.purchasePrice},
       sale_price = ${parsed.data.salePrice},
       stock_quantity = ${parsed.data.stockQuantity},
-      status = ${parsed.data.status}
+      status = ${parsed.data.status},
+      pricing_mode = ${parsed.data.pricingMode},
+      tier2_min_qty = ${parsed.data.tier2MinQty},
+      tier2_price = ${parsed.data.tier2Price},
+      tier3_min_qty = ${parsed.data.tier3MinQty},
+      tier3_price = ${parsed.data.tier3Price},
+      show_bulk_whatsapp = ${parsed.data.showBulkWhatsapp}
     where id = ${productId}
   `;
 

@@ -36,6 +36,12 @@ const PRODUCT: CatalogProduct = {
   meta_title: null,
   meta_description: null,
   primary_image_path: null,
+  pricing_mode: "single",
+  tier2_min_qty: null,
+  tier2_price: null,
+  tier3_min_qty: null,
+  tier3_price: null,
+  show_bulk_whatsapp: false,
   status: "published",
 };
 

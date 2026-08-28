@@ -14,6 +14,8 @@ import { formatMad, formatMinOrderAmount } from "@/lib/format";
 import { buildProductWhatsAppLink } from "@/lib/whatsapp";
 import { safeQuery } from "@/lib/safeQuery";
 import { AddToCartForm } from "@/components/AddToCartForm";
+import { BulkWhatsAppLink } from "@/components/BulkWhatsAppLink";
+import { hasTierPricing, toTierPricing } from "@/lib/pricing/tierPricing";
 import { ProductViewContentPixel } from "@/components/ProductViewContentPixel";
 import { ServiceUnavailable } from "@/components/ServiceUnavailable";
 import { getSiteUrl } from "@/lib/siteUrl";
@@ -84,6 +86,7 @@ export default async function ProductPage({ params }: Props) {
   const mainImageUrl = mainImage ? resolveGalleryUrl(mainImage.storage_path) : null;
   const whatsappLink = buildProductWhatsAppLink(settings.whatsappNumber, product.name_ar, product.sku);
   const isUnavailable = product.status === "out_of_stock" || product.stock_quantity <= 0;
+  const hasTiers = hasTierPricing(toTierPricing(product));
   const statusLabel =
     product.status === "out_of_stock"
       ? "غير متوفر للطلب"
@@ -177,13 +180,27 @@ export default async function ProductPage({ params }: Props) {
             {product.name_fr && ` — ${product.name_fr}`}
           </p>
 
+          {/* الثمن هنا هو ثمن المستوى الأول (ثمن القطعة). الثمن المطبَّق
+              فعلاً حسب الكمية المختارة يظهر حيّاً داخل AddToCartForm أسفله،
+              بجانب أزرار الكمية مباشرة حيث يغيّرها الزبون. */}
           <p className="mt-4 text-2xl font-bold text-brand-orange">
+            {hasTiers && (
+              <span className="text-sm font-normal text-neutral-500">ابتداءً من </span>
+            )}
             {formatMad(product.sale_price)}
             <span className="text-sm font-normal text-neutral-500">
               {" "}
               / {product.unit_label}
             </span>
           </p>
+
+          {product.show_bulk_whatsapp && (
+            <BulkWhatsAppLink
+              whatsappNumber={settings.whatsappNumber}
+              productName={product.name_ar}
+              sku={product.sku}
+            />
+          )}
 
           <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
             <div className="rounded-lg bg-neutral-100 p-3">

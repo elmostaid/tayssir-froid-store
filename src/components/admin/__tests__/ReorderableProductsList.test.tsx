@@ -44,6 +44,12 @@ function makeProduct(overrides: Partial<AdminProduct> & { id: number }): AdminPr
     stock_quantity: 5,
     status: "published",
     sort_order: overrides.id,
+    pricing_mode: "single",
+    tier2_min_qty: null,
+    tier2_price: null,
+    tier3_min_qty: null,
+    tier3_price: null,
+    show_bulk_whatsapp: false,
     ...overrides,
   };
 }

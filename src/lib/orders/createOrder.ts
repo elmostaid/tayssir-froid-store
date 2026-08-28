@@ -2,6 +2,13 @@ import { sql } from "@/lib/db";
 import { getSettings } from "@/lib/queries/settings";
 import { isValidMoroccanPhone, normalizePhone } from "@/lib/phone";
 import { isValidQuantity } from "@/lib/cart/cartMath";
+import {
+  resolveLineTotal,
+  resolveUnitPrice,
+  resolveVariantPricing,
+  roundMoney,
+  toTierPricing,
+} from "@/lib/pricing/tierPricing";
 import { isRateLimited } from "@/lib/orders/rateLimit";
 import { notifyNewOrder } from "@/lib/notifications/notifyNewOrder";
 import { sendCapiEvent } from "@/lib/pixel/capi";
@@ -176,7 +183,10 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
         continue;
       }
 
-      let effectivePrice = Number(product.sale_price);
+      // سلَّم الأثمنة يُبنى من صف قاعدة البيانات المُعاد جلبه للتو، لا من أي
+      // شيء أرسله المتصفح — المتصفح لا يرسل أثماناً أصلاً (انظر
+      // CartItemInput: productId/variantId/quantity فقط).
+      let effectivePricing = toTierPricing(product);
       let effectiveMinQty = product.min_order_qty;
       let effectiveIncrement = product.qty_increment;
       let effectiveStock = product.stock_quantity;
@@ -191,7 +201,11 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
           });
           continue;
         }
-        effectivePrice = Number(variant.sale_price);
+        effectivePricing = resolveVariantPricing(
+          effectivePricing,
+          variant.sale_price,
+          variant.has_price_override
+        );
         effectiveMinQty = variant.min_order_qty;
         effectiveIncrement = variant.qty_increment;
         effectiveStock = variant.stock_quantity;
@@ -232,14 +246,20 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
           : (purchasePriceById.get(item.productId) ?? null);
       const purchasePriceSnapshot = rawPurchasePrice === null ? null : Number(rawPurchasePrice);
 
+      // نفس دالة التسعير المستعملة في صفحة المنتج والسلَّة وCheckout بالضبط —
+      // فيستحيل أن يختلف الثمن المحفوظ في الطلب عمّا رآه الزبون، ما دامت
+      // بيانات المنتج لم تتغيّر بينهما. الثمن المُجمَّد (unit_price_snapshot)
+      // هو دائماً ثمن المستوى المطبَّق فعلاً على الكمية المطلوبة.
+      const unitPrice = resolveUnitPrice(effectivePricing, item.quantity);
+
       lineItems.push({
         productId: product.id,
         variantId: item.variantId,
         nameSnapshot: variantName ? `${product.name_ar} — ${variantName}` : product.name_ar,
         skuSnapshot: product.sku,
-        unitPrice: effectivePrice,
+        unitPrice,
         quantity: item.quantity,
-        lineTotal: effectivePrice * item.quantity,
+        lineTotal: resolveLineTotal(effectivePricing, item.quantity),
         purchasePriceSnapshot,
       });
     }
@@ -248,7 +268,7 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       return { ok: false, errors: itemErrors };
     }
 
-    const subtotal = lineItems.reduce((sum, line) => sum + line.lineTotal, 0);
+    const subtotal = roundMoney(lineItems.reduce((sum, line) => sum + line.lineTotal, 0));
 
     if (subtotal < settings.minOrderAmountMad) {
       return {

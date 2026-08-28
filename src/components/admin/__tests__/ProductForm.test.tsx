@@ -145,6 +145,12 @@ describe("ProductForm — توليد SKU تلقائي حسب التصنيف (و�
       stock_quantity: 5,
       status: "published",
       sort_order: 1,
+      pricing_mode: "single",
+      tier2_min_qty: null,
+      tier2_price: null,
+      tier3_min_qty: null,
+      tier3_price: null,
+      show_bulk_whatsapp: false,
     };
     const action = vi.fn(async (): Promise<ProductFormState> => ({ error: null }));
     render(<ProductForm action={action} product={product} categories={CATEGORIES} mode="edit" />);

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useCart } from "@/components/CartProvider";
 import { buildProductWhatsAppLink } from "@/lib/whatsapp";
+import { toTierPricing } from "@/lib/pricing/tierPricing";
 import type { CatalogProduct } from "@/lib/types";
 
 // إضافة سريعة للسلة من بطاقة المنتج (بالكمية الدنيا) — تُستعمل فقط للمنتجات
@@ -25,6 +26,10 @@ export function ProductCardActions({
 
   function handleAdd() {
     if (outOfStock || hasVariants) return;
+    // سلَّم أثمنة المنتج يُمرَّر كاملاً للسلَّة، فحتى الإضافة السريعة من
+    // البطاقة (بالكمية الدنيا) تستفيد من الأثمنة المتدرِّجة بمجرد أن يرفع
+    // الزبون الكمية داخل السلَّة.
+    const pricing = toTierPricing(product);
     addItem(
       {
         productId: product.id,
@@ -33,7 +38,8 @@ export function ProductCardActions({
         sku: product.sku,
         name: product.name_ar,
         variantName: null,
-        unitPrice: Number(product.sale_price),
+        unitPrice: pricing.unitPrice,
+        pricing,
         minOrderQty: product.min_order_qty,
         qtyIncrement: product.qty_increment,
         imageUrl,

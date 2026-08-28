@@ -8,6 +8,8 @@ import { generateProductSku } from "@/app/admin/(protected)/products/actions";
 import type { AdminProduct } from "@/lib/queries/adminProducts";
 import type { AdminCategory } from "@/lib/queries/adminCategories";
 import { slugify } from "@/lib/slugify";
+import { TierPricingFields } from "@/components/admin/TierPricingFields";
+import type { PricingMode } from "@/lib/pricing/tierPricing";
 
 const initialState: ProductFormState = { error: null };
 
@@ -45,6 +47,12 @@ type FormValues = {
   salePrice: string;
   stockQuantity: string;
   purchasePrice: string;
+  pricingMode: PricingMode;
+  tier2MinQty: string;
+  tier2Price: string;
+  tier3MinQty: string;
+  tier3Price: string;
+  showBulkWhatsapp: boolean;
 };
 
 function initialValues(product: AdminProduct | undefined): FormValues {
@@ -63,6 +71,12 @@ function initialValues(product: AdminProduct | undefined): FormValues {
     salePrice: product?.sale_price ?? "",
     stockQuantity: product ? String(product.stock_quantity) : "0",
     purchasePrice: product?.purchase_price ?? "",
+    pricingMode: product?.pricing_mode ?? "single",
+    tier2MinQty: product?.tier2_min_qty != null ? String(product.tier2_min_qty) : "",
+    tier2Price: product?.tier2_price ?? "",
+    tier3MinQty: product?.tier3_min_qty != null ? String(product.tier3_min_qty) : "",
+    tier3Price: product?.tier3_price ?? "",
+    showBulkWhatsapp: product?.show_bulk_whatsapp ?? false,
   };
 }
 
@@ -78,11 +92,13 @@ export function ProductForm({
   product,
   categories,
   mode,
+  hasActiveVariants = false,
 }: {
   action: (prevState: ProductFormState, formData: FormData) => Promise<ProductFormState>;
   product?: AdminProduct;
   categories: AdminCategory[];
   mode: "create" | "edit";
+  hasActiveVariants?: boolean;
 }) {
   const [state, formAction, isPending] = useActionState(action, initialState);
   const [values, setValues] = useState<FormValues>(() => initialValues(product));
@@ -403,6 +419,23 @@ export function ProductForm({
           <span className="mt-1 block text-xs text-red-600">{fieldError("purchasePrice")}</span>
         )}
       </label>
+
+      <TierPricingFields
+        pricingMode={values.pricingMode}
+        onPricingModeChange={(next) => setValue("pricingMode", next)}
+        values={{
+          tier2MinQty: values.tier2MinQty,
+          tier2Price: values.tier2Price,
+          tier3MinQty: values.tier3MinQty,
+          tier3Price: values.tier3Price,
+        }}
+        onChange={(key, value) => setValue(key, value)}
+        showBulkWhatsapp={values.showBulkWhatsapp}
+        onShowBulkWhatsappChange={(checked) => setValue("showBulkWhatsapp", checked)}
+        unitLabel={values.unitLabel}
+        hasActiveVariants={hasActiveVariants}
+        fieldError={fieldError}
+      />
 
       {state.error && (
         <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">

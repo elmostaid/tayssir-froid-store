@@ -1,5 +1,6 @@
 import { sql } from "@/lib/db";
 import { LOW_STOCK_THRESHOLD } from "@/lib/lowStockThreshold";
+import type { PricingMode } from "@/lib/pricing/tierPricing";
 
 // استعلامات لوحة الإدارة فقط — تشمل purchase_price وكل الحالات (مسودة/
 // منشور/غير متوفر/مؤرشف). لا تُستعمل هذه الدوال خارج مسارات /admin أبداً.
@@ -24,6 +25,13 @@ export type AdminProduct = {
   stock_quantity: number;
   status: "draft" | "published" | "archived" | "out_of_stock";
   sort_order: number;
+  // التسعير المتدرِّج — sale_price أعلاه هو ثمن المستوى الأول دائماً.
+  pricing_mode: PricingMode;
+  tier2_min_qty: number | null;
+  tier2_price: string | null;
+  tier3_min_qty: number | null;
+  tier3_price: string | null;
+  show_bulk_whatsapp: boolean;
 };
 
 export async function getAllProductsAdmin(): Promise<AdminProduct[]> {
@@ -32,7 +40,9 @@ export async function getAllProductsAdmin(): Promise<AdminProduct[]> {
       p.id, p.sku, p.slug, p.category_id, c.name_ar as category_name_ar,
       p.name_ar, p.name_fr, p.description_ar, p.technical_specs, p.unit_label,
       p.min_order_qty, p.qty_increment, p.purchase_price, p.sale_price,
-      p.stock_quantity, p.status, p.sort_order
+      p.stock_quantity, p.status, p.sort_order,
+      p.pricing_mode, p.tier2_min_qty, p.tier2_price,
+      p.tier3_min_qty, p.tier3_price, p.show_bulk_whatsapp
     from public.products p
     join public.categories c on c.id = p.category_id
     order by p.category_id, p.sort_order asc, p.created_at desc
@@ -61,7 +71,9 @@ export async function listProductsAdmin(
       p.id, p.sku, p.slug, p.category_id, c.name_ar as category_name_ar,
       p.name_ar, p.name_fr, p.description_ar, p.technical_specs, p.unit_label,
       p.min_order_qty, p.qty_increment, p.purchase_price, p.sale_price,
-      p.stock_quantity, p.status, p.sort_order
+      p.stock_quantity, p.status, p.sort_order,
+      p.pricing_mode, p.tier2_min_qty, p.tier2_price,
+      p.tier3_min_qty, p.tier3_price, p.show_bulk_whatsapp
     from public.products p
     join public.categories c on c.id = p.category_id
     where (${pattern}::text is null or p.name_ar ilike ${pattern} or p.sku ilike ${pattern})
@@ -106,7 +118,9 @@ export async function getProductByIdAdmin(id: number): Promise<AdminProduct | nu
       p.id, p.sku, p.slug, p.category_id, c.name_ar as category_name_ar,
       p.name_ar, p.name_fr, p.description_ar, p.technical_specs, p.unit_label,
       p.min_order_qty, p.qty_increment, p.purchase_price, p.sale_price,
-      p.stock_quantity, p.status, p.sort_order
+      p.stock_quantity, p.status, p.sort_order,
+      p.pricing_mode, p.tier2_min_qty, p.tier2_price,
+      p.tier3_min_qty, p.tier3_price, p.show_bulk_whatsapp
     from public.products p
     join public.categories c on c.id = p.category_id
     where p.id = ${id}

@@ -101,6 +101,7 @@ export default async function EditProductPage({ params }: Props) {
             product={product}
             categories={categories}
             mode="edit"
+            hasActiveVariants={variants.some((variant) => variant.is_active)}
           />
         </div>
       </div>

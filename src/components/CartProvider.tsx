@@ -77,12 +77,19 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       if (existingIndex !== -1) {
         const next = [...prev];
         const existing = next[existingIndex];
+        // إعدادات التسعير تُؤخذ من العنصر الوارد (المُحمَّل للتو من الخادم)
+        // لا من المخزَّن قديماً في localStorage — فسلَّة قديمة تُحدَّث تلقائياً
+        // إلى سلَّم الأثمنة الحالي بمجرد إضافة نفس المنتج مرة أخرى.
         next[existingIndex] = {
           ...existing,
+          unitPrice: item.unitPrice,
+          pricing: item.pricing,
+          minOrderQty: item.minOrderQty,
+          qtyIncrement: item.qtyIncrement,
           quantity: snapQuantity(
             existing.quantity + quantity,
-            existing.minOrderQty,
-            existing.qtyIncrement
+            item.minOrderQty,
+            item.qtyIncrement
           ),
         };
         return next;

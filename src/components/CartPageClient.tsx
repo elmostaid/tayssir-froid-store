@@ -4,7 +4,13 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useCart } from "@/components/CartProvider";
-import { cartItemKey, meetsMinimumOrder, snapQuantity } from "@/lib/cart/cartMath";
+import {
+  cartItemKey,
+  cartItemLineTotal,
+  cartItemUnitPrice,
+  meetsMinimumOrder,
+  snapQuantity,
+} from "@/lib/cart/cartMath";
 import { resolveImageUrl } from "@/lib/images";
 import { resolveCartImageUrls } from "@/app/(storefront)/cart/resolveCartImageUrls";
 import { formatMad, formatMinOrderAmount } from "@/lib/format";
@@ -100,10 +106,13 @@ export function CartPageClient({ minOrderAmountMad }: { minOrderAmountMad: numbe
                   )}
                 </Link>
                 <span className="mt-0.5 text-xs text-neutral-500">{item.sku}</span>
+                {/* الثمن يُشتق من الكمية الحالية عند كل رندر، فتغيير الكمية
+                    عبر −/+ يُعيد الحساب فوراً (9 → 10 يخفّض الثمن،
+                    10 → 9 يُرجعه) بلا أي طلب شبكة. */}
                 <span className="mt-1 text-sm text-neutral-600">
-                  {formatMad(item.unitPrice)} × {item.quantity} ={" "}
+                  {formatMad(cartItemUnitPrice(item))} × {item.quantity} ={" "}
                   <span className="font-bold text-brand-orange">
-                    {formatMad(item.unitPrice * item.quantity)}
+                    {formatMad(cartItemLineTotal(item))}
                   </span>
                 </span>
 

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useCart } from "@/components/CartProvider";
 import { formatMad, formatMinOrderAmount } from "@/lib/format";
-import { cartItemKey } from "@/lib/cart/cartMath";
+import { cartItemKey, cartItemLineTotal, cartItemUnitPrice } from "@/lib/cart/cartMath";
 import { isValidMoroccanPhone } from "@/lib/phone";
 import { buildOrderWhatsAppMessage, buildWhatsAppLink } from "@/lib/whatsapp";
 import { submitOrder, type CheckoutState } from "@/app/(storefront)/checkout/actions";
@@ -108,7 +108,7 @@ export function CheckoutClient({
     if (!isHydrated || items.length === 0) return;
     hasTrackedInitiateCheckout.current = true;
     trackInitiateCheckout({
-      items: items.map((item) => ({ sku: item.sku, quantity: item.quantity, price: item.unitPrice })),
+      items: items.map((item) => ({ sku: item.sku, quantity: item.quantity, price: cartItemUnitPrice(item) })),
       value: subtotal,
       eventId: crypto.randomUUID(),
     });
@@ -250,7 +250,7 @@ export function CheckoutClient({
     if (saveResult?.ok === true && !hasTrackedPurchase.current) {
       hasTrackedPurchase.current = true;
       trackPurchase({
-        items: items.map((item) => ({ sku: item.sku, quantity: item.quantity, price: item.unitPrice })),
+        items: items.map((item) => ({ sku: item.sku, quantity: item.quantity, price: cartItemUnitPrice(item) })),
         value: subtotal,
         eventId: idempotencyKey,
       });
@@ -280,7 +280,7 @@ export function CheckoutClient({
                 {item.variantName && ` — ${item.variantName}`} × {item.quantity}
               </span>
               <span className="font-medium">
-                {formatMad(item.unitPrice * item.quantity)}
+                {formatMad(cartItemLineTotal(item))}
               </span>
             </li>
           ))}

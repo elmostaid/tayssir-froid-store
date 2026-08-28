@@ -6,6 +6,13 @@ import { useCart } from "@/components/CartProvider";
 import { snapQuantity } from "@/lib/cart/cartMath";
 import { formatMad } from "@/lib/format";
 import { trackAddToCart } from "@/lib/pixel/fbq";
+import {
+  resolveLineTotal,
+  resolveUnitPrice,
+  resolveVariantPricing,
+  toTierPricing,
+} from "@/lib/pricing/tierPricing";
+import { PriceTiersTable } from "@/components/PriceTiersTable";
 import type { CatalogProduct, CatalogProductVariant } from "@/lib/types";
 
 export function AddToCartForm({
@@ -29,14 +36,30 @@ export function AddToCartForm({
     [variants, selectedVariantId]
   );
 
+  // سلَّم أثمنة هذا السطر: من المنتج الأب، إلا إذا كان للمتغيّر المختار ثمن
+  // خاص فيُلغي السلَّم ويُعامَل كثمن واحد (قاعدة موثَّقة في tierPricing.ts).
+  const pricing = useMemo(() => {
+    const productPricing = toTierPricing(product);
+    if (!selectedVariant) return productPricing;
+    return resolveVariantPricing(
+      productPricing,
+      selectedVariant.sale_price,
+      selectedVariant.has_price_override
+    );
+  }, [product, selectedVariant]);
+
   const effective = {
-    price: Number(selectedVariant?.sale_price ?? product.sale_price),
     minOrderQty: selectedVariant?.min_order_qty ?? product.min_order_qty,
     qtyIncrement: selectedVariant?.qty_increment ?? product.qty_increment,
     stock: selectedVariant?.stock_quantity ?? product.stock_quantity,
   };
 
   const [quantity, setQuantity] = useState(effective.minOrderQty);
+
+  // الثمن المعروض يُشتق من الكمية الحالية في كل رندر — لا يُخزَّن في state،
+  // فيستحيل أن يتأخر عن الكمية أو يتعارض معها.
+  const currentUnitPrice = resolveUnitPrice(pricing, quantity);
+  const currentLineTotal = resolveLineTotal(pricing, quantity);
 
   function handleVariantChange(variantId: number) {
     setSelectedVariantId(variantId);
@@ -70,7 +93,8 @@ export function AddToCartForm({
         sku: product.sku,
         name: product.name_ar,
         variantName: selectedVariant?.variant_name ?? null,
-        unitPrice: effective.price,
+        unitPrice: pricing.unitPrice,
+        pricing,
         minOrderQty: effective.minOrderQty,
         qtyIncrement: effective.qtyIncrement,
         imageUrl,
@@ -79,10 +103,12 @@ export function AddToCartForm({
     );
     // AddToCart يُطلَق هنا فقط — عند الإضافة الفعلية للسلة (بعد نجاح
     // addItem)، وليس عند مجرد فتح الصفحة أو تغيير الكمية/المقاس.
+    // القيمة المُرسَلة لـMeta هي الثمن المطبَّق فعلاً على هذه الكمية (بعد
+    // المستوى المناسب)، لا ثمن القطعة الواحدة — نفس الحساب المعروض للزبون.
     trackAddToCart({
       sku: product.sku,
       name: product.name_ar,
-      price: effective.price,
+      price: currentUnitPrice,
       quantity,
       category: product.category_name_ar,
     });
@@ -142,9 +168,17 @@ export function AddToCartForm({
         </div>
       </div>
 
+      <PriceTiersTable
+        pricing={pricing}
+        unitLabel={product.unit_label}
+        startQty={effective.minOrderQty}
+        activeQuantity={quantity}
+      />
+
       <p className="mt-2 text-xs text-neutral-500">
         الكمية الدنيا {effective.minOrderQty} {product.unit_label}، بمضاعفات{" "}
-        {effective.qtyIncrement}. المجموع الجزئي: {formatMad(effective.price * quantity)}
+        {effective.qtyIncrement}. الثمن المطبَّق: {formatMad(currentUnitPrice)} /{" "}
+        {product.unit_label}. المجموع الجزئي: {formatMad(currentLineTotal)}
       </p>
 
       {outOfStock ? (

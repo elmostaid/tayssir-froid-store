@@ -1,3 +1,5 @@
+import type { PricingMode } from "@/lib/pricing/tierPricing";
+
 export type Category = {
   id: number;
   slug: string;
@@ -30,6 +32,14 @@ export type CatalogProduct = {
   primary_image_path: string | null;
   /** "published" أو "out_of_stock" فقط (الـview لا تعرض "draft"/"archived" إطلاقاً) */
   status: "published" | "out_of_stock";
+  // التسعير المتدرِّج — sale_price أعلاه هو ثمن المستوى الأول دائماً.
+  // "single" يعني نفس السلوك القديم بالضبط: sale_price لكل الكميات.
+  pricing_mode: PricingMode;
+  tier2_min_qty: number | null;
+  tier2_price: string | null;
+  tier3_min_qty: number | null;
+  tier3_price: string | null;
+  show_bulk_whatsapp: boolean;
 };
 
 export type CatalogProductVariant = {
@@ -41,6 +51,10 @@ export type CatalogProductVariant = {
   min_order_qty: number;
   qty_increment: number;
   sort_order: number;
+  /** هل للمتغيّر ثمن خاص (sale_price_override) بدل وراثة ثمن المنتج الأب؟
+   * ثمن خاص يُلغي سلَّم أثمنة المنتج الأب ويُعامَل كثمن واحد — انظر
+   * resolveVariantPricing في lib/pricing/tierPricing.ts. */
+  has_price_override: boolean;
 };
 
 export type CatalogProductImage = {
