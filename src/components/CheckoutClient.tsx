@@ -15,6 +15,8 @@ import {
 import type { CheckoutState } from "@/app/(storefront)/checkout/actions";
 import { trackInitiateCheckout, trackPurchase } from "@/lib/pixel/fbq";
 import { trackAnalyticsEvent } from "@/lib/analytics/track";
+import { trackGaBeginCheckout, trackGaPurchase, type GaItem } from "@/lib/ga/ecommerce";
+import type { CartItem } from "@/lib/cart/types";
 
 /**
  * أقصى ما ننتظره تأكيد حفظ الطلب قبل أن نخرج بالزبون إلى واتساب.
@@ -30,6 +32,20 @@ const SAVE_CONFIRM_TIMEOUT_MS = 2500;
 
 /** علامة "انتهت المهلة" — تميّزها عن جواب فشل حقيقي من الخادم. */
 const TIMED_OUT = Symbol("timed-out");
+
+/**
+ * سطر سلة → منتج كما يفهمه GA4. مُشتق واحد يستعمله begin_checkout و
+ * purchase معاً، فيستحيل أن تفترق قائمة المنتجات بين الحدثين.
+ */
+function toGaItem(item: CartItem): GaItem {
+  return {
+    sku: item.sku,
+    name: item.name,
+    price: item.unitPrice,
+    quantity: item.quantity,
+    variant: item.variantName,
+  };
+}
 
 // إتمام الطلب يفتح رسالة واتساب جاهزة بمعلومات الزبون والمنتجات مباشرة —
 // هذا هو المسار الذي يراه الزبون فعلياً ولا يتغيّر أبداً بنجاح الحفظ أو
@@ -76,6 +92,8 @@ export function CheckoutClient({
     // القياس الداخلي، بنفس الشرط ونفس الـref بالضبط — سطر مضاف لا يغيّر أي
     // منطق قائم أعلاه.
     trackAnalyticsEvent("begin_checkout", { cartValue: subtotal });
+    // GA4، تحت نفس الشرط ونفس الـref بالضبط — فلا يمكن أن يُرسَل مرتين.
+    trackGaBeginCheckout({ items: items.map(toGaItem), value: subtotal });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHydrated, items.length]);
 
@@ -268,6 +286,18 @@ export function CheckoutClient({
             );
           } catch (err) {
             console.error("قياس purchase فشل — لا يؤثّر على الطلب", err);
+          }
+          // GA4، داخل نفس الحارس بالضبط: طلب محفوظ فعلاً، وغير موقوف
+          // للمراجعة، ومرة واحدة لكل طلب. transaction_id هو المرجع العام
+          // للطلب نفسه — نفس الرقم الظاهر في لوحة الإدارة.
+          try {
+            trackGaPurchase({
+              transactionId: confirmed.publicReference,
+              items: items.map(toGaItem),
+              value: subtotal,
+            });
+          } catch (err) {
+            console.error("GA4 purchase فشل — لا يؤثّر على الطلب", err);
           }
         }
       } else {

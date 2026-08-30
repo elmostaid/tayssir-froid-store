@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useCart } from "@/components/CartProvider";
 import { buildProductWhatsAppLink } from "@/lib/whatsapp";
 import { trackAnalyticsEvent } from "@/lib/analytics/track";
+import { trackGaAddToCart } from "@/lib/ga/ecommerce";
 import type { EarlyAddPayload } from "@/lib/cart/earlyAdd";
 import type { CatalogProduct } from "@/lib/types";
 
@@ -55,6 +56,16 @@ export function ProductCardActions({
       sku: product.sku,
       quantity: product.min_order_qty,
       cartValue: subtotal + Number(product.sale_price) * product.min_order_qty,
+    });
+    // GA4 يُرسَل من هنا أيضاً، بخلاف حدث Meta أعلاه: هذا تركيب جديد بلا
+    // أرقام تاريخية يمكن أن تنكسر مقارنتها، وإسقاط الإضافة السريعة كان
+    // سيجعل add_to_cart في GA4 يقلّ عن الحقيقة بلا سبب.
+    trackGaAddToCart({
+      sku: product.sku,
+      name: product.name_ar,
+      price: Number(product.sale_price),
+      quantity: product.min_order_qty,
+      category: product.category_name_ar,
     });
     setAdded(true);
     window.setTimeout(() => setAdded(false), 1800);

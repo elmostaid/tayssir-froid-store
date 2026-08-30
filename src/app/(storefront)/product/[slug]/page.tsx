@@ -15,6 +15,7 @@ import { buildProductWhatsAppLink } from "@/lib/whatsapp";
 import { safeQuery } from "@/lib/safeQuery";
 import { AddToCartForm } from "@/components/AddToCartForm";
 import { ProductViewContentPixel } from "@/components/ProductViewContentPixel";
+import { ProductViewItemGa } from "@/components/ProductViewItemGa";
 import { ProductViewAnalytics } from "@/components/ProductViewAnalytics";
 import { ServiceUnavailableError } from "@/lib/serviceUnavailable";
 import { getSiteUrl } from "@/lib/siteUrl";
@@ -227,6 +228,12 @@ export default async function ProductPage({ params }: Props) {
             category={product.category_name_ar}
           />
           <ProductViewAnalytics productId={product.id} sku={product.sku} />
+          <ProductViewItemGa
+            sku={product.sku}
+            name={product.name_ar}
+            price={Number(product.sale_price)}
+            category={product.category_name_ar}
+          />
           <AddToCartForm
             product={product}
             variants={variants}
