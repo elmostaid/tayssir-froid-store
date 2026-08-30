@@ -20,6 +20,8 @@ import type { AdminOrderDetail, AdminOrderItem } from "@/lib/queries/adminOrders
 // بدل إرجاع خطأ 500 خام. الاختباران أدناه يتحققان من هذا الضمان الفعلي.
 
 const fixtureOrder: AdminOrderDetail = {
+  attributionFirst: null,
+  attributionLast: null,
   id: 1,
   orderNumber: "TF-000123",
   publicReference: "TF-AB12CD34EF",

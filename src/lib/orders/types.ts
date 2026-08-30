@@ -1,3 +1,5 @@
+import type { OrderAttribution } from "@/lib/attribution/types";
+
 export type CartItemInput = {
   productId: number;
   variantId: number | null;
@@ -29,6 +31,11 @@ export type CreateOrderInput = {
   customer: CustomerInput;
   idempotencyKey: string;
   requestContext?: CreateOrderRequestContext;
+  /**
+   * مصدر الزبون (أول لمسة وآخر لمسة) كما التقطه المتصفح. اختياري بالكامل:
+   * غيابه يعني عموداً NULL في الطلب، ولا يؤثّر على إنشاء الطلب إطلاقاً.
+   */
+  attribution?: OrderAttribution | null;
 };
 
 export type CreateOrderFieldError = {

@@ -1,3 +1,4 @@
+import { sanitizeTouch, type AttributionTouch } from "@/lib/attribution/types";
 import { sql } from "@/lib/db";
 import { ORDER_STATUSES, type OrderStatus } from "@/lib/orders/orderStatus";
 
@@ -29,6 +30,9 @@ export type AdminOrderListItem = {
 };
 
 export type AdminOrderDetail = AdminOrderListItem & {
+  /** مصدر الزبون. null = غير معروف (طلب سابق للنسب، أو طلب واتساب). */
+  attributionFirst: AttributionTouch | null;
+  attributionLast: AttributionTouch | null;
   customerAddress: string | null;
   customerNotes: string | null;
   cartonCount: number | null;
@@ -260,11 +264,14 @@ export async function getAdminOrderById(id: number): Promise<AdminOrderDetail | 
       final_total: string | null;
       created_at: string;
       source: string;
+      attribution_first: unknown;
+      attribution_last: unknown;
     }[]
   >`
     select id, order_number, public_reference, status, customer_name,
       customer_phone, customer_city, customer_address, customer_notes,
-      items_subtotal, carton_count, delivery_fee, final_total, created_at, source
+      items_subtotal, carton_count, delivery_fee, final_total, created_at, source,
+      attribution_first, attribution_last
     from public.orders where id = ${id} limit 1
   `;
   const row = rows[0];
@@ -275,6 +282,10 @@ export async function getAdminOrderById(id: number): Promise<AdminOrderDetail | 
     orderNumber: row.order_number,
     publicReference: row.public_reference,
     source: row.source,
+    // NULL هنا يعني "غير معروف" بصدق: طلب سابق للنسب، أو طلب واتساب لا يمرّ
+    // بالموقع أصلاً. لا نخترع مصدراً.
+    attributionFirst: sanitizeTouch(row.attribution_first),
+    attributionLast: sanitizeTouch(row.attribution_last),
     status: row.status,
     customerName: row.customer_name,
     customerPhone: row.customer_phone,

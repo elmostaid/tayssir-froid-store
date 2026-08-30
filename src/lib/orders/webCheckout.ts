@@ -1,5 +1,6 @@
 import { createOrder } from "@/lib/orders/createOrder";
 import { revalidateCatalog } from "@/lib/queries/catalogCache";
+import { sanitizeAttribution } from "@/lib/attribution/types";
 import type {
   CartItemInput,
   CreateOrderResult,
@@ -24,6 +25,8 @@ export type WebCheckoutInput = {
   address: unknown;
   notes: unknown;
   idempotencyKey: unknown;
+  /** مصدر الزبون كما أرسله المتصفح — غير موثوق، يُنقّى داخل createOrder. */
+  attribution?: unknown;
 };
 
 const UNREADABLE_CART: CreateOrderResult = {
@@ -74,6 +77,7 @@ export async function runWebCheckout(
     },
     idempotencyKey: String(input.idempotencyKey ?? ""),
     requestContext,
+    attribution: sanitizeAttribution(input.attribution),
   });
 
   // كل طلب ناجح يُنقص المخزون فعلياً، فنُبطل ذاكرة الكتالوج ليرى الزبون

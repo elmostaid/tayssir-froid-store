@@ -1,4 +1,5 @@
 import { displayCustomerAddress } from "@/lib/orders/customerAddress";
+import { describeTouch } from "@/lib/attribution/types";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
@@ -150,6 +151,41 @@ export default async function AdminOrderDetailPage({ params }: Props) {
           )}
         </dl>
       </div>
+
+      {/* من أين جاء هذا الزبون. يظهر فقط حين يكون معروفاً: طلبات ما قبل
+          تفعيل النسب وطلبات واتساب لا تحمل مصدراً، ولا نخترع لها واحداً. */}
+      {(order.attributionLast || order.attributionFirst) && (
+        <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-4">
+          <h2 className="text-sm font-semibold text-neutral-800">مصدر الزبون</h2>
+          <dl className="mt-2 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+            {([
+              ["آخر مصدر قبل الطلب", order.attributionLast],
+              ["أول مرة عرف الموقع", order.attributionFirst],
+            ] as const).map(([label, touch]) => (
+              <div key={label} className="rounded-lg bg-neutral-50 p-3">
+                <dt className="text-xs text-neutral-500">{label}</dt>
+                <dd className="mt-0.5 font-semibold text-neutral-800">{describeTouch(touch)}</dd>
+                {touch && (
+                  <ul className="mt-1 flex flex-col gap-0.5 text-xs text-neutral-600">
+                    {touch.utmCampaign && <li>الحملة: <span className="font-medium">{touch.utmCampaign}</span></li>}
+                    {touch.utmContent && <li>الإعلان: <span className="font-medium">{touch.utmContent}</span></li>}
+                    {touch.utmTerm && <li>الكلمة: <span className="font-medium">{touch.utmTerm}</span></li>}
+                    {touch.landingPath && <li dir="ltr" className="truncate">صفحة الدخول: {touch.landingPath}</li>}
+                    {touch.referrerHost && <li dir="ltr" className="truncate">الإحالة: {touch.referrerHost}</li>}
+                    {(touch.fbclid || touch.gclid || touch.ttclid) && (
+                      <li>
+                        نقرة إعلانية:{" "}
+                        {touch.fbclid ? "Meta" : touch.gclid ? "Google" : "TikTok"}
+                      </li>
+                    )}
+                    <li>{new Date(touch.at).toLocaleString("ar-MA")}</li>
+                  </ul>
+                )}
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
 
       <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-4">
         <h2 className="text-sm font-semibold text-neutral-800">المنتجات</h2>

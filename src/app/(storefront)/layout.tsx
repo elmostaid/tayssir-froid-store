@@ -2,6 +2,7 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { CartProvider } from "@/components/CartProvider";
 import { AnalyticsClient } from "@/components/AnalyticsClient";
+import { AttributionTracker } from "@/components/AttributionTracker";
 import { MobileCartBar } from "@/components/MobileCartBar";
 import { EARLY_ADD_SCRIPT } from "@/lib/cart/earlyAdd";
 
@@ -22,6 +23,8 @@ export default function StorefrontLayout({
       <script dangerouslySetInnerHTML={{ __html: EARLY_ADD_SCRIPT }} />
       {/* قياس داخلي مجهول — لا يعرض شيئاً ولا يؤثِّر على التخطيط. */}
       <AnalyticsClient />
+      {/* نسب الطلب إلى مصدره — مسار مستقل، لا يعرض شيئاً. */}
+      <AttributionTracker />
       <div className="flex min-h-full flex-1 flex-col">
         <SiteHeader />
         <main className="flex-1">{children}</main>
