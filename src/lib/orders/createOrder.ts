@@ -15,6 +15,7 @@ import { sendCapiEvent } from "@/lib/pixel/capi";
 import { toInternationalDigits } from "@/lib/phone";
 import { getSiteUrl } from "@/lib/siteUrl";
 import { customerAddressOrNull } from "@/lib/orders/customerAddress";
+import { sanitizeAttribution } from "@/lib/attribution/types";
 import type {
   CreateOrderFieldError,
   CreateOrderInput,
@@ -156,15 +157,23 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     let outcome: { reserved: OrderLine[]; rejected: RejectedLine[] } | null = null;
     const readOutcome = () => outcome as { reserved: OrderLine[]; rejected: RejectedLine[] } | null;
 
+    // النسب يُنقّى هنا لا في المتصفح: ما يصل من العميل غير موثوق. تنقية
+    // فاشلة تعني NULL — لا استثناء ولا طلباً مرفوضاً.
+    const attribution = sanitizeAttribution(input.attribution);
+    const attributionFirst = attribution?.first ? sql.json(attribution.first) : null;
+    const attributionLast = attribution?.last ? sql.json(attribution.last) : null;
+
     const result = await sql.begin(async (trx) => {
       const inserted = await trx<{ id: number; public_reference: string; order_number: string }[]>`
         insert into public.orders (
           customer_name, customer_phone, customer_city, customer_address,
-          customer_notes, items_subtotal, status, source, idempotency_key
+          customer_notes, items_subtotal, status, source, idempotency_key,
+          attribution_first, attribution_last
         ) values (
           ${input.customer.fullName.trim()}, ${normalizedPhone}, ${input.customer.city.trim()},
           ${customerAddressOrNull(input.customer.address)}, ${input.customer.notes?.trim() || null},
-          ${subtotal}, 'new', 'website', ${input.idempotencyKey}
+          ${subtotal}, 'new', 'website', ${input.idempotencyKey},
+          ${attributionFirst}, ${attributionLast}
         )
         on conflict (idempotency_key) do nothing
         returning id, public_reference, order_number

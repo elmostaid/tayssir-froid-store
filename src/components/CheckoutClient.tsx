@@ -17,6 +17,7 @@ import { trackInitiateCheckout, trackPurchase } from "@/lib/pixel/fbq";
 import { trackAnalyticsEvent } from "@/lib/analytics/track";
 import { trackGaBeginCheckout, trackGaPurchase, type GaItem } from "@/lib/ga/ecommerce";
 import type { CartItem } from "@/lib/cart/types";
+import { getOrderAttribution } from "@/lib/attribution/capture";
 
 /**
  * أقصى ما ننتظره تأكيد حفظ الطلب قبل أن نخرج بالزبون إلى واتساب.
@@ -221,6 +222,9 @@ export function CheckoutClient({
           address,
           notes,
           idempotencyKey,
+          // مصدر الزبون كما التُقط منذ أول دخول. يُقرأ هنا لحظة الإرسال لا
+          // قبله، فيحمل آخر لمسة فعلية. فشله يعطي null بلا أي أثر على الطلب.
+          attribution: getOrderAttribution(),
         }),
       })
         .then((response) => (response.ok ? response.json() : null))

@@ -53,6 +53,7 @@ export async function POST(request: Request) {
       address: body.address,
       notes: body.notes,
       idempotencyKey: body.idempotencyKey,
+      attribution: body.attribution,
     },
     await readRequestContext()
   );
