@@ -7,6 +7,7 @@ import { snapQuantity } from "@/lib/cart/cartMath";
 import { formatMad } from "@/lib/format";
 import { trackAddToCart } from "@/lib/pixel/fbq";
 import { trackAnalyticsEvent } from "@/lib/analytics/track";
+import { trackGaAddToCart } from "@/lib/ga/ecommerce";
 import type { EarlyAddPayload } from "@/lib/cart/earlyAdd";
 import type { CatalogProduct, CatalogProductVariant } from "@/lib/types";
 
@@ -124,6 +125,15 @@ export function AddToCartForm({
       sku: product.sku,
       quantity,
       cartValue: subtotal + effective.price * quantity,
+    });
+    // GA4 — مسار ثالث مستقل بنفس القاعدة: عند الإضافة الفعلية وحدها، بنفس
+    // المنتج والكمية والسعر المعروضين للزبون.
+    trackGaAddToCart({
+      sku: product.sku,
+      name: product.name_ar,
+      price: effective.price,
+      quantity,
+      category: product.category_name_ar,
     });
     setAdded(true);
   }
