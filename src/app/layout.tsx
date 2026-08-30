@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { getSiteUrl, isProductionDeployment } from "@/lib/siteUrl";
 import { MetaPixel } from "@/components/MetaPixel";
+import { GoogleAnalytics } from "@/components/GoogleAnalytics";
 
 const siteUrl = getSiteUrl();
 const description =
@@ -42,6 +43,7 @@ export default function RootLayout({
     <html lang="ar" dir="rtl" className="h-full antialiased">
       <body className="min-h-full flex flex-col bg-neutral-50 text-neutral-900">
         <MetaPixel />
+        <GoogleAnalytics />
         {children}
       </body>
     </html>
