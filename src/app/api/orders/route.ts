@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { headers, cookies } from "next/headers";
 import { runWebCheckout } from "@/lib/orders/webCheckout";
-import type { CreateOrderRequestContext } from "@/lib/orders/types";
+import { readOrderRequestContext } from "@/lib/orders/requestContext";
 
 export const dynamic = "force-dynamic";
 
@@ -15,24 +14,6 @@ export const dynamic = "force-dynamic";
  * لا يمنع هذا المسار الزبون من شيء: الواجهة لا تنتظر جوابه أكثر من مهلة
  * قصيرة، وما بعدها تمضي إلى واتساب وتترك الطلب يُحفظ في الخلفية.
  */
-async function readRequestContext(): Promise<CreateOrderRequestContext | undefined> {
-  try {
-    const headerList = await headers();
-    const cookieStore = await cookies();
-    const forwardedFor = headerList.get("x-forwarded-for");
-    return {
-      clientIpAddress:
-        forwardedFor?.split(",")[0]?.trim() || headerList.get("x-real-ip") || undefined,
-      clientUserAgent: headerList.get("user-agent") || undefined,
-      fbp: cookieStore.get("_fbp")?.value,
-      fbc: cookieStore.get("_fbc")?.value,
-      eventSourceUrl: headerList.get("referer") || undefined,
-    };
-  } catch {
-    return undefined;
-  }
-}
-
 export async function POST(request: Request) {
   let body: Record<string, unknown>;
   try {
@@ -55,7 +36,7 @@ export async function POST(request: Request) {
       idempotencyKey: body.idempotencyKey,
       attribution: body.attribution,
     },
-    await readRequestContext()
+    await readOrderRequestContext()
   );
 
   // حتى الرفض يرجع 200: هذا جواب منطقي لا عطل في المسار، والواجهة تقرأ

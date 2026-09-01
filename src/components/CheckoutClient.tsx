@@ -277,31 +277,26 @@ export function CheckoutClient({
           } catch (err) {
             console.error("trackPurchase فشل — لا يؤثّر على الطلب", err);
           }
-          try {
-            trackAnalyticsEvent(
-              "purchase",
-              {
-                orderRef: confirmed.publicReference,
-                orderValue: subtotal,
-                cartValue: subtotal,
-                quantity: items.reduce((sum, item) => sum + item.quantity, 0),
-              },
-              { immediate: true }
-            );
-          } catch (err) {
-            console.error("قياس purchase فشل — لا يؤثّر على الطلب", err);
-          }
-          // GA4، داخل نفس الحارس بالضبط: طلب محفوظ فعلاً، وغير موقوف
-          // للمراجعة، ومرة واحدة لكل طلب. transaction_id هو المرجع العام
-          // للطلب نفسه — نفس الرقم الظاهر في لوحة الإدارة.
-          try {
-            trackGaPurchase({
-              transactionId: confirmed.publicReference,
-              items: items.map(toGaItem),
-              value: subtotal,
-            });
-          } catch (err) {
-            console.error("GA4 purchase فشل — لا يؤثّر على الطلب", err);
+          // القياس الداخلي لم يعد يُرسَل من هنا: الخادم يكتبه بنفسه فور
+          // حفظ الطلب. الطلب الذي يُحفظ أبطأ من مهلة التأكيد لا يصل إلى
+          // هذه الكتلة أصلاً، فكان يضيع حدثه — وهو ما وقع لطلب
+          // TF-2026-0081. إبقاء الإرسال هنا كذلك كان سيعني حدثين لطلب واحد.
+
+          // GA4: يُرسَل من المتصفح فقط إن لم يُرسله الخادم. GA4 لا تُلغي
+          // التكرار حسب transaction_id، فإرسال الطرفين يُضاعف كل طلب وكل
+          // درهم في التقارير. حين يكون Measurement Protocol مضبوطاً يتولّاه
+          // الخادم وحده (فلا يعود مرتبطاً ببقاء هذه الصفحة)، وحين لا يكون
+          // يبقى هذا المسار كما كان قبل التغيير تماماً.
+          if (!confirmed.gaPurchaseHandledServerSide) {
+            try {
+              trackGaPurchase({
+                transactionId: confirmed.publicReference,
+                items: items.map(toGaItem),
+                value: subtotal,
+              });
+            } catch (err) {
+              console.error("GA4 purchase فشل — لا يؤثّر على الطلب", err);
+            }
           }
         }
       } else {
