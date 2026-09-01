@@ -353,6 +353,17 @@ const queryFeaturedProducts = cachedCatalogQuery(
   `
 );
 
+// **لا failQuery هنا عمداً — وهذا ليس تساهلاً.** failQuery ترمي
+// ServiceUnavailableError، وsafeQuery تُعيد رميها قصداً حتى لا يُخدَّم متجر
+// فارغ برمز 200. ذاك المنطق يخصّ التصنيفات والمنتجات: صفحة رئيسية بلا
+// منتجات متجرٌ معطّل يجب أن يُعلن عطله. أما ما دون فليس كذلك، وله بديل
+// معرَّف سلفاً — فإسقاط الصفحة كلها لأجله عطلٌ أكبر مما يعالج.
+//
+// وهذا وقع فعلاً، لا افتراضاً: أول بناء معاينة لهذا التغيير ردّ 500 على
+// الصفحة الرئيسية، لأن home_featured_products لم تكن قد طُبِّقت على قاعدة
+// المعاينة بعد. أي أن القسم الاختياري أسقط المتجر كله لدقائق بين الدمج
+// وتطبيق الهجرة. الآن: يُسجَّل الخطأ ويُرجَع لا شيء، فتتراجع الصفحة إلى
+// القائمة المقاسة — وهو نفس المسار المصمَّم أصلاً لحالة «لم يختر المدير».
 /**
  * منتجات «الأكثر طلباً» التي اختارها صاحب المتجر يدوياً، بترتيبه هو.
  *
@@ -370,7 +381,11 @@ export async function getFeaturedProducts(): Promise<CatalogProduct[]> {
   try {
     return await queryFeaturedProducts();
   } catch (error) {
-    failQuery("getFeaturedProducts", error);
+    console.error(
+      "catalog.ts (getFeaturedProducts): تعذّر جلب اختيار الإدارة — نتراجع للقائمة المقاسة",
+      error
+    );
+    return [];
   }
 }
 
@@ -477,7 +492,13 @@ export async function getCategoryCoverImages(): Promise<Record<string, string>> 
     if (rows.length === 0) logEmptyResult("getCategoryCoverImages");
     return Object.fromEntries(rows.map((r) => [r.category_slug, r.primary_image_path]));
   } catch (error) {
-    failQuery("getCategoryCoverImages", error);
+    // بلا غلاف تعرض البطاقة الأيقونة والاسم (المسار الاحتياطي القائم منذ
+    // البداية للتصنيفات بلا صورة) — صورةٌ ناقصة، لا متجر ساقط.
+    console.error(
+      "catalog.ts (getCategoryCoverImages): تعذّر جلب أغلفة التصنيفات — البطاقات تعرض الأيقونة",
+      error
+    );
+    return {};
   }
 }
 
