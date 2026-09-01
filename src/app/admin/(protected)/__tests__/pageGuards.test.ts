@@ -64,6 +64,13 @@ describe("صفحات لوحة الإدارة — الحماية داخل كل ص
     await expectsRedirectToLogin(() => NewCategoryPage());
   });
 
+  test("«الأكثر طلباً» ترفض الزائر قبل جلب القائمة", async () => {
+    const { default: AdminFeaturedPage } = await import(
+      "@/app/admin/(protected)/featured/page"
+    );
+    await expectsRedirectToLogin(() => AdminFeaturedPage());
+  });
+
   test("تعديل تصنيف ترفض الزائر قبل جلب التصنيف", async () => {
     const { default: EditCategoryPage } = await import(
       "@/app/admin/(protected)/categories/[id]/page"

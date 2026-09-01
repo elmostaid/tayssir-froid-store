@@ -13,14 +13,17 @@ vi.mock("@/lib/auth/requireAdmin", async () => {
   return { ...actual, getAdminUser: getAdminUserMock };
 });
 
+const updateTagMock = vi.fn();
 vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
-  updateTag: vi.fn(),
+  updateTag: (...args: unknown[]) => updateTagMock(...args),
+  revalidateTag: vi.fn(),
   // تمرير مباشر: لا تخزين مؤقّت في الاختبارات، فينفَّذ الاستعلام الحقيقي.
   unstable_cache: (fn: unknown) => fn,
 }));
 
 const { quickUpdateProduct } = await import("@/app/admin/(protected)/products/actions");
+const { CATALOG_TAG } = await import("@/lib/queries/catalogCache");
 
 const ADMIN_USER = { id: "test-admin", email: "admin@local", role: "admin" as const };
 const STAFF_USER = { id: "test-staff", email: "staff@local", role: "staff" as const };
@@ -283,5 +286,44 @@ describe("quickUpdateProduct — Owner/Admin يقدر يعدّل، Staff يُم�
 
     expect(result.error).toBeTruthy();
     expect(result.fieldErrors?.stockQuantity).toBeTruthy();
+  });
+});
+
+describe("التعديل السريع يُبطل ذاكرة الكتالوج", () => {
+  // العطل الذي أوجب هذا الاختبار: quickUpdateProduct كانت تستدعي
+  // revalidatePath لصفحات /admin فقط، بلا إبطال وسم الكتالوج الذي يقرأ منه
+  // الزبون (unstable_cache بمهلة 60 ثانية). فالمدير يغيّر ثمناً أو ينشر
+  // منتجاً ويفتح المتجر فلا يرى شيئاً تغيّر — ويظن أن الحفظ فشل، فيعيده.
+  test("Admin: كل حفظ ناجح يُبطل وسم الكتالوج", async () => {
+    getAdminUserMock.mockResolvedValueOnce(ADMIN_USER);
+    updateTagMock.mockClear();
+
+    const fd = new FormData();
+    fd.set("salePrice", "277");
+    fd.set("purchasePrice", "100");
+    fd.set("stockQuantity", "50");
+    fd.set("minOrderQty", "1");
+    fd.set("status", "draft");
+
+    const result = await quickUpdateProduct(productId, { error: null }, fd);
+
+    expect(result.error).toBeNull();
+    expect(updateTagMock).toHaveBeenCalledWith(CATALOG_TAG);
+  });
+
+  test("Staff: الرفض لا يُبطل شيئاً (لا كتابة أصلاً)", async () => {
+    getAdminUserMock.mockResolvedValueOnce(STAFF_USER);
+    updateTagMock.mockClear();
+
+    const fd = new FormData();
+    fd.set("salePrice", "999");
+    fd.set("purchasePrice", "100");
+    fd.set("stockQuantity", "50");
+    fd.set("minOrderQty", "1");
+    fd.set("status", "draft");
+
+    await quickUpdateProduct(productId, { error: null }, fd);
+
+    expect(updateTagMock).not.toHaveBeenCalled();
   });
 });

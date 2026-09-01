@@ -209,29 +209,46 @@ async function runProductsQuery(
   pattern: string | null,
   offset: number
 ): Promise<CatalogProduct[]> {
-  // الترتيب الافتراضي ("الأحدث"): ترتيب المدير اليدوي داخل التصنيف
-  // (sort_order تصاعدياً) أولاً — أزرار "↑ طلّع"/"↓ هبّط" فـ/admin/products
-  // تُحدِّثه مباشرة — ثم created_at تنازلياً كـfallback ثابت عند تساوي
-  // sort_order (كل المنتجات القديمة تبدأ بقيم sort_order مختلفة أصلاً؛
-  // التساوي يحدث فقط لمنتجات جديدة لم تُرتَّب يدوياً بعد).
+  // الترتيب الافتراضي ("الأحدث"): ترتيب المدير اليدوي — لا ترتيب إداري خفي.
+  //
+  // **لماذا انضمّ ترتيب التصنيف إلى المفتاح.** sort_order للمنتج رقم *داخل
+  // تصنيفه فقط*: moveProductToRank يُعيد ترقيم التصنيف 1..N بعد كل نقل،
+  // والقياس على الإنتاج يؤكّده — ثمانية تصنيفات فيها منتجات، كل واحد
+  // مُرقَّم 1..N على حدة (23 و8 و18 و91 و53 و44 و48 و23 قيمة متمايزة).
+  // فالترتيب بـsort_order وحده على قائمة غير مفلترة بتصنيف («جميع
+  // المنتجات» فالصفحة الرئيسية) كان يخلط ثمانية منتجات مختلفة كلها تحمل
+  // الرقم 1، ثم ثمانية تحمل 2… أي أن المدير يضع منتجاً فالمرتبة 1 فلا يراه
+  // أولاً، بل وسط سبعة آخرين. الرقم كان يُطبَّق فعلاً، لكن مقارنة أرقام من
+  // تصنيفات مختلفة ببعضها لا معنى لها.
+  //
+  // الحل: ترتيب التصنيفات أولاً (نفس sort_order الذي يضبطه المدير فـ
+  // /admin/categories وهو نفسه ترتيب قسم التصنيفات المعروض للزبون)، ثم
+  // ترتيب المنتج داخل تصنيفه. فصفحة التصنيف لا يتغيّر فيها شيء (تصنيف
+  // واحد)، و«جميع المنتجات» تصير تصنيفاً بعد تصنيف بترتيب المدير الفعلي.
+  // created_at تنازلياً يبقى fallback ثابتاً عند تساوي الرقم (منتج جديد لم
+  // يُرتَّب يدوياً بعد).
   const orderBy =
     sort === "price_asc"
-      ? sql`order by sale_price asc`
+      ? sql`order by p.sale_price asc`
       : sort === "price_desc"
-        ? sql`order by sale_price desc`
+        ? sql`order by p.sale_price desc`
         : sort === "name"
-          ? sql`order by name_ar asc`
-          : sql`order by sort_order asc, created_at desc`;
+          ? sql`order by p.name_ar asc`
+          : sql`order by c.sort_order asc nulls last, p.sort_order asc, p.created_at desc`;
 
+  // LEFT JOIN لا INNER: catalog_products يشترط أصلاً أن يكون التصنيف فعّالاً
+  // فالمطابقة مضمونة اليوم، لكن الربط الخارجي يضمن ألا يختفي منتج من المتجر
+  // بصمت لو تغيّر تعريف أيٍّ من العرضين لاحقاً — يتأخّر ترتيبه ولا يسقط.
   return sql<CatalogProduct[]>`
-    select * from public.catalog_products
-    where (${categorySlug}::text is null or category_slug = ${categorySlug})
+    select p.* from public.catalog_products p
+    left join public.catalog_categories c on c.id = p.category_id
+    where (${categorySlug}::text is null or p.category_slug = ${categorySlug})
       and (
         ${pattern}::text is null
-        or name_ar ilike ${pattern}
-        or name_fr ilike ${pattern}
-        or sku ilike ${pattern}
-        or description_ar ilike ${pattern}
+        or p.name_ar ilike ${pattern}
+        or p.name_fr ilike ${pattern}
+        or p.sku ilike ${pattern}
+        or p.description_ar ilike ${pattern}
       )
     ${orderBy}
     limit ${limit}
@@ -316,6 +333,62 @@ export async function getProductsBySkus(skus: string[]): Promise<CatalogProduct[
   }
 }
 
+/**
+ * الحد الأقصى لعدد منتجات «الأكثر طلباً» المعروضة فالصفحة الرئيسية.
+ *
+ * القسم فوق الطيّة مباشرة، وكل بطاقة صورة تُحمَّل على هاتف بشبكة ضعيفة.
+ * 24 تملأ ست صفوف على الهاتف — أكثر من ذلك يُعيد المشكلة التي وُجد القسم
+ * لحلّها (تمرير طويل قبل الوصول لأي شيء آخر). الإدارة تختار ما تشاء،
+ * والاستعلام يقطع عند هذا الحد.
+ */
+export const HOME_FEATURED_LIMIT = 24;
+
+const queryFeaturedProducts = cachedCatalogQuery(
+  ["catalog-home-featured"],
+  async () => sql<CatalogProduct[]>`
+    select p.* from public.home_featured_products f
+    join public.catalog_products p on p.id = f.product_id
+    order by f.position asc, f.product_id asc
+    limit ${HOME_FEATURED_LIMIT}
+  `
+);
+
+// **لا failQuery هنا عمداً — وهذا ليس تساهلاً.** failQuery ترمي
+// ServiceUnavailableError، وsafeQuery تُعيد رميها قصداً حتى لا يُخدَّم متجر
+// فارغ برمز 200. ذاك المنطق يخصّ التصنيفات والمنتجات: صفحة رئيسية بلا
+// منتجات متجرٌ معطّل يجب أن يُعلن عطله. أما ما دون فليس كذلك، وله بديل
+// معرَّف سلفاً — فإسقاط الصفحة كلها لأجله عطلٌ أكبر مما يعالج.
+//
+// وهذا وقع فعلاً، لا افتراضاً: أول بناء معاينة لهذا التغيير ردّ 500 على
+// الصفحة الرئيسية، لأن home_featured_products لم تكن قد طُبِّقت على قاعدة
+// المعاينة بعد. أي أن القسم الاختياري أسقط المتجر كله لدقائق بين الدمج
+// وتطبيق الهجرة. الآن: يُسجَّل الخطأ ويُرجَع لا شيء، فتتراجع الصفحة إلى
+// القائمة المقاسة — وهو نفس المسار المصمَّم أصلاً لحالة «لم يختر المدير».
+/**
+ * منتجات «الأكثر طلباً» التي اختارها صاحب المتجر يدوياً، بترتيبه هو.
+ *
+ * قائمة فارغة معناها «لم يختر شيئاً بعد» — والصفحة الرئيسية تتراجع عندها
+ * إلى القائمة المقاسة فـlib/catalog/topDemand.ts. الاختيار اليدوي يفوز
+ * دائماً حين يوجد، بلا خلط بين المصدرين.
+ *
+ * الربط بـcatalog_products (لا products) مقصود: منتج أُخفي أو نفد أو
+ * أُرشِف يسقط من القسم تلقائياً بلا أن يحذفه المدير يدوياً، ولا يتسرّب من
+ * هنا أي عمود سرّي (ثمن الشراء).
+ */
+export async function getFeaturedProducts(): Promise<CatalogProduct[]> {
+  if (!hasDatabase) return [];
+
+  try {
+    return await queryFeaturedProducts();
+  } catch (error) {
+    console.error(
+      "catalog.ts (getFeaturedProducts): تعذّر جلب اختيار الإدارة — نتراجع للقائمة المقاسة",
+      error
+    );
+    return [];
+  }
+}
+
 export async function getProducts(
   options: {
     categorySlug?: string;
@@ -376,6 +449,58 @@ export const getProductBySlug = cache(async (slug: string): Promise<CatalogProdu
     failQuery("getProductBySlug", error);
   }
 });
+
+const queryCategoryCoverImages = cachedCatalogQuery(
+  ["catalog-category-covers"],
+  async () => sql<{ category_slug: string; primary_image_path: string }[]>`
+    select distinct on (p.category_slug) p.category_slug, p.primary_image_path
+    from public.catalog_products p
+    where p.primary_image_path is not null
+    order by p.category_slug, p.sort_order asc, p.created_at desc
+  `
+);
+
+/**
+ * صورة غلاف لكل تصنيف، مأخوذة من **أول منتج فيه بترتيب المدير اليدوي**.
+ *
+ * لماذا وُجدت: بطاقات التصنيفات فالصفحة الرئيسية تستعمل صوراً ثابتة
+ * مُصمَّمة فـpublic/categories، وصورتان منها كانتا ملفاً واحداً بايتاً
+ * ببايت (سخان الماء الغازي والكهربائي)، ونصّها المطبوع داخلها يقول «قطع
+ * غيار سخان الماء الغازي والكهربائي» — أي أنها صُمِّمت لتصنيف مدموج أصلاً،
+ * بينما التصنيفان منفصلان فعلاً فقاعدة البيانات ولكلٍّ منتجاته (23 و8).
+ * فالزبون يرى بطاقتين بنفس الصورة ونفس العنوان المطبوع، ولا يعرف أيهما
+ * أيّ. ولا توجد فالمشروع صورة مصمَّمة أخرى لأيٍّ منهما (تاريخ git يُظهر
+ * الملفين متطابقين منذ أول commit أضافهما).
+ *
+ * فبدل اختراع صورة جديدة، يأخذ التصنيف صورة قطعة حقيقية من قطعه هو —
+ * موجودة أصلاً فقاعدة البيانات — ويُكتب اسمه نصاً تحتها. والاختيار ليس
+ * عشوائياً: أول منتج بترتيب المدير اليدوي، فتغيير غلاف التصنيف يصير
+ * بتحريك منتج إلى المرتبة 1 من /admin/products، بلا كود ولا رفع صور.
+ */
+export async function getCategoryCoverImages(): Promise<Record<string, string>> {
+  if (!hasDatabase) {
+    const covers: Record<string, string> = {};
+    for (const product of getPreviewProducts({ limit: 500 })) {
+      if (!product.primary_image_path) continue;
+      covers[product.category_slug] ??= product.primary_image_path;
+    }
+    return covers;
+  }
+
+  try {
+    const rows = await queryCategoryCoverImages();
+    if (rows.length === 0) logEmptyResult("getCategoryCoverImages");
+    return Object.fromEntries(rows.map((r) => [r.category_slug, r.primary_image_path]));
+  } catch (error) {
+    // بلا غلاف تعرض البطاقة الأيقونة والاسم (المسار الاحتياطي القائم منذ
+    // البداية للتصنيفات بلا صورة) — صورةٌ ناقصة، لا متجر ساقط.
+    console.error(
+      "catalog.ts (getCategoryCoverImages): تعذّر جلب أغلفة التصنيفات — البطاقات تعرض الأيقونة",
+      error
+    );
+    return {};
+  }
+}
 
 const queryProductCountsByCategory = cachedCatalogQuery(
   ["catalog-product-counts"],

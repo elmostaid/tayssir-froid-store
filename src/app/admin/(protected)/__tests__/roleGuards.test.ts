@@ -70,6 +70,14 @@ describe("صفحات مقصورة على Owner/Admin — Staff يُعاد توج
     await expectsRedirectTo(() => NewProductPage(), "/admin/orders");
   });
 
+  test("«الأكثر طلباً»", async () => {
+    getAdminUserMock.mockResolvedValueOnce(STAFF_USER);
+    const { default: AdminFeaturedPage } = await import(
+      "@/app/admin/(protected)/featured/page"
+    );
+    await expectsRedirectTo(() => AdminFeaturedPage(), "/admin/orders");
+  });
+
   test("تعديل منتج (يشمل ثمن الشراء) — الارتداد يسبق أي استعلام", async () => {
     getAdminUserMock.mockResolvedValueOnce(STAFF_USER);
     const { default: EditProductPage } = await import(

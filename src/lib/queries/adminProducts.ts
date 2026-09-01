@@ -4,6 +4,15 @@ import { LOW_STOCK_THRESHOLD } from "@/lib/lowStockThreshold";
 // استعلامات لوحة الإدارة فقط — تشمل purchase_price وكل الحالات (مسودة/
 // منشور/غير متوفر/مؤرشف). لا تُستعمل هذه الدوال خارج مسارات /admin أبداً.
 
+// ترتيب القائمتين أدناه يبدأ بـc.sort_order (ترتيب التصنيفات الذي يضبطه
+// المدير فـ/admin/categories) قبل p.category_id، ليطابق حرفياً ما يراه
+// الزبون فـ«جميع المنتجات» (catalog.ts). قبل هذا كانت اللوحة تجمع التصنيفات
+// بترتيب معرّفاتها فقاعدة البيانات (category_id) بينما يعرضها المتجر بترتيب
+// sort_order — فترتيبان مختلفان لنفس المنتجات، ولا وسيلة للمدير أن يتحقّق
+// من ترتيبه إلا بفتح المتجر نفسه. منتجات التصنيف الواحد تبقى متتالية (شرط
+// ReorderableProductsList لحساب أول/آخر منتج فتصنيفه) لأن p.category_id ما
+// زال مفتاحاً ثانياً يفصل تصنيفين لو تصادف تساوي sort_order بينهما.
+
 export { LOW_STOCK_THRESHOLD };
 
 export type AdminProduct = {
@@ -35,7 +44,7 @@ export async function getAllProductsAdmin(): Promise<AdminProduct[]> {
       p.stock_quantity, p.status, p.sort_order
     from public.products p
     join public.categories c on c.id = p.category_id
-    order by p.category_id, p.sort_order asc, p.created_at desc
+    order by c.sort_order asc, p.category_id, p.sort_order asc, p.created_at desc
   `;
 }
 
@@ -68,7 +77,7 @@ export async function listProductsAdmin(
       and (${categoryId ?? null}::bigint is null or p.category_id = ${categoryId ?? null})
       and (${status ?? null}::text is null or p.status = ${status ?? null})
       and (${lowStockOnly ?? false} = false or p.stock_quantity <= ${LOW_STOCK_THRESHOLD})
-    order by p.category_id, p.sort_order asc, p.created_at desc
+    order by c.sort_order asc, p.category_id, p.sort_order asc, p.created_at desc
   `;
 }
 
