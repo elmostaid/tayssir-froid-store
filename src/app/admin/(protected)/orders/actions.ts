@@ -235,22 +235,29 @@ export type DeleteOrderResult =
 /**
  * حذف طلب نهائياً من لوحة الإدارة — مقصور على Owner/Admin.
  *
- * لماذا حذف واحد يكفي: فحصنا المفاتيح الأجنبية الفعلية على قاعدتَي Preview
- * والإنتاج (متطابقتان تماماً)، والسلوك معرَّف أصلاً في المخطَّط:
+ * لماذا حذف واحد يكفي لمحو التوابع: السلوك معرَّف في المخطَّط نفسه —
  *   order_items.order_id          → ON DELETE CASCADE   (تُحذف معه)
  *   order_status_history.order_id → ON DELETE CASCADE   (يُحذف معه)
- *   stock_movements.order_id      → ON DELETE SET NULL  (يبقى، ويفقد الربط)
- * فلا نكتب حذفاً يدوياً بالترتيب — ذلك يكرّر منطقاً تضمنه القاعدة أصلاً،
- * وينكسر بصمت لو أُضيف جدول مرتبط جديد لاحقاً. ولا حاجة لأي migration.
+ *   stock_movements.order_id      → ON DELETE SET NULL  (تبقى، وتفقد الربط)
+ * فلا نكتب حذفاً يدوياً بالترتيب؛ ذلك يكرّر منطقاً تضمنه القاعدة وينكسر
+ * بصمت لو أُضيف جدول مرتبط لاحقاً.
  *
- * ⚠️ ملاحظة عمل مهمة: حركات المخزون تبقى محفوظة عمداً (SET NULL) لأنها سجل
- * جرد، لكن **الحذف لا يُرجِع الكمية إلى المخزون**. إرجاع الكمية يقع فقط عند
- * "إلغاء" أو "إرجاع" الطلب (restockOrderInternal أعلاه). فإن كان المطلوب
- * استرجاع المخزون، يُلغى الطلب أولاً ثم يُحذف.
+ * لكن الحذف يفعل شيئين آخرين قبل ذلك، وكلاهما كان ناقصاً:
  *
- * المعاملة هنا ليست تجميلاً: نقفل الصف (for update) ونتحقّق من وجوده داخل
- * نفس المعاملة قبل الحذف، فإما أن يتم كل شيء أو لا شيء — لا حذف جزئي مهما
- * تزامنت الطلبات.
+ * **1. يُرجع المخزون — مرة واحدة.** كان الحذف يترك الكميات مخصومة إلى
+ * الأبد: 2,103 وحدة عبر 144 منتجاً على الإنتاج، ومنتج صار صفراً وهو معروض
+ * للبيع. والشرط «مرة واحدة» ليس تفصيلاً: الطلب المُلغى أو الراجع أرجع
+ * مخزونه سابقاً في restockOrderInternal، فإرجاعه ثانيةً عند الحذف يخترع
+ * قطعاً لا وجود لها. لذلك يُرجَع فقط ما هو مخصوم فعلاً الآن: سطور
+ * `reserved` في طلب حالته ليست من RESTOCKING_STATUSES.
+ *
+ * **2. يترك أثراً.** كل ما يخصّ الطلب يُمحى بـCASCADE، فبلا سجل لا يبقى
+ * أي جواب عن «ماذا كان فيه، ومن حذفه، ومتى». لقطة الطلب وسطوره تُحفظ في
+ * `order_deletions` قبل الحذف، ومعها كم وحدة أُرجعت (أو أنه لم يُرجَع شيء
+ * ولماذا).
+ *
+ * الترتيب داخل معاملة واحدة مع قفل الصف (`for update`): إما أن يقع كل ذلك
+ * أو لا شيء منه — لا طلب يُحذف بلا سجل، ولا مخزون يُرجَع لطلب بقي.
  */
 export async function deleteOrder(orderId: number): Promise<DeleteOrderResult> {
   const admin = await getAdminUser();
@@ -265,10 +272,95 @@ export async function deleteOrder(orderId: number): Promise<DeleteOrderResult> {
   let orderNumber: string;
   try {
     orderNumber = await sql.begin(async (trx) => {
-      const [order] = await trx<{ order_number: string }[]>`
-        select order_number from public.orders where id = ${orderId} for update
+      const [order] = await trx<
+        {
+          id: number;
+          order_number: string;
+          public_reference: string | null;
+          source: string | null;
+          status: string;
+          customer_name: string | null;
+          customer_phone: string | null;
+          customer_city: string | null;
+          items_subtotal: string | null;
+          final_total: string | null;
+          created_at: Date;
+        }[]
+      >`
+        select id, order_number, public_reference, source, status,
+               customer_name, customer_phone, customer_city,
+               items_subtotal, final_total, created_at
+        from public.orders where id = ${orderId} for update
       `;
       if (!order) throw new Error("ORDER_NOT_FOUND");
+
+      const items = await trx<
+        {
+          product_id: number | null;
+          variant_id: number | null;
+          sku_snapshot: string | null;
+          product_name_snapshot: string | null;
+          quantity: number;
+          unit_price_snapshot: string | null;
+          line_total: string | null;
+          line_status: string;
+        }[]
+      >`
+        select product_id, variant_id, sku_snapshot, product_name_snapshot,
+               quantity, unit_price_snapshot, line_total, line_status
+        from public.order_items where order_id = ${orderId}
+      `;
+
+      // الطلب المُلغى أو الراجع أرجع مخزونه سابقاً — لا يُرجَع مرتين.
+      const alreadyRestocked = RESTOCKING_STATUSES.includes(order.status as OrderStatus);
+      // و`reserved` وحدها هي المخصومة فعلاً؛ سطر out_of_stock لم يُخصم قط.
+      const toRestore = alreadyRestocked
+        ? []
+        : items.filter((item) => item.line_status === "reserved");
+
+      let restoredUnits = 0;
+      for (const item of toRestore) {
+        if (item.variant_id) {
+          await trx`
+            update public.product_variants set stock_quantity = stock_quantity + ${item.quantity}
+            where id = ${item.variant_id}
+          `;
+        } else if (item.product_id) {
+          await trx`
+            update public.products set stock_quantity = stock_quantity + ${item.quantity}
+            where id = ${item.product_id}
+          `;
+        } else {
+          // المنتج نفسه حُذف سابقاً — لا مكان تُرجَع إليه الكمية. نتخطّاه
+          // بلا حركة مخزون حتى لا يُسجَّل إرجاع لم يقع.
+          continue;
+        }
+
+        await trx`
+          insert into public.stock_movements (
+            product_id, variant_id, order_id, quantity_delta, reason
+          ) values (
+            ${item.product_id}, ${item.variant_id}, ${orderId}, ${item.quantity}, 'order_deleted'
+          )
+        `;
+        restoredUnits += item.quantity;
+      }
+
+      // السجل يُكتب قبل الحذف: بعده لا يبقى ما يُقرأ منه.
+      await trx`
+        insert into public.order_deletions (
+          order_id, order_number, public_reference, source, status_at_deletion,
+          customer_name, customer_phone, customer_city,
+          items_subtotal, final_total, order_created_at,
+          items, stock_restored, restored_units, deleted_by
+        ) values (
+          ${order.id}, ${order.order_number}, ${order.public_reference}, ${order.source},
+          ${order.status}, ${order.customer_name}, ${order.customer_phone},
+          ${order.customer_city}, ${order.items_subtotal}, ${order.final_total},
+          ${order.created_at}, ${sql.json(items)}, ${restoredUnits > 0}, ${restoredUnits},
+          ${admin.email}
+        )
+      `;
 
       await trx`delete from public.orders where id = ${orderId}`;
       return order.order_number;
@@ -281,9 +373,11 @@ export async function deleteOrder(orderId: number): Promise<DeleteOrderResult> {
     return { error: "تعذّر حذف الطلب حالياً بسبب مشكلة تقنية. لم يُحذف أي شيء." };
   }
 
-  // مسارات الإدارة فقط — لا علاقة للطلبات بذاكرة الكتالوج، فلا نمسّها.
   revalidatePath("/admin/orders");
   revalidatePath(`/admin/orders/${orderId}`);
+  // صار الحذف يُرجع المخزون، فقد يعود منتج نافد متوفراً للزبون — وذاكرة
+  // الكتالوج لم تعد صحيحة بعده كما كانت حين لم يكن الحذف يمسّ المخزون.
+  revalidateCatalog();
   return { error: null, orderNumber };
 }
 
