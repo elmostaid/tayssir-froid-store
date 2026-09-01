@@ -25,12 +25,28 @@ export const CATEGORY_IMAGES: Record<string, string> = {
   "split-ac-parts": "/categories/split-ac-parts.jpg",
   "blender-parts": "/categories/blender-parts.jpg",
   "pressure-cooker-parts": "/categories/pressure-cooker-parts.jpg",
-  "gas-water-heater-parts": "/categories/gas-water-heater-parts.jpg",
-  "electric-water-heater-parts": "/categories/electric-water-heater-parts.jpg",
   "gas-oven-parts": "/categories/gas-oven-parts.jpg",
   "electric-oven-parts": "/categories/electric-oven-parts.jpg",
 };
 
+// ⚠️ تصنيفا سخان الماء (الغازي والكهربائي) حُذفا من هذه الخريطة عمداً.
+//
+// الدليل: public/categories/gas-water-heater-parts.jpg و
+// electric-water-heater-parts.jpg ملفان **متطابقان بايتاً ببايت**
+// (md5 c416b8c6e696d626a998006c13a078a3 لكليهما، ونفس التطابق فنسختي
+// .webp)، ونصّ الصورة المطبوع داخلها يقول حرفياً «قطع غيار سخان الماء
+// الغازي والكهربائي» — أي أنها صُمِّمت لبطاقة واحدة مدموجة، لا لبطاقتين.
+// وتاريخ git يُظهر الملفين متطابقين منذ أول commit أضافهما (13 غشت)، فلا
+// توجد فالمشروع نسخة أصلية منفصلة لأيٍّ منهما يمكن استرجاعها.
+//
+// أما التصنيفان فمنفصلان تماماً فقاعدة البيانات ولم يُدمجا قطّ: التصنيف 7
+// «قطع غيار سخان الماء الغازي» بـ23 منتجاً منشوراً (TF-GWH-*) والتصنيف 8
+// «قطع غيار سخان الماء الكهربائي» بـ8 منتجات (TF-EWH-*)، بلا أي تداخل.
+// المشكلة كانت فالصورة وحدها.
+//
+// فبدل تكرار نفس الصورة على بطاقتين، أو اختراع صورة جديدة، يسقط التصنيفان
+// إلى غلاف من منتجاتهما هما (getCategoryCoverImages فـqueries/catalog.ts)
+// مع اسم التصنيف مكتوباً نصاً — فلكلٍّ صورة قطعة من قطعه واسمه الصحيح.
 export function getCategoryImage(slug: string): string | null {
   return CATEGORY_IMAGES[slug] ?? null;
 }

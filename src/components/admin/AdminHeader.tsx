@@ -22,6 +22,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/admin/orders", label: "الطلبات", adminOnly: false },
   { href: "/admin/products", label: "المنتجات", adminOnly: true },
   { href: "/admin/categories", label: "التصنيفات", adminOnly: true },
+  { href: "/admin/featured", label: "الأكثر طلباً", adminOnly: true },
   { href: "/admin/customers", label: "الزبائن", adminOnly: true },
   { href: "/admin/reports", label: "التقارير والأرباح", adminOnly: true },
   { href: "/admin/expenses", label: "المصاريف", adminOnly: true },

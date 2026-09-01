@@ -1,6 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import {
+  getCategoryCoverImages,
+  getFeaturedProducts,
   getFilteredCategories,
   getProductCountsByCategory,
   getProductIdsWithVariants,
@@ -13,6 +15,7 @@ import { CategoryIcon } from "@/components/CategoryIcon";
 import { HowToOrder } from "@/components/HowToOrder";
 import { LoadMoreProducts } from "@/components/LoadMoreProducts";
 import { getCategoryImage } from "@/lib/categoryImages";
+import { resolveProductImageUrls } from "@/lib/storage/resolveProductImageUrl";
 import { TOP_DEMAND_SKUS } from "@/lib/catalog/topDemand";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
 import { safeQuery } from "@/lib/safeQuery";
@@ -60,20 +63,45 @@ function sortHomeCategories<T extends { slug: string }>(categories: T[]): T[] {
 }
 
 export default async function HomePage() {
-  const [categoriesRaw, productCounts, products, topDemand, variantProductIds, settings] =
-    await Promise.all([
+  const [
+    categoriesRaw,
+    productCounts,
+    categoryCovers,
+    products,
+    featured,
+    measuredTopDemand,
+    variantProductIds,
+    settings,
+  ] = await Promise.all([
     getFilteredCategories("home.getCategories"),
     safeQuery(() => getProductCountsByCategory(), {}, "home.getProductCountsByCategory"),
+    // غلاف لكل تصنيف بلا صورة مصمَّمة — من أول منتج فيه بترتيب المدير.
+    safeQuery(() => getCategoryCoverImages(), {}, "home.getCategoryCoverImages"),
     // نطلب عنصراً زائداً واحداً لنعرف هل توجد دفعة تالية، بدل استعلام عدّ
     // منفصل. الزائد يُقتطع قبل العرض.
     safeQuery(() => getProducts({ limit: HOME_PAGE_SIZE + 1 }), [], "home.getProducts"),
-    // الأكثر طلباً — قائمة مقاسة، لا ترتيب الكتالوج الافتراضي.
+    // «الأكثر طلباً» — اختيار صاحب المتجر أولاً، والقياس احتياطاً.
+    safeQuery(() => getFeaturedProducts(), [], "home.getFeaturedProducts"),
     safeQuery(() => getProductsBySkus([...TOP_DEMAND_SKUS]), [], "home.getTopDemand"),
     safeQuery(() => getProductIdsWithVariants(), new Set<number>(), "home.getProductIdsWithVariants"),
     safeQuery(() => getSettings(), FALLBACK_SETTINGS, "home.getSettings"),
   ]);
 
   const categories = sortHomeCategories(categoriesRaw);
+
+  // الاختيار اليدوي من /admin/featured يفوز كاملاً حين يوجد؛ القائمة
+  // المقاسة (topDemand.ts) احتياط لا شريك — لا خلط بين المصدرين، وإلا لم
+  // يعد المدير يعرف لماذا ظهر منتج لم يخترْه.
+  const topDemand = featured.length > 0 ? featured : measuredTopDemand;
+
+  // مسارات التخزين تُحلّ إلى روابط عرض دفعة واحدة (نفس ما تفعله ProductCard
+  // لكل بطاقة على حدة) — التصنيفات ذات الصورة المصمَّمة لا تحتاج شيئاً.
+  const coverUrlByPath = await resolveProductImageUrls(
+    categories
+      .filter((category) => !getCategoryImage(category.slug))
+      .map((category) => categoryCovers[category.slug])
+      .filter((path): path is string => Boolean(path))
+  );
 
   // الصفحة الرئيسية تعرض الآن كل التصنيفات معاً (للزبون الذي يفضّل التصفّح
   // بلا دخول لتصنيف)، لكن على دفعات: أول HOME_PAGE_SIZE منتجاً فقط تُصيَّر مع
@@ -171,7 +199,13 @@ export default async function HomePage() {
           <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
             {categories.map((category) => {
               const count = productCounts[category.id] ?? 0;
-              const imageSrc = getCategoryImage(category.slug);
+              // صورة مصمَّمة للتصنيف إن وُجدت، وإلا غلاف من منتجاته هو.
+              // الفرق ليس شكلياً: الصور المصمَّمة تحمل اسم التصنيف مطبوعاً
+              // داخلها، وصور المنتجات لا — فهذه وحدها تحتاج الاسم نصاً.
+              const brandedSrc = getCategoryImage(category.slug);
+              const coverPath = brandedSrc ? null : categoryCovers[category.slug];
+              const coverSrc = coverPath ? coverUrlByPath[coverPath] ?? null : null;
+              const imageSrc = brandedSrc ?? coverSrc;
               return (
                 <Link
                   key={category.id}
@@ -207,6 +241,11 @@ export default async function HomePage() {
                       </span>
                     )}
                   </span>
+                  {coverSrc && (
+                    <span className="line-clamp-2 px-2 pt-2 text-center text-sm font-semibold text-neutral-800">
+                      {category.name_ar}
+                    </span>
+                  )}
                   <span className="px-3 py-2 text-center text-xs text-neutral-500">
                     {count} {count === 1 ? "منتج" : "منتجات"}
                   </span>

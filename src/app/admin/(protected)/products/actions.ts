@@ -112,6 +112,9 @@ export async function createProduct(
     returning id
   `;
 
+  // قبل redirect() لا بعده: redirect يرمي استثناءً للتحكم فلا يُنفَّذ شيء
+  // بعده إطلاقاً.
+  revalidateCatalog();
   revalidatePath("/admin/products");
   redirect(`/admin/products/${inserted[0].id}`);
 }
@@ -152,10 +155,30 @@ export async function updateProduct(
       purchase_price = ${parsed.data.purchasePrice},
       sale_price = ${parsed.data.salePrice},
       stock_quantity = ${parsed.data.stockQuantity},
-      status = ${parsed.data.status}
+      status = ${parsed.data.status},
+      -- نقل المنتج إلى تصنيف آخر يأخذ معه رقم مرتبته القديم، وذلك الرقم
+      -- يخصّ التصنيف القديم لا الجديد: منتج كان المرتبة 3 يهبط وسط تصنيف
+      -- جديد فوق منتج يحمل نفس الرقم 3 أصلاً، فيصير للتصنيف رقمان
+      -- متساويان ويفصل بينهما created_at وحده — أي ترتيب لم يطلبه المدير.
+      -- الصواب نفس قاعدة المنتج الجديد: يُضاف فآخر الترتيب ولا يُزيح أحداً،
+      -- والمدير ينقله بعدها بخانة "المرتبة" إن شاء. (فـUPDATE، الأعمدة على
+      -- يمين التعيين تحمل القيم **قبل** التحديث، فالمقارنة هنا بين التصنيف
+      -- القديم والجديد فعلاً.)
+      sort_order = case
+        when category_id = ${parsed.data.categoryId} then sort_order
+        else coalesce(
+          (select max(sibling.sort_order) from public.products sibling
+            where sibling.category_id = ${parsed.data.categoryId}), 0) + 1
+      end
     where id = ${productId}
   `;
 
+  // أي تعديل يمسّ ما يراه الزبون يجب أن يُبطل وسم الكتالوج، وإلا خُدِّم من
+  // الذاكرة المؤقّتة حتى 60 ثانية (CATALOG_REVALIDATE_SECONDS) فيبدو للمدير
+  // أن الحفظ لم يقع أصلاً. أزرار الترتيب كانت تستدعيه منذ البداية، أما
+  // مسارا الحفظ هذان (نموذج المنتج الكامل والتعديل السريع) فلم يكونا —
+  // فثمن أو حالة أو تصنيف يُحفظ من اللوحة ولا يتغيّر شيء فالمتجر فوراً.
+  revalidateCatalog();
   revalidatePath("/admin/products");
   revalidatePath(`/admin/products/${productId}`);
   return { error: null, success: true };
@@ -332,6 +355,7 @@ export async function quickUpdateProduct(
     return { error: "تعذّر حفظ التعديل حالياً بسبب مشكلة تقنية." };
   }
 
+  revalidateCatalog();
   revalidatePath("/admin/products");
   revalidatePath(`/admin/products/${productId}`);
   return { error: null, success: true };
