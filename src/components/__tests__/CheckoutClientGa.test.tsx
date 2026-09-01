@@ -167,7 +167,7 @@ describe("GA4 purchase — على طلب محفوظ حقيقي فقط، مرة �
     expect(purchaseMock).not.toHaveBeenCalled();
   });
 
-  test("حفظ لم يتأكّد قبل الخروج إلى واتساب: لا purchase على طلب غير مؤكَّد", async () => {
+  test("حفظ لم يتأكّد قبل الخروج إلى واتساب: المتصفح لا يُرسل — والخادم هو من يتولّاه", async () => {
     submitOrderMock.mockImplementation(
       () => new Promise((resolve) => setTimeout(() => resolve({ ok: true }), 30000))
     );
@@ -177,6 +177,51 @@ describe("GA4 purchase — على طلب محفوظ حقيقي فقط، مرة �
     fireEvent.submit(screen.getByRole("button", { name: /إرسال الطلب/ }).closest("form")!);
 
     await screen.findByText("تم فتح واتساب لإرسال طلبك", undefined, { timeout: 10000 });
+    // المتصفح صامت هنا لأنه لا يعرف مرجع الطلب أصلاً. هذا كان يعني ضياع
+    // الشراء نهائياً؛ صار يعني فقط أن الخادم هو صاحب التسجيل — وهو ما
+    // يختبره durablePurchase.test.ts على قاعدة حقيقية.
     expect(purchaseMock).not.toHaveBeenCalled();
   }, 20000);
+});
+
+describe("لا شراء مضاعف: الخادم والمتصفح لا يُرسلان معاً أبداً", () => {
+  test("أرسل الخادم (gaPurchaseHandledServerSide) ⇒ المتصفح يسكت", async () => {
+    submitOrderMock.mockReturnValue({
+      ok: true,
+      publicReference: "TF-REF-SERVER",
+      orderNumber: "TF-2026-0101",
+      needsReview: false,
+      gaPurchaseHandledServerSide: true,
+    });
+    renderCheckout();
+    await waitFor(() => expect(beginCheckoutMock).toHaveBeenCalledTimes(1));
+    await fillRequiredFields();
+    fireEvent.click(screen.getByRole("button", { name: /إرسال الطلب/ }));
+
+    await waitFor(() => expect(submitOrderMock).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    // GA4 لا تُلغي التكرار حسب transaction_id — إرسال الطرفين يعني طلبين
+    // وإيراداً مضاعفاً في التقارير. لذلك الصمت هنا هو الصواب.
+    expect(purchaseMock).not.toHaveBeenCalled();
+  });
+
+  test("لم يُرسل الخادم ⇒ المتصفح يُرسل مرة واحدة، فلا يضيع الحدث", async () => {
+    submitOrderMock.mockReturnValue({
+      ok: true,
+      publicReference: "TF-REF-CLIENT",
+      orderNumber: "TF-2026-0102",
+      needsReview: false,
+      gaPurchaseHandledServerSide: false,
+    });
+    renderCheckout();
+    await waitFor(() => expect(beginCheckoutMock).toHaveBeenCalledTimes(1));
+    await fillRequiredFields();
+    fireEvent.click(screen.getByRole("button", { name: /إرسال الطلب/ }));
+
+    await waitFor(() => expect(purchaseMock).toHaveBeenCalledTimes(1));
+    expect(purchaseMock.mock.calls[0][0]).toMatchObject({
+      transactionId: "TF-REF-CLIENT",
+      value: CART_TOTAL,
+    });
+  });
 });

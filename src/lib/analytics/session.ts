@@ -2,6 +2,7 @@ import type {
   AnalyticsDeviceType,
   AnalyticsSessionContext,
 } from "@/lib/analytics/events";
+import { parseSessionContextJson } from "@/lib/analytics/sessionContext";
 
 /**
  * الجلسة المجهولة: توليدها، حفظها، وقراءتها من كوكي أولى الطرف.
@@ -102,26 +103,6 @@ export function captureSessionContext(): AnalyticsSessionContext {
   };
 }
 
-function parseContext(raw: string | null): AnalyticsSessionContext | null {
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as Partial<AnalyticsSessionContext>;
-    if (typeof parsed.landingPath !== "string" || typeof parsed.startedAt !== "number") return null;
-    return {
-      landingPath: parsed.landingPath,
-      referrerHost: parsed.referrerHost ?? null,
-      utmSource: parsed.utmSource ?? null,
-      utmMedium: parsed.utmMedium ?? null,
-      utmCampaign: parsed.utmCampaign ?? null,
-      utmContent: parsed.utmContent ?? null,
-      utmTerm: parsed.utmTerm ?? null,
-      hasClickId: Boolean(parsed.hasClickId),
-      startedAt: parsed.startedAt,
-    };
-  } catch {
-    return null;
-  }
-}
 
 export type AnalyticsSession = {
   sessionId: string;
@@ -138,7 +119,7 @@ export function getOrCreateSession(): AnalyticsSession | null {
   if (typeof document === "undefined") return null;
 
   const existingId = readCookie(SESSION_COOKIE);
-  const existingContext = parseContext(readCookie(CONTEXT_COOKIE));
+  const existingContext = parseSessionContextJson(readCookie(CONTEXT_COOKIE));
 
   if (existingId && UUID_RE.test(existingId) && existingContext) {
     writeCookie(SESSION_COOKIE, existingId);

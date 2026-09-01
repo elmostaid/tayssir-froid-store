@@ -12,6 +12,12 @@ import {
 import { resolveOrderLines, WEBSITE_LINE_RULES } from "@/lib/orders/resolveLines";
 import { notifyNewOrder } from "@/lib/notifications/notifyNewOrder";
 import { sendCapiEvent } from "@/lib/pixel/capi";
+import { writeServerPurchaseEvent } from "@/lib/analytics/serverPurchase";
+import {
+  sendGaPurchaseEvent,
+  isGaMeasurementProtocolConfigured,
+} from "@/lib/ga/measurementProtocol";
+import { runAfterResponse } from "@/lib/afterResponse";
 import { toInternationalDigits } from "@/lib/phone";
 import { getSiteUrl } from "@/lib/siteUrl";
 import { customerAddressOrNull } from "@/lib/orders/customerAddress";
@@ -257,7 +263,57 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     const needsReview =
       (readOutcome()?.rejected.length ?? 0) > 0 || (result.pendingLines ?? 0) > 0;
 
+    // الشراء يُسجَّل من الخادم لا من المتصفح.
+    //
+    // كان المتصفح يُطلق الأحداث الثلاثة فقط إذا وصله تأكيد الحفظ خلال 2.5
+    // ثانية، ثم ينتقل فوراً إلى واتساب — فطلب يُحفظ ببطء يبقى طلباً حقيقياً
+    // بلا أي حدث شراء في أي نظام. `result.isNew` هو الحارس الوحيد المطلوب
+    // لـexactly-once: إدخال الطلب محروس بـ`on conflict (idempotency_key)
+    // do nothing`، فإعادة الإرسال بنفس المفتاح ترجع الطلب القائم بلا تسجيل
+    // ثانٍ. وطلب ينتظر مراجعة مخزون ليس بيعاً مكتملاً فلا شراء له.
+
+    // أما مَن يملك إرسال شراء GA4 فيُحسم من التهيئة وحدها، لا من كون هذه
+    // المحاولة هي التي أنشأت الطلب: إعادة إرسال بنفس المفتاح ترجع
+    // `isNew:false`، ولو ربطنا الراية بذلك لقالت للمتصفح "أرسِلْ أنت" عن
+    // طلب أرسله الخادم أصلاً — أي شراء مضاعف من حيث أردنا منعه.
+    const gaClientId = input.requestContext?.gaClientId;
+    const gaPurchaseHandledServerSide =
+      !needsReview && isGaMeasurementProtocolConfigured() && Boolean(gaClientId);
+
     if (result.isNew && !needsReview) {
+      const itemsCount = lineItems.reduce((sum, line) => sum + line.quantity, 0);
+
+      // القياس الداخلي: بعد تثبيت المعاملة عمداً — صفّ قياس داخلها يعني أن
+      // خطأ في القياس يُلغي طلباً حقيقياً، وهذا مرفوض هنا كما في كل مسار
+      // قياس آخر في المشروع.
+      await writeServerPurchaseEvent(sql, {
+        orderId: result.id,
+        orderValue: subtotal,
+        quantity: itemsCount,
+        sessionId: input.requestContext?.analyticsSessionId,
+        context: input.requestContext?.analyticsContext,
+      });
+
+      // الإرسال نفسه يقع بعد الجواب: لو انتظرناه لأضفنا حتى ثلاث ثوانٍ إلى
+      // زمن جواب يملك الزبون 2.5 ثانية فقط قبل أن يمضي إلى واتساب — أي أن
+      // إصلاح القياس كان سيُفسد رسالة الزبون.
+      if (gaPurchaseHandledServerSide) {
+        runAfterResponse(() =>
+          sendGaPurchaseEvent({
+            transactionId: result.publicReference,
+            value: subtotal,
+            items: lineItems.map((line) => ({
+              item_id: line.skuSnapshot,
+              item_name: line.nameSnapshot,
+              price: line.unitPrice,
+              quantity: line.quantity,
+            })),
+            clientId: gaClientId,
+            sessionId: input.requestContext?.gaSessionId,
+          })
+        );
+      }
+
       const siteUrl = getSiteUrl();
       const base = siteUrl ?? "";
       // إشعار "أفضل مجهود": لا ننتظره (fire-and-forget) ولا يمكن أبداً أن
@@ -320,6 +376,7 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       // رقم الطلب المقروء — تحتاجه رسالة واتساب لتُحيل الفريق إلى اللوحة
       // بدل سرد المنتجات، فلم يعد يكفي أن يبقى داخل المعاملة.
       orderNumber: result.orderNumber,
+      gaPurchaseHandledServerSide,
     };
   } catch (error) {
     console.error("createOrder: خطأ غير متوقع أثناء إنشاء الطلب", error);
