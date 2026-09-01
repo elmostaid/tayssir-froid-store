@@ -15,11 +15,18 @@ export async function ProductCard({
   imageUrl,
   hasVariants = false,
   whatsappNumber,
+  priority = false,
 }: {
   product: CatalogProduct;
   imageUrl: string | null;
   hasVariants?: boolean;
   whatsappNumber: string;
+  /**
+   * صورة فوق الطيّة تُحمَّل بأولوية بدل الكسل. تُستعمَل لأول بطاقتين في
+   * «الأكثر طلباً» وحدهما: هما أول سلعة يراها الزائر، وتأخّرهما هو بالضبط
+   * ما كان يجعل الصفحة تبدو بلا منتجات.
+   */
+  priority?: boolean;
 }) {
   const isUnavailable = product.status === "out_of_stock" || product.stock_quantity <= 0;
   const resolvedImageUrl = imageUrl ? await resolveProductImageUrl(imageUrl) : null;
@@ -37,7 +44,7 @@ export async function ProductCard({
             fill
             sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 220px"
             className="object-cover object-center transition-transform group-hover:scale-[1.03]"
-            loading="lazy"
+            {...(priority ? { priority: true } : { loading: "lazy" as const })}
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-xs text-neutral-400">

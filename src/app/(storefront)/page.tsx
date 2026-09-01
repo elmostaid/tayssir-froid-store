@@ -5,6 +5,7 @@ import {
   getProductCountsByCategory,
   getProductIdsWithVariants,
   getProducts,
+  getProductsBySkus,
 } from "@/lib/queries/catalog";
 import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 import { ProductCard } from "@/components/ProductCard";
@@ -12,6 +13,7 @@ import { CategoryIcon } from "@/components/CategoryIcon";
 import { HowToOrder } from "@/components/HowToOrder";
 import { LoadMoreProducts } from "@/components/LoadMoreProducts";
 import { getCategoryImage } from "@/lib/categoryImages";
+import { TOP_DEMAND_SKUS } from "@/lib/catalog/topDemand";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
 import { safeQuery } from "@/lib/safeQuery";
 
@@ -58,12 +60,15 @@ function sortHomeCategories<T extends { slug: string }>(categories: T[]): T[] {
 }
 
 export default async function HomePage() {
-  const [categoriesRaw, productCounts, products, variantProductIds, settings] = await Promise.all([
+  const [categoriesRaw, productCounts, products, topDemand, variantProductIds, settings] =
+    await Promise.all([
     getFilteredCategories("home.getCategories"),
     safeQuery(() => getProductCountsByCategory(), {}, "home.getProductCountsByCategory"),
     // نطلب عنصراً زائداً واحداً لنعرف هل توجد دفعة تالية، بدل استعلام عدّ
     // منفصل. الزائد يُقتطع قبل العرض.
     safeQuery(() => getProducts({ limit: HOME_PAGE_SIZE + 1 }), [], "home.getProducts"),
+    // الأكثر طلباً — قائمة مقاسة، لا ترتيب الكتالوج الافتراضي.
+    safeQuery(() => getProductsBySkus([...TOP_DEMAND_SKUS]), [], "home.getTopDemand"),
     safeQuery(() => getProductIdsWithVariants(), new Set<number>(), "home.getProductIdsWithVariants"),
     safeQuery(() => getSettings(), FALLBACK_SETTINGS, "home.getSettings"),
   ]);
@@ -120,8 +125,37 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* شرح طريقة الطلب — بعد الهيرو مباشرة وقبل التصنيفات. مكوّن خادم
-          بلا JavaScript ولا صور، فلا أثر له على زمن التحميل. */}
+      {/* الأكثر طلباً — أول ما يراه الزائر بعد الهيرو مباشرة.
+          *
+          السبب بالأرقام: 1,557 من 2,068 زائراً هبطوا على هذه الصفحة (75.3%)
+          غادروا بلا أي تفاعل — لا فتح منتج ولا إضافة للسلة. والصفحة كانت
+          تضع 13 بطاقة تصنيف بنسبة 4:5 وعرض الشاشة كاملاً قبل أول منتج، أي
+          نحو تسع شاشات هاتف من التمرير قبل أن يرى الزائر سلعة واحدة بثمنها.
+          الزائر الآتي من ريل عن غاز الثلاجات كان يرى نصاً ووعوداً، ولا يرى
+          غازاً. */}
+      {topDemand.length > 0 && (
+        <section className="mt-6">
+          <h2 className="border-r-4 border-brand-orange pr-3 text-lg font-bold text-neutral-800">
+            الأكثر طلباً
+          </h2>
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+            {topDemand.map((product, index) => (
+              <ProductCard
+                key={product.id}
+                product={product}
+                imageUrl={product.primary_image_path}
+                hasVariants={variantProductIds.has(product.id)}
+                whatsappNumber={settings.whatsappNumber}
+                // أول صفّ فقط: هو ما يقع فوق الطيّة على الهاتف.
+                priority={index < 2}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* شرح طريقة الطلب. مكوّن خادم بلا JavaScript ولا صور، فلا أثر له على
+          زمن التحميل. */}
       <HowToOrder />
 
       {categories.length > 0 && (
@@ -129,8 +163,13 @@ export default async function HomePage() {
           <h2 className="border-r-4 border-brand-turquoise pr-3 text-lg font-bold text-neutral-800">
             التصنيفات
           </h2>
-          <div className="mt-3 grid grid-cols-1 gap-3">
-            {categories.map((category, index) => {
+          {/* عمودان بدل بطاقة واحدة بعرض الشاشة لكل تصنيف: الثلاثة عشر
+              تصنيفاً كانت تُنتج نحو 6,240 بكسل من الصور على هاتف بعرض 384،
+              أي تمريراً خالصاً يفصل الزائر عن المنتجات. عمودان يُنزلانها إلى
+              نحو 1,800 — ولا ننزل إلى ثلاثة أعمدة لأن اسم التصنيف مطبوع
+              داخل الصورة نفسها، وعرض 118 بكسل يجعله غير مقروء. */}
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+            {categories.map((category) => {
               const count = productCounts[category.id] ?? 0;
               const imageSrc = getCategoryImage(category.slug);
               return (
@@ -148,15 +187,14 @@ export default async function HomePage() {
                         src={imageSrc}
                         alt={category.name_ar}
                         fill
-                        sizes="(max-width: 1152px) 100vw, 1120px"
+                        sizes="(max-width: 640px) 50vw, (max-width: 1152px) 33vw, 280px"
                         className="object-contain object-center p-2"
-                        // بطاقات التصنيفات مرصوصة عمودياً بعرض الشاشة كاملاً،
-                        // فلا يظهر منها فوق الطيّة إلا الأولى. حجزها كلها بـ
-                        // priority كان يُنزِّل سبع صور بأولوية قصوى قبل
-                        // JavaScript نفسه — وهو ما كان يؤخّر أول عرض وأول حدث
-                        // Meta على الشبكات الضعيفة.
-                        priority={index === 0}
-                        loading={index === 0 ? undefined : "lazy"}
+                        // التصنيفات نزلت تحت قسم «الأكثر طلباً»، فلا تظهر
+                        // منها بطاقة فوق الطيّة أصلاً. حجزها بـpriority كان
+                        // سيُنزِّل ثلاث عشرة صورة بأولوية قصوى قبل JavaScript
+                        // نفسه — وهو ما كان يؤخّر أول عرض وأول حدث Meta على
+                        // الشبكات الضعيفة.
+                        loading="lazy"
                       />
                     ) : (
                       <span className="flex h-full w-full flex-col items-center justify-center gap-2 p-4">

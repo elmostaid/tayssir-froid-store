@@ -277,6 +277,45 @@ const queryProductsSearchCached = cachedCatalogQuery(
   ) => runProductsQuery(categorySlug, limit, sort, `%${normalizedQuery}%`, offset)
 );
 
+const queryProductsBySkus = cachedCatalogQuery(
+  ["catalog-products-by-skus"],
+  async (skus: string[]) => {
+    // `array_position` يُرجع الترتيب المطلوب حرفياً بدل ترتيب الجدول: هذه
+    // القائمة مرتَّبة حسب الطلب المقاس، وترتيبها **هو** المعلومة.
+    return sql<CatalogProduct[]>`
+      select * from public.catalog_products
+      where sku = any(${skus})
+      order by array_position(${skus}::text[], sku)
+    `;
+  }
+);
+
+/**
+ * منتجات بأكوادها، بنفس ترتيب القائمة الممرَّرة.
+ *
+ * وُجدت لقسم «الأكثر طلباً» في الصفحة الرئيسية: الترتيب الافتراضي للكتالوج
+ * (sort_order ثم created_at) لا علاقة له بما يطلبه الزبناء فعلاً، وأول 16
+ * منتجاً كانت تُعرض بلا أي صلة بالطلب المقاس. القائمة نفسها في
+ * `lib/catalog/topDemand.ts` مع الأرقام التي بُنيت عليها.
+ *
+ * المنتجات غير المنشورة أو المحذوفة تسقط بصمت (العرض من `catalog_products`)،
+ * فلا يكسر القسمَ كودٌ قديم في القائمة.
+ */
+export async function getProductsBySkus(skus: string[]): Promise<CatalogProduct[]> {
+  if (skus.length === 0) return [];
+  if (!hasDatabase) {
+    const preview = getPreviewProducts({ limit: 200 });
+    const bySku = new Map(preview.map((product) => [product.sku, product]));
+    return skus.map((sku) => bySku.get(sku)).filter((p): p is CatalogProduct => Boolean(p));
+  }
+
+  try {
+    return await queryProductsBySkus(skus);
+  } catch (error) {
+    failQuery("getProductsBySkus", error);
+  }
+}
+
 export async function getProducts(
   options: {
     categorySlug?: string;
