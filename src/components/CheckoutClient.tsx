@@ -7,6 +7,7 @@ import { formatMad } from "@/lib/format";
 import { cartItemKey } from "@/lib/cart/cartMath";
 import { isValidMoroccanPhone } from "@/lib/phone";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
+import { CartWhatsAppButton } from "@/components/CartWhatsAppButton";
 import {
   buildConfirmedOrderMessage,
   buildRescueOrderMessage,
@@ -468,6 +469,23 @@ export function CheckoutClient({
           {isSubmitting ? "جارٍ الإرسال…" : "إرسال الطلب عبر واتساب"}
         </button>
       </form>
+
+      {/* مخرج لمن وصل إلى هنا ولن يُكمل النموذج.
+          الرقم الذي أوجب هذا: من 76 جلسة بدأت إتمام الطلب في عشرة أيام،
+          23 فقط أنهته — 56 وصلت إلى هذا النموذج بالذات ثم غادرت. النموذج
+          يبقى الطريق الأول (وهو وحده ما يُنشئ طلباً برقم وحجز مخزون)، لكن
+          من كان سيغادر يجد هنا طريقاً ثانياً بطلبيته كاملة بدل لا شيء. */}
+      <div className="mt-4 border-t border-neutral-200 pt-4">
+        <p className="mb-2 text-center text-xs text-neutral-500">
+          واعرة عليك تعمّر المعلومات؟ صيفط الطلبية دابا فواتساب ونكملو معاك تما.
+        </p>
+        <CartWhatsAppButton
+          whatsappNumber={whatsappNumber}
+          storeName={storeName}
+          label="أكمل الطلب عبر واتساب"
+          className="flex min-h-12 w-full items-center justify-center gap-2 rounded-full border-2 border-whatsapp px-5 text-base font-bold text-whatsapp-dark transition-colors hover:bg-whatsapp/10"
+        />
+      </div>
     </div>
   );
 }

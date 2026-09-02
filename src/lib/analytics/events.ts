@@ -8,9 +8,14 @@
 export const ANALYTICS_ENDPOINT = "/api/analytics";
 
 /**
- * الأحداث السبعة، بنفس ترتيب مسار الزائر. القائمة مغلقة في ثلاثة مواضع
+ * الأحداث الثمانية، بنفس ترتيب مسار الزائر. القائمة مغلقة في ثلاثة مواضع
  * متطابقة عمداً: هنا، وفي التحقّق داخل /api/analytics، وفي قيد CHECK داخل
  * قاعدة البيانات — فحتى لو أُرسل اسم مخترع من متصفح معدَّل، لا يدخل الجدول.
+ *
+ * `whatsapp_from_cart` يقع **بدل** begin_checkout لا بعده: الزبون يغادر إلى
+ * واتساب من السلة مباشرة بلا نموذج. فصله عن begin_checkout هو ما يسمح
+ * بقراءة السؤال الحقيقي — هل أضاف المسار الجديد طلبات، أم سحب من مسار
+ * قائم؟ ولا يمكن قياس ذلك إن اشتركا في اسم واحد.
  */
 export const ANALYTICS_EVENT_NAMES = [
   "session_start",
@@ -19,6 +24,7 @@ export const ANALYTICS_EVENT_NAMES = [
   "add_to_cart",
   "cart_view",
   "begin_checkout",
+  "whatsapp_from_cart",
   "purchase",
 ] as const;
 

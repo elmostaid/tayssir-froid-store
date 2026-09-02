@@ -8,8 +8,15 @@ import { cartItemKey, snapQuantity } from "@/lib/cart/cartMath";
 import { resolveImageUrl } from "@/lib/images";
 import { resolveCartImageUrls } from "@/app/(storefront)/cart/resolveCartImageUrls";
 import { formatMad } from "@/lib/format";
+import { CartWhatsAppButton } from "@/components/CartWhatsAppButton";
 
-export function CartPageClient() {
+export function CartPageClient({
+  whatsappNumber,
+  storeName,
+}: {
+  whatsappNumber: string;
+  storeName: string;
+}) {
   const { items, subtotal, updateQuantity, removeItem, isHydrated } = useCart();
 
   // السلة (localStorage) لا تخزّن سوى storage_path الخام. نحلّه من جهة
@@ -178,16 +185,29 @@ export function CartPageClient() {
           ساليت الاختيار؟ كمّل معلوماتك ورسل الطلب لواتساب، وحنا نتكلفو بالباقي ✅
         </p>
 
-        <div className="mt-3 flex flex-col gap-2 sm:flex-row-reverse">
+        {/* طريقان لا واحد، والأول يبقى الأول.
+            «إتمام الطلب» يحتفظ بلونه ووزنه لأنه وحده ما يُنشئ طلباً حقيقياً
+            برقم وحجز مخزون وبون تحضير. وتحته مخرجٌ لمن لن يملأ نموذجاً:
+            القياس على تسعة أيام يقول إن متصفّح فيسبوك الداخلي (أكبر مصدر
+            زبنائنا) يُنهي 20% مما يبدأه، مقابل 60% من متصفّح إنستغرام —
+            والفارق الوحيد بينهما هو من يُكمل ثلاثة حقول داخل تطبيق. */}
+        <div className="mt-3 flex flex-col gap-2">
           <Link
             href="/checkout"
-            className="flex min-h-12 flex-1 items-center justify-center rounded-full bg-brand-orange px-5 text-base font-bold text-white transition-colors hover:bg-brand-orange-dark"
+            className="flex min-h-12 items-center justify-center rounded-full bg-brand-orange px-5 text-base font-bold text-white transition-colors hover:bg-brand-orange-dark"
           >
             إتمام الطلب
           </Link>
+
+          <CartWhatsAppButton whatsappNumber={whatsappNumber} storeName={storeName} />
+
+          <p className="text-center text-xs text-neutral-500">
+            نبعثو ليك الطلبية جاهزة فواتساب، ونكملو معاك الاسم والمدينة تما.
+          </p>
+
           <Link
             href="/"
-            className="flex min-h-11 flex-1 items-center justify-center rounded-full border border-neutral-300 px-5 text-sm font-semibold text-neutral-700 hover:border-brand-turquoise hover:text-brand-turquoise-dark"
+            className="mt-1 flex min-h-11 items-center justify-center rounded-full border border-neutral-300 px-5 text-sm font-semibold text-neutral-700 hover:border-brand-turquoise hover:text-brand-turquoise-dark"
           >
             متابعة التسوق
           </Link>
