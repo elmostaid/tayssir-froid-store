@@ -172,6 +172,35 @@ export function ManualOrderForm() {
             disabled={pending}
           />
         </div>
+
+        {/* ما ندفعه نحن لشركة التوصيل — مصروف داخلي لا يمسّ مجموع الزبون
+            أعلاه. خارج OrderLinesEditor عمداً: ذاك المحرّر مشترك مع تعديل
+            سطور طلب قائم، وهناك يُعاد حساب المبلغ المطلوب من الزبون، فحقلٌ
+            لا علاقة له بالزبون لا مكان له فيه.
+            يبقى فارغاً في العادة: فاتورة شركة التوصيل تصل بعد التسليم،
+            وتُسجَّل حينها من صفحة الطلب. */}
+        <div className="mt-3 rounded-lg border border-dashed border-neutral-300 bg-neutral-50 p-3">
+          <label className="text-[11px] text-neutral-600">
+            <span className="mb-1 block font-semibold">
+              تكلفة التوصيل الفعلية علينا (اختيارية)
+            </span>
+            <input
+              key={`cost-${draftKey}`}
+              type="number"
+              name="actualDeliveryCost"
+              min={0}
+              step="0.01"
+              defaultValue={draft?.actualDeliveryCost ?? ""}
+              disabled={pending}
+              placeholder="اتركها فارغة إن لم تُعرف بعد"
+              className="min-h-10 w-56 rounded-lg border border-neutral-300 px-2 text-sm tabular-nums"
+            />
+          </label>
+          <p className="mt-1 text-[11px] text-neutral-500">
+            المبلغ المدفوع لشركة التوصيل. الفراغ يعني «غير مسجَّلة» ولا يعني صفراً — ويمكن
+            تسجيلها لاحقاً من صفحة الطلب.
+          </p>
+        </div>
       </section>
 
       {state.error && (

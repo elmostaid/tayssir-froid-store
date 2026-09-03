@@ -430,3 +430,70 @@ describe("تعديل طلب قائم — المخزون بالفرق وحده", 
     expect(await stockOf("MAN-FIX-001")).toBe(stockBefore - 2); // 5 صارت 7
   });
 });
+
+/**
+ * تكلفة التوصيل الفعلية عند إنشاء الطلب — اختيارية، وغيابها NULL.
+ *
+ * الحالة الغالبة أن تُترَك فارغة: فاتورة شركة التوصيل تصل بعد التسليم.
+ * فالمهمّ هنا أن يبقى الطلب المنشأ بلا تكلفة **غير مسجَّل** في القاعدة، لا
+ * مسجَّلاً بصفر — وإلا دخل تقارير الأرباح كأن توصيله مجاني.
+ */
+describe("تكلفة التوصيل الفعلية عند الإنشاء اليدوي", () => {
+  test("بلا تكلفة: العمود يبقى NULL في القاعدة", async () => {
+    const p1 = await product("MAN-FIX-001");
+    const result = await createManualOrder({
+      customer: customer(),
+      source: "whatsapp",
+      deliveryFee: 45,
+      createdByEmail: "admin@test.local",
+      items: [{ productId: p1.id, variantId: null, quantity: 1 }],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const [row] = await sql<{ actual_delivery_cost: string | null }[]>`
+      select actual_delivery_cost from public.orders where id = ${result.orderId}
+    `;
+    expect(row.actual_delivery_cost).toBeNull();
+  });
+
+  test("بتكلفة: تُحفَظ كما هي ولا تمسّ المبلغ المطلوب من الزبون", async () => {
+    const p1 = await product("MAN-FIX-001");
+    const result = await createManualOrder({
+      customer: customer(),
+      source: "whatsapp",
+      deliveryFee: 30,
+      actualDeliveryCost: 45,
+      createdByEmail: "admin@test.local",
+      items: [{ productId: p1.id, variantId: null, quantity: 1 }],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const [row] = await sql<
+      { actual_delivery_cost: string | null; delivery_fee: string; final_total: string; items_subtotal: string }[]
+    >`
+      select actual_delivery_cost, delivery_fee, final_total, items_subtotal
+      from public.orders where id = ${result.orderId}
+    `;
+    expect(Number(row.actual_delivery_cost)).toBe(45);
+    // ما يدفعه الزبون لم يتأثّر بتكلفتنا إطلاقاً.
+    expect(Number(row.delivery_fee)).toBe(30);
+    expect(Number(row.final_total)).toBe(Number(row.items_subtotal) + 30);
+  });
+
+  test("تكلفة سالبة تُرفَض قبل الوصول إلى القاعدة", async () => {
+    const p1 = await product("MAN-FIX-001");
+    const result = await createManualOrder({
+      customer: customer(),
+      source: "whatsapp",
+      deliveryFee: 30,
+      actualDeliveryCost: -1,
+      createdByEmail: "admin@test.local",
+      items: [{ productId: p1.id, variantId: null, quantity: 1 }],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.some((e) => e.field === "actualDeliveryCost")).toBe(true);
+  });
+});

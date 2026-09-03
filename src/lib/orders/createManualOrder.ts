@@ -7,6 +7,7 @@ import {
 } from "@/lib/orders/orderLines";
 import { MANUAL_LINE_RULES, resolveOrderLines, type LineRequest } from "@/lib/orders/resolveLines";
 import { isManualOrderSource, ORDER_SOURCE_LABELS, type OrderSource } from "@/lib/orders/orderSource";
+import { MAX_DELIVERY_COST_MAD } from "@/lib/orders/deliveryCost";
 import { belowCostMessage, findBelowCostLines } from "@/lib/orders/belowCost";
 import type { CreateOrderFieldError } from "@/lib/orders/types";
 
@@ -42,6 +43,12 @@ export type ManualOrderInput = {
   source: OrderSource;
   items: LineRequest[];
   deliveryFee: number;
+  /**
+   * ما دفعناه لشركة التوصيل. اختياري — تُترَك NULL («غير مسجَّلة») حين لا
+   * تُعرَف بعد، وهي الحالة الغالبة وقت إنشاء الطلب: فاتورة شركة التوصيل
+   * تصل بعد التسليم. تُسجَّل لاحقاً من صفحة الطلب.
+   */
+  actualDeliveryCost?: number | null;
   /** بريد المدير — يُسجَّل في تاريخ الحالة، لا في بيانات الزبون. */
   createdByEmail: string;
   /**
@@ -84,6 +91,14 @@ function validateCustomer(input: ManualOrderInput): CreateOrderFieldError[] {
   if (!Number.isFinite(input.deliveryFee) || input.deliveryFee < 0)
     errors.push({ field: "deliveryFee", message: "مصاريف التوصيل غير صالحة." });
 
+  const actualCost = input.actualDeliveryCost;
+  if (
+    actualCost !== undefined &&
+    actualCost !== null &&
+    (!Number.isFinite(actualCost) || actualCost < 0 || actualCost > MAX_DELIVERY_COST_MAD)
+  )
+    errors.push({ field: "actualDeliveryCost", message: "تكلفة التوصيل الفعلية غير صالحة." });
+
   if (!Array.isArray(input.items) || input.items.length === 0)
     errors.push({ field: "items", message: "أضف منتجاً واحداً على الأقل." });
 
@@ -110,6 +125,8 @@ export async function createManualOrder(input: ManualOrderInput): Promise<Manual
 
   const subtotal = sumLines(lines);
   const deliveryFee = input.deliveryFee;
+  // undefined و null كلاهما «غير مسجَّلة» — لا صفر.
+  const actualDeliveryCost = input.actualDeliveryCost ?? null;
   const normalizedPhone = normalizePhone(input.customer.phone);
 
   try {
@@ -117,11 +134,13 @@ export async function createManualOrder(input: ManualOrderInput): Promise<Manual
       const [order] = await trx<{ id: number; order_number: string; public_reference: string }[]>`
         insert into public.orders (
           customer_name, customer_phone, customer_city, customer_address,
-          customer_notes, items_subtotal, delivery_fee, final_total, status, source
+          customer_notes, items_subtotal, delivery_fee, actual_delivery_cost,
+          final_total, status, source
         ) values (
           ${input.customer.fullName.trim()}, ${normalizedPhone}, ${input.customer.city.trim()},
           ${input.customer.address.trim()}, ${input.customer.notes?.trim() || null},
-          ${subtotal}, ${deliveryFee}, ${subtotal + deliveryFee}, 'confirmed', ${input.source}
+          ${subtotal}, ${deliveryFee}, ${actualDeliveryCost},
+          ${subtotal + deliveryFee}, 'confirmed', ${input.source}
         )
         returning id, order_number, public_reference
       `;

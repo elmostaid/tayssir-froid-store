@@ -33,6 +33,7 @@ const fixtureOrder: AdminOrderDetail = {
   customerNotes: "الاتصال قبل التوصيل من فضلك",
   itemsSubtotal: "1140.00",
   cartonCount: null,
+  actualDeliveryCost: null,
   deliveryFee: null,
   finalTotal: null,
   source: "website",
