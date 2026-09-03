@@ -37,11 +37,24 @@ describe("صور بطاقات التصنيفات", () => {
     expect(shared, `تصنيفات تتقاسم نفس ملف الصورة: ${JSON.stringify(shared)}`).toEqual([]);
   });
 
-  test("تصنيفا سخان الماء لا يستعملان الصورة المدموجة", () => {
-    // الملف ما زال فـpublic/ (لم يُحذف)، لكن لا تصنيف يشير إليه — البطاقتان
-    // تأخذان غلافاً من منتجات كلٍّ منهما عبر getCategoryCoverImages.
-    expect(getCategoryImage("gas-water-heater-parts")).toBeNull();
-    expect(getCategoryImage("electric-water-heater-parts")).toBeNull();
+  test("لكلٍّ من تصنيفَي سخان الماء صورته الخاصة، لا الصورة المدموجة", () => {
+    const gas = getCategoryImage("gas-water-heater-parts");
+    const electric = getCategoryImage("electric-water-heater-parts");
+
+    expect(gas).not.toBeNull();
+    expect(electric).not.toBeNull();
+    expect(gas).not.toBe(electric);
+
+    // والأهم: ليستا الملف المدموج القديم الذي كان يجمع التصنيفين في صورة
+    // واحدة (اختبار "لا تصنيفان يتقاسمان نفس الصورة" أعلاه يحرس التطابق
+    // البايتي، وهذا يحرس العودة إلى الملف القديم بعينه).
+    const MERGED = "c416b8c6e696d626a998006c13a078a3";
+    for (const path of [gas, electric]) {
+      const digest = createHash("md5")
+        .update(readFileSync(join(PUBLIC_DIR, path!)))
+        .digest("hex");
+      expect(digest).not.toBe(MERGED);
+    }
   });
 
   test("تصنيف بلا صورة مصمَّمة يُرجع null لا مساراً مكسوراً", () => {
