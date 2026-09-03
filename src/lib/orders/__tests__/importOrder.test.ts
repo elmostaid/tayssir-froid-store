@@ -115,6 +115,64 @@ describe("قراءة البون — الحالة الناجحة", () => {
   });
 });
 
+/**
+ * توافق البونات القديمة — الشرط الذي لا يجوز كسره.
+ *
+ * كل بون كُتب قبل اليوم لا يحمل `actual_delivery_cost`، والاستيراد يجب أن
+ * يمرّ كما كان تماماً وتبقى القيمة «غير مسجَّلة». الحقل اختياري إلى الأبد،
+ * لا اختياري مؤقتاً.
+ */
+describe("تكلفة التوصيل الفعلية في البون — اختيارية", () => {
+  test("بون بلا الحقل إطلاقاً: يُستورَد عادياً والقيمة null", async () => {
+    const draft = await draftOf(bon());
+    expect(draft.ok).toBe(true);
+    if (!draft.ok) return;
+    expect(draft.draft.actualDeliveryCost).toBeNull();
+    // ولا يتحوّل صفراً بأي حال.
+    expect(draft.draft.actualDeliveryCost).not.toBe(0);
+    // وبقية البون تُقرأ كما كانت.
+    expect(draft.draft.deliveryFee).toBe(45);
+    expect(draft.draft.items).toHaveLength(2);
+  });
+
+  test("بون يذكرها: تُقرأ رقماً", async () => {
+    const draft = await draftOf(bon({ actual_delivery_cost: 60 }));
+    expect(draft.ok).toBe(true);
+    if (!draft.ok) return;
+    expect(draft.draft.actualDeliveryCost).toBe(60);
+  });
+
+  test("تُقبَل نصاً كبقية أرقام البون", async () => {
+    const draft = await draftOf(bon({ actual_delivery_cost: "37.50" }));
+    expect(draft.ok).toBe(true);
+    if (!draft.ok) return;
+    expect(draft.draft.actualDeliveryCost).toBe(37.5);
+  });
+
+  test("null أو نص فارغ = غير مسجَّلة، بلا خطأ", async () => {
+    for (const value of [null, ""]) {
+      const draft = await draftOf(bon({ actual_delivery_cost: value }));
+      expect(draft.ok).toBe(true);
+      if (!draft.ok) return;
+      expect(draft.draft.actualDeliveryCost).toBeNull();
+    }
+  });
+
+  test("صفر صريح يُقبَل — توصيل لم يكلّفنا شيئاً فعلاً", async () => {
+    const draft = await draftOf(bon({ actual_delivery_cost: 0 }));
+    expect(draft.ok).toBe(true);
+    if (!draft.ok) return;
+    expect(draft.draft.actualDeliveryCost).toBe(0);
+  });
+
+  test("قيمة غير صالحة تُرفَض برسالة تشرح أن الحذف ممكن", async () => {
+    const draft = await draftOf(bon({ actual_delivery_cost: -5 }));
+    expect(draft.ok).toBe(false);
+    if (draft.ok) return;
+    expect(draft.errors.some((e) => e.field === "actual_delivery_cost")).toBe(true);
+  });
+});
+
 describe("قراءة البون — حالات الخطأ", () => {
   test("JSON تالف: رسالة تقول إنه ليس JSON", () => {
     const parsed = parseOrderJson("{ليس JSON");

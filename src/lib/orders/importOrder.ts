@@ -1,6 +1,7 @@
 import { sql } from "@/lib/db";
 import { isValidMoroccanPhone } from "@/lib/phone";
 import { isManualOrderSource, ORDER_SOURCE_LABELS, type OrderSource } from "@/lib/orders/orderSource";
+import { MAX_DELIVERY_COST_MAD } from "@/lib/orders/deliveryCost";
 
 /**
  * قراءة «بون» واتساب من JSON وتحويله إلى مسودّة معروضة — **بلا إنشاء أي
@@ -38,6 +39,15 @@ export type ImportedOrderDraft = {
   notes: string;
   source: OrderSource;
   deliveryFee: number;
+  /**
+   * تكلفة التوصيل الفعلية إن ذكرها البون. null = غير مسجَّلة.
+   *
+   * اختياري تماماً، وغيابه ليس خطأً: البونات المكتوبة قبل هذا الحقل — وهي
+   * كل ما وصلنا حتى الآن — تبقى تُستورَد كما هي، والتكلفة تُسجَّل لاحقاً من
+   * صفحة الطلب حين تصل فاتورة شركة التوصيل. ولا يُقرأ صفراً عند الغياب،
+   * لنفس السبب الذي في lib/orders/deliveryCost.ts.
+   */
+  actualDeliveryCost: number | null;
   items: ImportedItemDraft[];
 };
 
@@ -131,6 +141,23 @@ export async function buildOrderDraft(input: unknown): Promise<ImportResult> {
   const deliveryFee = asNumber(deliveryFeeRaw);
   if (deliveryFee === null || deliveryFee < 0) {
     errors.push({ field: "delivery_fee", message: "مصاريف التوصيل غير صالحة — المتوقَّع رقم أكبر من أو يساوي صفر." });
+  }
+
+  // اختياري: نتحقّق منه فقط إن كان مذكوراً فعلاً. `null` أو غياب المفتاح
+  // كلاهما يعني «غير مسجَّلة» ويمرّ بلا اعتراض.
+  let actualDeliveryCost: number | null = null;
+  const actualCostRaw = record.actual_delivery_cost;
+  if (actualCostRaw !== undefined && actualCostRaw !== null && actualCostRaw !== "") {
+    const parsed = asNumber(actualCostRaw);
+    if (parsed === null || parsed < 0 || parsed > MAX_DELIVERY_COST_MAD) {
+      errors.push({
+        field: "actual_delivery_cost",
+        message:
+          "تكلفة التوصيل الفعلية غير صالحة — المتوقَّع رقم أكبر من أو يساوي صفر، أو حذف الحقل إن لم تكن معروفة.",
+      });
+    } else {
+      actualDeliveryCost = Math.round(parsed * 100) / 100;
+    }
   }
 
   const rawItems = record.items;
@@ -251,6 +278,7 @@ export async function buildOrderDraft(input: unknown): Promise<ImportResult> {
       notes,
       source: rawSource as OrderSource,
       deliveryFee: deliveryFee ?? 0,
+      actualDeliveryCost,
       items,
     },
   };

@@ -36,6 +36,11 @@ export type AdminOrderDetail = AdminOrderListItem & {
   customerAddress: string | null;
   customerNotes: string | null;
   cartonCount: number | null;
+  /**
+   * ما دفعناه لشركة التوصيل — مصروف، مقابل deliveryFee المحصَّل من الزبون.
+   * null = **غير مسجَّلة**، وليس صفراً. انظر lib/orders/deliveryCost.ts.
+   */
+  actualDeliveryCost: string | null;
 };
 
 export type AdminOrderItem = {
@@ -261,6 +266,7 @@ export async function getAdminOrderById(id: number): Promise<AdminOrderDetail | 
       items_subtotal: string;
       carton_count: number | null;
       delivery_fee: string | null;
+      actual_delivery_cost: string | null;
       final_total: string | null;
       created_at: string;
       source: string;
@@ -270,7 +276,8 @@ export async function getAdminOrderById(id: number): Promise<AdminOrderDetail | 
   >`
     select id, order_number, public_reference, status, customer_name,
       customer_phone, customer_city, customer_address, customer_notes,
-      items_subtotal, carton_count, delivery_fee, final_total, created_at, source,
+      items_subtotal, carton_count, delivery_fee, actual_delivery_cost,
+      final_total, created_at, source,
       attribution_first, attribution_last
     from public.orders where id = ${id} limit 1
   `;
@@ -295,6 +302,7 @@ export async function getAdminOrderById(id: number): Promise<AdminOrderDetail | 
     itemsSubtotal: row.items_subtotal,
     cartonCount: row.carton_count,
     deliveryFee: row.delivery_fee,
+    actualDeliveryCost: row.actual_delivery_cost,
     finalTotal: row.final_total,
     createdAt: row.created_at,
   };

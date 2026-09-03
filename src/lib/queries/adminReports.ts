@@ -127,6 +127,10 @@ export type DeliveredOrderProfit = {
   revenueMad: string;
   cogsMad: string;
   profitMad: string;
+  /** المحصَّل من الزبون للتوصيل. null = لم يُحدَّد. */
+  deliveryFeeMad: string | null;
+  /** المدفوع لشركة التوصيل. null = **غير مسجَّلة**، وليس صفراً. */
+  actualDeliveryCostMad: string | null;
   // false إذا كان لسطر واحد فأكثر بهذا الطلب purchase_price_snapshot = NULL
   // (طلب سابق لـmigration 20260807000000) — الربح المعروض حينها تقدير
   // تاريخي بثمن الشراء الحالي، وليس دقيقاً.
@@ -144,12 +148,15 @@ export async function getDeliveredOrdersProfitBreakdown(
       items_subtotal: string;
       cogs: string;
       profit: string;
+      delivery_fee: string | null;
+      actual_delivery_cost: string | null;
       has_full_snapshot: boolean | null;
     }[]
   >`
     ${orderCogsCte()}
     select
       o.id, o.order_number, o.created_at, o.items_subtotal,
+      o.delivery_fee, o.actual_delivery_cost,
       coalesce(oc.cogs, 0) as cogs,
       (o.items_subtotal - coalesce(oc.cogs, 0)) as profit,
       oc.has_full_snapshot
@@ -167,6 +174,8 @@ export async function getDeliveredOrdersProfitBreakdown(
     revenueMad: r.items_subtotal,
     cogsMad: r.cogs,
     profitMad: r.profit,
+    deliveryFeeMad: r.delivery_fee,
+    actualDeliveryCostMad: r.actual_delivery_cost,
     isExactHistoricalProfit: r.has_full_snapshot ?? true,
   }));
 }
@@ -183,10 +192,11 @@ export async function getDeliveredOrdersProfitBreakdown(
  *    واتساب يُسجَّل `confirmed`، فلا يدخل الربح حتى تُعلِن تسليمه. لذلك
  *    نعرض بجانبه عدد المؤكَّدة غير المسلَّمة، حتى لا يبدو أن بيعاً اختفى.
  *
- * 2) **التوصيل إيراد لا تكلفة.** `delivery_fee` هو ما يدفعه الزبون، ولا
- *    يوجد في قاعدة البيانات أي حقل لما يكلّفنا التوصيل فعلاً. فنعرضه سطراً
- *    منفصلاً ولا نطرحه من الربح ولا نجمعه فيه — وأي "ربح نهائي بعد
- *    التوصيل" سيكون رقماً مخترعاً.
+ * 2) **للتوصيل رقمان لا واحد.** `delivery_fee` ما يدفعه الزبون (إيراد)،
+ *    و`actual_delivery_cost` ما ندفعه لشركة التوصيل (مصروف). صافي أثرهما
+ *    يدخل الربح النهائي، لكن **على الطلبات التي سُجِّلت تكلفتها وحدها**:
+ *    طلب بـactual_delivery_cost = NULL يُعَدّ ويُعرَض عدده، ولا يدخل أي
+ *    مجموع كأنه صفر. انظر lib/orders/deliveryCost.ts.
  *
  * 3) **التكلفة الناقصة تُعَدّ ولا تُخمَّن.** منتج بلا ثمن شراء يُحتسَب
  *    بصفر، فيبدو ربحه كامل ثمن البيع. نعدّ تلك الطلبات ونعرض عددها بدل
@@ -202,7 +212,29 @@ export type SalesBySourceRow = {
   source: string;
   deliveredOrders: number;
   revenueMad: number;
+  /** التوصيل المحصَّل من الزبائن — كل الطلبات المسلَّمة. إيراد. */
   deliveryFeesMad: number;
+  /**
+   * تكلفة التوصيل الفعلية **المسجَّلة** وحدها. الطلبات التي
+   * actual_delivery_cost = NULL غائبة عن هذا المجموع تماماً — لا تدخله
+   * كأصفار، لأن «غير مسجَّلة» ليست «لم تكلّفنا شيئاً».
+   */
+  deliveryCostRecordedMad: number;
+  /**
+   * التوصيل المحصَّل من الطلبات **التي لها تكلفة مسجَّلة** وحدها.
+   *
+   * موجود لسبب واحد: أن يكون صافي أثر التوصيل طرحاً بين مجموعتين
+   * متطابقتين. لو طرحنا التكلفة المسجَّلة من كامل المحصَّل، لأدخلنا إيراد
+   * طلبات لا نعرف تكلفتها وأظهرنا فائضاً وهمياً — وهو بالضبط التضليل الذي
+   * وُجد هذا العمود كلّه لمنعه.
+   */
+  deliveryFeesOnCostedMad: number;
+  /** صافي أثر التوصيل = المحصَّل − التكلفة، على الطلبات المسجَّلة وحدها. */
+  deliveryNetMad: number;
+  /** طلبات مسلَّمة بلا تكلفة توصيل مسجَّلة — تُعَدّ ولا تُخمَّن. */
+  ordersMissingDeliveryCost: number;
+  /** التوصيل المحصَّل من تلك الطلبات — إيراد مقابله تكلفة مجهولة. */
+  deliveryFeesMissingCostMad: number;
   cogsMad: number;
   grossProfitMad: number;
   /** طلبات مسلَّمة ينقص أحد سطورها ثمن الشراء — ربحها مبالَغ فيه. */
@@ -248,6 +280,20 @@ export async function getSalesBySource(
       count(*) filter (where o.status = 'delivered')::int                        as delivered_orders,
       coalesce(sum(o.items_subtotal) filter (where o.status = 'delivered'), 0)   as revenue,
       coalesce(sum(o.delivery_fee)   filter (where o.status = 'delivered'), 0)   as delivery_fees,
+      -- التكلفة المسجَّلة وحدها: شرط is not null هو ما يمنع طلباً بلا
+      -- تكلفة من أن يُحتسَب صفراً داخل SUM.
+      coalesce(sum(o.actual_delivery_cost) filter (
+        where o.status = 'delivered' and o.actual_delivery_cost is not null
+      ), 0)                                                                      as delivery_cost_recorded,
+      coalesce(sum(coalesce(o.delivery_fee, 0)) filter (
+        where o.status = 'delivered' and o.actual_delivery_cost is not null
+      ), 0)                                                                      as delivery_fees_on_costed,
+      count(*) filter (
+        where o.status = 'delivered' and o.actual_delivery_cost is null
+      )::int                                                                     as orders_missing_delivery_cost,
+      coalesce(sum(coalesce(o.delivery_fee, 0)) filter (
+        where o.status = 'delivered' and o.actual_delivery_cost is null
+      ), 0)                                                                      as delivery_fees_missing_cost,
       coalesce(sum(oc.cogs)          filter (where o.status = 'delivered'), 0)   as cogs,
       coalesce(sum(o.items_subtotal - coalesce(oc.cogs, 0)) filter (
         where o.status = 'delivered'
@@ -272,6 +318,12 @@ export async function getSalesBySource(
     deliveredOrders: numeric(r.delivered_orders),
     revenueMad: numeric(r.revenue),
     deliveryFeesMad: numeric(r.delivery_fees),
+    deliveryCostRecordedMad: numeric(r.delivery_cost_recorded),
+    deliveryFeesOnCostedMad: numeric(r.delivery_fees_on_costed),
+    deliveryNetMad:
+      numeric(r.delivery_fees_on_costed) - numeric(r.delivery_cost_recorded),
+    ordersMissingDeliveryCost: numeric(r.orders_missing_delivery_cost),
+    deliveryFeesMissingCostMad: numeric(r.delivery_fees_missing_cost),
     cogsMad: numeric(r.cogs),
     grossProfitMad: numeric(r.gross_profit),
     ordersWithMissingCost: numeric(r.missing_cost),
@@ -286,6 +338,11 @@ export async function getSalesBySource(
       deliveredOrders: sum.deliveredOrders + row.deliveredOrders,
       revenueMad: sum.revenueMad + row.revenueMad,
       deliveryFeesMad: sum.deliveryFeesMad + row.deliveryFeesMad,
+      deliveryCostRecordedMad: sum.deliveryCostRecordedMad + row.deliveryCostRecordedMad,
+      deliveryFeesOnCostedMad: sum.deliveryFeesOnCostedMad + row.deliveryFeesOnCostedMad,
+      deliveryNetMad: sum.deliveryNetMad + row.deliveryNetMad,
+      ordersMissingDeliveryCost: sum.ordersMissingDeliveryCost + row.ordersMissingDeliveryCost,
+      deliveryFeesMissingCostMad: sum.deliveryFeesMissingCostMad + row.deliveryFeesMissingCostMad,
       cogsMad: sum.cogsMad + row.cogsMad,
       grossProfitMad: sum.grossProfitMad + row.grossProfitMad,
       ordersWithMissingCost: sum.ordersWithMissingCost + row.ordersWithMissingCost,
@@ -296,6 +353,11 @@ export async function getSalesBySource(
       deliveredOrders: 0,
       revenueMad: 0,
       deliveryFeesMad: 0,
+      deliveryCostRecordedMad: 0,
+      deliveryFeesOnCostedMad: 0,
+      deliveryNetMad: 0,
+      ordersMissingDeliveryCost: 0,
+      deliveryFeesMissingCostMad: 0,
       cogsMad: 0,
       grossProfitMad: 0,
       ordersWithMissingCost: 0,

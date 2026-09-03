@@ -18,6 +18,7 @@ import { splitProductNameSnapshot } from "@/lib/orders/productNameSnapshot";
 import { OrderStatusForm } from "@/components/admin/OrderStatusForm";
 import { OrderNoteForm } from "@/components/admin/OrderNoteForm";
 import { DeliveryFeeForm } from "@/components/admin/DeliveryFeeForm";
+import { ActualDeliveryCostForm } from "@/components/admin/ActualDeliveryCostForm";
 import { CopyBonButton } from "@/components/admin/CopyBonButton";
 import { DeleteOrderButton } from "@/components/admin/DeleteOrderButton";
 import { CopyDeliveryInfoButton } from "@/components/admin/CopyDeliveryInfoButton";
@@ -242,11 +243,27 @@ export default async function AdminOrderDetailPage({ params }: Props) {
           <span className="text-brand-orange">{formatMad(order.itemsSubtotal)}</span>
         </div>
         <div className="mt-1 flex items-center justify-between text-sm">
-          <span className="text-neutral-500">مصاريف التوصيل</span>
+          <span className="text-neutral-500">مصاريف التوصيل (محصَّلة من الزبون)</span>
           <span className="font-medium text-neutral-800">
             {order.deliveryFee ? formatMad(order.deliveryFee) : "غير محدَّدة بعد"}
           </span>
         </div>
+        {/* التكلفة الفعلية سطر داخلي: لا يدخل المبلغ المطلوب من الزبون،
+            ويُقرأ هنا بجانب المحصَّل لأن قراءتهما معاً هي كل الفائدة. */}
+        {isOwnerAdmin(admin) && (
+          <div className="mt-1 flex items-center justify-between text-sm">
+            <span className="text-neutral-500">تكلفة التوصيل الفعلية (علينا)</span>
+            <span
+              className={`font-medium ${
+                order.actualDeliveryCost ? "text-neutral-800" : "text-amber-700"
+              }`}
+            >
+              {order.actualDeliveryCost
+                ? formatMad(order.actualDeliveryCost)
+                : "غير مسجَّلة"}
+            </span>
+          </div>
+        )}
         {order.finalTotal && (
           <div className="mt-2 flex items-center justify-between border-t border-neutral-200 pt-2 text-base font-bold">
             <span>المبلغ الإجمالي عند الاستلام</span>
@@ -259,6 +276,13 @@ export default async function AdminOrderDetailPage({ params }: Props) {
         {isOwnerAdmin(admin) && (
           <div className="mt-4 border-t border-neutral-200 pt-4">
             <DeliveryFeeForm orderId={order.id} currentDeliveryFee={order.deliveryFee} />
+            <div className="mt-4 border-t border-dashed border-neutral-200 pt-4">
+              <ActualDeliveryCostForm
+                orderId={order.id}
+                currentActualDeliveryCost={order.actualDeliveryCost}
+                currentDeliveryFee={order.deliveryFee}
+              />
+            </div>
           </div>
         )}
       </div>

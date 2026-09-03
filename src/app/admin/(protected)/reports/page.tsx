@@ -10,6 +10,7 @@ import { getDashboardOrderStats } from "@/lib/queries/adminOrders";
 import { getExpensesTotal } from "@/lib/queries/adminExpenses";
 import { expenseCategoryLabel } from "@/lib/expenses/expenseCategories";
 import { formatMad } from "@/lib/format";
+import { deliveryMargin } from "@/lib/orders/deliveryCost";
 import Link from "next/link";
 import { RANGE_LABELS, RANGE_PRESETS, resolveRange } from "@/lib/analytics/dateRange";
 import {
@@ -78,6 +79,11 @@ export default async function AdminReportsPage({
           deliveredOrders: 0,
           revenueMad: 0,
           deliveryFeesMad: 0,
+          deliveryCostRecordedMad: 0,
+          deliveryFeesOnCostedMad: 0,
+          deliveryNetMad: 0,
+          ordersMissingDeliveryCost: 0,
+          deliveryFeesMissingCostMad: 0,
           cogsMad: 0,
           grossProfitMad: 0,
           ordersWithMissingCost: 0,
@@ -99,9 +105,15 @@ export default async function AdminReportsPage({
     ? expensesResult.value
     : { totalMad: 0, count: 0, byCategory: [] };
 
-  // صافي الربح = الربح الخام − مصاريف التشغيل. لا يدخل هنا ثمن شراء
-  // البضاعة: هو مطروح أصلاً داخل الربح الخام، وطرحُه ثانيةً يخترع خسارة.
-  const netProfitMad = bySource.totals.grossProfitMad - expenses.totalMad;
+  // صافي الربح الحقيقي = الربح الخام + صافي أثر التوصيل − مصاريف التشغيل.
+  //
+  // ثلاثة أشياء لا تدخل هنا، وكلٌّ لسبب:
+  //  • ثمن شراء البضاعة مطروح أصلاً داخل الربح الخام؛ طرحه ثانيةً يخترع خسارة.
+  //  • تكلفة توصيل غير مسجَّلة ليست صفراً؛ طلبها يُعَدّ ويُعرَض ولا يُجمَع.
+  //  • ولذلك صافي أثر التوصيل يُحسَب على الطلبات المسجَّلة تكلفتها وحدها،
+  //    مُحصَّلها مقابل تكلفتها — لا كامل المحصَّل مقابل بعض التكلفة.
+  const deliveryNetMad = bySource.totals.deliveryNetMad;
+  const netProfitMad = bySource.totals.grossProfitMad + deliveryNetMad - expenses.totalMad;
 
   const websiteRow = bySource.rows.find((row) => row.source === "website");
   const manualRevenue = bySource.rows
@@ -177,9 +189,110 @@ export default async function AdminReportsPage({
         <StatCard label="مبيعات واتساب/يدوية (المنتجات)" value={formatMad(manualRevenue)} />
         <StatCard label="مبيعات المنتجات إجمالاً" value={formatMad(bySource.totals.revenueMad)} accent />
         <StatCard label="تكلفة البضاعة" value={formatMad(bySource.totals.cogsMad)} />
-        <StatCard label="الربح الخام" value={formatMad(bySource.totals.grossProfitMad)} accent />
-        <StatCard label="مصاريف التوصيل المحصَّلة" value={formatMad(bySource.totals.deliveryFeesMad)} />
+        <StatCard label="الربح الخام من البضاعة" value={formatMad(bySource.totals.grossProfitMad)} accent />
+        <StatCard label="التوصيل المحصَّل من الزبائن" value={formatMad(bySource.totals.deliveryFeesMad)} />
       </div>
+
+      {/* ─────────── حساب الربح النهائي، سطراً سطراً ───────────
+          مكتوب كجدول لا كبطاقات متفرّقة: القارئ يحتاج أن يرى من أين جاء
+          الرقم الأخير، لا أن يجمع أربع بطاقات في رأسه. */}
+      <h2 className="mt-6 border-r-4 border-neutral-800 pr-3 text-base font-bold text-neutral-800">
+        حساب الربح النهائي
+      </h2>
+      <div className="mt-3 overflow-hidden rounded-xl border border-neutral-200 bg-white">
+        <dl className="divide-y divide-neutral-100 text-sm">
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <dt className="text-neutral-600">الربح الخام من البضاعة</dt>
+            <dd className="font-semibold tabular-nums text-neutral-800">
+              {formatMad(bySource.totals.grossProfitMad)}
+            </dd>
+          </div>
+
+          <div className="flex items-center justify-between bg-neutral-50 px-4 py-2 text-xs">
+            <dt className="text-neutral-500">
+              التوصيل المحصَّل من الزبائن{" "}
+              <span className="text-neutral-400">(كل الطلبات المسلَّمة)</span>
+            </dt>
+            <dd className="tabular-nums text-neutral-600">
+              {formatMad(bySource.totals.deliveryFeesMad)}
+            </dd>
+          </div>
+          <div className="flex items-center justify-between bg-neutral-50 px-4 py-2 text-xs">
+            <dt className="text-neutral-500">
+              تكلفة التوصيل الفعلية المسجَّلة{" "}
+              <span className="text-neutral-400">(ما دفعناه لشركة التوصيل)</span>
+            </dt>
+            <dd className="tabular-nums text-neutral-600">
+              − {formatMad(bySource.totals.deliveryCostRecordedMad)}
+            </dd>
+          </div>
+
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <dt className="text-neutral-600">
+              صافي أثر التوصيل
+              <span className="mt-0.5 block text-[11px] leading-relaxed text-neutral-500">
+                محسوب على الطلبات التي سُجِّلت تكلفتها وحدها: محصَّلها{" "}
+                {formatMad(bySource.totals.deliveryFeesOnCostedMad)} − تكلفتها{" "}
+                {formatMad(bySource.totals.deliveryCostRecordedMad)}
+              </span>
+            </dt>
+            <dd
+              className={`shrink-0 font-semibold tabular-nums ${
+                deliveryNetMad < 0
+                  ? "text-red-700"
+                  : deliveryNetMad > 0
+                    ? "text-green-700"
+                    : "text-neutral-800"
+              }`}
+            >
+              {deliveryNetMad > 0 ? "+" : ""}
+              {formatMad(deliveryNetMad)}
+            </dd>
+          </div>
+
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <dt className="text-neutral-600">مصاريف التشغيل</dt>
+            <dd className="font-semibold tabular-nums text-neutral-800">
+              − {formatMad(expenses.totalMad)}
+            </dd>
+          </div>
+
+          <div
+            className={`flex items-center justify-between px-4 py-3 ${
+              netProfitMad < 0 ? "bg-red-50" : "bg-brand-orange-tint"
+            }`}
+          >
+            <dt className="font-bold text-neutral-800">صافي الربح الحقيقي</dt>
+            <dd
+              className={`text-lg font-bold tabular-nums ${
+                netProfitMad < 0 ? "text-red-700" : "text-brand-orange"
+              }`}
+            >
+              {formatMad(netProfitMad)}
+            </dd>
+          </div>
+        </dl>
+      </div>
+
+      {/* التحذير الذي يجعل الرقم أعلاه قابلاً للتصديق: ما الذي لم يُقَس؟ */}
+      {bySource.totals.ordersMissingDeliveryCost > 0 && (
+        <p className="mt-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">
+          <span className="font-bold">
+            تكلفة التوصيل غير مسجَّلة في {bySource.totals.ordersMissingDeliveryCost} طلباً
+          </span>{" "}
+          من الطلبات المسلَّمة في هذا المدى، وقد حصّلنا منها{" "}
+          <span className="font-semibold tabular-nums">
+            {formatMad(bySource.totals.deliveryFeesMissingCostMad)}
+          </span>{" "}
+          توصيلاً. هذه الطلبات <span className="font-semibold">خارج الحساب أعلاه بالكامل</span> —
+          لم تُحتسَب بصفر، لأن صفراً يعني أن توصيلها لم يكلّفنا شيئاً وهذا غير صحيح. صافي الربح
+          الحقيقي أعلاه لا يعرف تكلفتها بعد.{" "}
+          <Link href="/admin/orders" className="font-semibold underline">
+            سجّلها من صفحة كل طلب
+          </Link>
+          .
+        </p>
+      )}
 
       {/* المصاريف وصافي الربح — نفس المدى المختار أعلاه بالضبط. */}
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -207,26 +320,34 @@ export default async function AdminReportsPage({
           )}
         </div>
 
-        <div
-          className={`rounded-xl border-2 p-4 ${
-            netProfitMad < 0 ? "border-red-400 bg-red-50" : "border-brand-orange/40 bg-brand-orange-tint"
-          }`}
-        >
-          <p className="text-xs font-semibold text-neutral-600">صافي الربح</p>
+        <div className="rounded-xl border border-neutral-200 bg-white p-4">
+          <p className="text-xs text-neutral-500">أثر التوصيل على الربح</p>
           <p
-            className={`mt-1 text-2xl font-bold tabular-nums ${
-              netProfitMad < 0 ? "text-red-700" : "text-brand-orange"
+            className={`mt-1 text-xl font-bold tabular-nums ${
+              deliveryNetMad < 0
+                ? "text-red-700"
+                : deliveryNetMad > 0
+                  ? "text-green-700"
+                  : "text-neutral-800"
             }`}
           >
-            {formatMad(netProfitMad)}
+            {deliveryNetMad > 0 ? "+" : ""}
+            {formatMad(deliveryNetMad)}
           </p>
-          <p className="mt-1 text-[11px] leading-relaxed text-neutral-600">
-            الربح الخام {formatMad(bySource.totals.grossProfitMad)} − مصاريف التشغيل{" "}
-            {formatMad(expenses.totalMad)}
-            {netProfitMad < 0 && (
-              <span className="mt-1 block font-bold text-red-700">
-                المصاريف تجاوزت الربح الخام في هذا المدى.
-              </span>
+          <p className="mt-2 text-[11px] leading-relaxed text-neutral-500">
+            {bySource.totals.ordersMissingDeliveryCost > 0 ? (
+              <>
+                على{" "}
+                <span className="font-semibold">
+                  {bySource.totals.deliveredOrders - bySource.totals.ordersMissingDeliveryCost}
+                </span>{" "}
+                طلباً سُجِّلت تكلفة توصيلها. الباقي (
+                {bySource.totals.ordersMissingDeliveryCost}) غير مسجَّل ولا يدخل الحساب.
+              </>
+            ) : bySource.totals.deliveredOrders > 0 ? (
+              <>تكلفة التوصيل مسجَّلة في كل الطلبات المسلَّمة في هذا المدى.</>
+            ) : (
+              <>لا طلبات مسلَّمة في هذا المدى.</>
             )}
           </p>
         </div>
@@ -234,14 +355,17 @@ export default async function AdminReportsPage({
 
       {!expensesResult.ok && (
         <p className="mt-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-semibold text-amber-800">
-          تعذّر حساب المصاريف الآن، فصافي الربح أعلاه يساوي الربح الخام مؤقتاً. حدّث الصفحة بعد قليل.
+          تعذّر حساب المصاريف الآن، فمصاريف التشغيل تُحتسَب صفراً مؤقتاً في الجدول أعلاه. حدّث
+          الصفحة بعد قليل.
         </p>
       )}
 
       <p className="mt-2 text-[11px] leading-relaxed text-neutral-500">
-        صافي الربح يطرح <span className="font-semibold">مصاريف التشغيل</span> وحدها (إشهار، كراء،
-        نقل، أجور…). ثمن شراء البضاعة ليس منها — هو مخصوم أصلاً داخل الربح الخام، فطرحه ثانيةً
-        يُظهر خسارة لا وجود لها.
+        <span className="font-semibold">صافي الربح الحقيقي = الربح الخام من البضاعة + صافي أثر
+        التوصيل − مصاريف التشغيل.</span>{" "}
+        ثمن شراء البضاعة ليس ضمن مصاريف التشغيل — هو مخصوم أصلاً داخل الربح الخام، فطرحه ثانيةً
+        يُظهر خسارة لا وجود لها. ومصاريف التوصيل التي يدفعها الزبون ليست ربحاً بذاتها: ما يدخل
+        الربح هو الفرق بينها وبين ما دفعناه فعلاً لشركة التوصيل، وقد يكون سالباً.
       </p>
 
       {!bySourceResult.ok && (
@@ -265,6 +389,7 @@ export default async function AdminReportsPage({
                 <th className="px-3 py-2 text-right font-semibold">التكلفة</th>
                 <th className="px-3 py-2 text-right font-semibold">الربح الخام</th>
                 <th className="px-3 py-2 text-right font-semibold">التوصيل المحصَّل</th>
+                <th className="px-3 py-2 text-right font-semibold">صافي التوصيل</th>
                 <th className="px-3 py-2 text-right font-semibold">لم تُسلَّم بعد</th>
               </tr>
             </thead>
@@ -296,6 +421,30 @@ export default async function AdminReportsPage({
                   <td className="px-3 py-2 tabular-nums text-neutral-500">
                     {formatMad(row.deliveryFeesMad)}
                   </td>
+                  <td className="px-3 py-2 tabular-nums">
+                    {row.deliveredOrders - row.ordersMissingDeliveryCost > 0 ? (
+                      <span
+                        className={
+                          row.deliveryNetMad < 0
+                            ? "font-semibold text-red-700"
+                            : row.deliveryNetMad > 0
+                              ? "font-semibold text-green-700"
+                              : "text-neutral-500"
+                        }
+                      >
+                        {row.deliveryNetMad > 0 ? "+" : ""}
+                        {formatMad(row.deliveryNetMad)}
+                      </span>
+                    ) : (
+                      <span className="text-[11px] text-amber-700">غير مسجَّلة</span>
+                    )}
+                    {row.ordersMissingDeliveryCost > 0 &&
+                      row.deliveredOrders - row.ordersMissingDeliveryCost > 0 && (
+                        <span className="mr-1 text-[11px] font-normal text-amber-700">
+                          ({row.ordersMissingDeliveryCost} بلا تكلفة)
+                        </span>
+                      )}
+                  </td>
                   <td className="px-3 py-2 tabular-nums text-neutral-500">
                     {row.pendingOrders > 0
                       ? `${row.pendingOrders} · ${formatMad(row.pendingRevenueMad)}`
@@ -309,9 +458,10 @@ export default async function AdminReportsPage({
       )}
 
       <p className="mt-2 text-[11px] leading-relaxed text-neutral-500">
-        <span className="font-semibold text-neutral-600">عن التوصيل:</span> العمود أعلاه هو ما
-        دفعه الزبون، لا ما كلّفنا. قاعدة البيانات لا تحمل تكلفة توصيل فعلية، فلا يمكن حساب «ربح
-        نهائي بعد التوصيل» بصدق — ولذلك لا يُطرَح ولا يُجمَع في الربح.
+        <span className="font-semibold text-neutral-600">عن التوصيل:</span>{" "}
+        «التوصيل المحصَّل» ما دفعه الزبون، و«صافي التوصيل» هو ما بقي لنا منه بعد طرح ما دفعناه
+        لشركة التوصيل — على الطلبات التي سُجِّلت تكلفتها وحدها. السالب يعني أننا نتحمّل جزءاً من
+        التوصيل من ربح البضاعة.
         {bySource.totals.ordersWithMissingCost > 0 && (
           <>
             {" "}
@@ -435,6 +585,7 @@ export default async function AdminReportsPage({
                 <th className="pb-2 font-medium">المبيعات</th>
                 <th className="pb-2 font-medium">التكلفة</th>
                 <th className="pb-2 font-medium">الربح</th>
+                <th className="pb-2 font-medium">فرق التوصيل</th>
               </tr>
             </thead>
             <tbody>
@@ -451,6 +602,35 @@ export default async function AdminReportsPage({
                         تقدير
                       </span>
                     )}
+                  </td>
+                  <td className="py-2">
+                    {(() => {
+                      // فرق هذا الطلب وحده: المحصَّل − التكلفة. null يُعرَض
+                      // نصاً لا رقماً، فلا يُقرأ «غير مسجَّلة» كصفر.
+                      const margin = deliveryMargin({
+                        deliveryFee: o.deliveryFeeMad,
+                        actualDeliveryCost: o.actualDeliveryCostMad,
+                      });
+                      if (margin === null) {
+                        return (
+                          <span className="text-[11px] text-amber-700">غير مسجَّلة</span>
+                        );
+                      }
+                      return (
+                        <span
+                          className={`font-semibold tabular-nums ${
+                            margin < 0
+                              ? "text-red-700"
+                              : margin > 0
+                                ? "text-green-700"
+                                : "text-neutral-600"
+                          }`}
+                        >
+                          {margin > 0 ? "+" : ""}
+                          {formatMad(margin)}
+                        </span>
+                      );
+                    })()}
                   </td>
                 </tr>
               ))}

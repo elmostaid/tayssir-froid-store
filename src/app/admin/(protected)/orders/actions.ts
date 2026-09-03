@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { sql } from "@/lib/db";
+import { parseDeliveryCostInput } from "@/lib/orders/deliveryCost";
 import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import { ORDER_STATUSES, type OrderStatus } from "@/lib/queries/adminOrders";
 import { RESTOCKING_STATUSES } from "@/lib/orders/orderStatus";
@@ -88,6 +89,47 @@ export async function updateDeliveryFee(
 
   revalidatePath(`/admin/orders/${orderId}`);
   revalidatePath("/admin/orders");
+  return { error: null };
+}
+
+/**
+ * تسجيل ما دفعناه فعلاً لشركة التوصيل.
+ *
+ * إجراء مستقلّ عن updateDeliveryFee عمداً، رغم أن الحقلين متجاوران في
+ * الشاشة. ذاك يمسّ ما يدفعه الزبون فيُعيد حساب `final_total` (المبلغ
+ * المُطالَب به عند الاستلام)؛ هذا مصروف داخلي لا يراه الزبون ولا يجوز أن
+ * يحرّك ما يدفعه بدرهم واحد. دمجهما في نموذج واحد كان سيجعل تصحيح تكلفة
+ * جاءت متأخرة من شركة التوصيل يُغيّر فاتورة زبون سُلِّم طلبه منذ أسبوع.
+ *
+ * والخانة الفارغة تمسح القيمة وتعيدها إلى NULL («غير مسجَّلة»). هذا
+ * مقصود: الموظف الذي كتب 450 بدل 45 يحتاج تراجعاً، وإجباره على كتابة صفر
+ * كان سيحوّل غلطة مطبعية إلى ادّعاء بأن التوصيل مجاني.
+ */
+export async function updateActualDeliveryCost(
+  _prevState: OrderActionState,
+  formData: FormData
+): Promise<OrderActionState> {
+  const admin = await getAdminUser();
+  if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+  // نفس حاجز updateDeliveryFee: حقل مالي، خارج صلاحيات Staff.
+  if (!isOwnerAdmin(admin)) {
+    return { error: "تسجيل تكلفة التوصيل مقصور على صاحب الحساب (Admin)." };
+  }
+
+  const orderId = Number(formData.get("orderId"));
+  if (!orderId) return { error: "الطلب غير موجود." };
+
+  const parsed = parseDeliveryCostInput(String(formData.get("actualDeliveryCost") ?? ""));
+  if (!parsed.ok) return { error: parsed.message };
+
+  await sql`
+    update public.orders
+    set actual_delivery_cost = ${parsed.value}
+    where id = ${orderId}
+  `;
+
+  revalidatePath(`/admin/orders/${orderId}`);
+  revalidatePath("/admin/reports");
   return { error: null };
 }
 
@@ -443,6 +485,10 @@ export async function createManualOrderAction(
   const feeRaw = String(formData.get("deliveryFee") ?? "").trim();
   const deliveryFee = feeRaw === "" ? 0 : Number(feeRaw);
 
+  // نفس القارئ المستعمل في تعديل الطلب، فلا ينحرف قبول الإنشاء عن التعديل.
+  const parsedCost = parseDeliveryCostInput(String(formData.get("actualDeliveryCost") ?? ""));
+  if (!parsedCost.ok) return { error: parsedCost.message };
+
   const result = await createManualOrder({
     customer: {
       fullName: String(formData.get("fullName") ?? ""),
@@ -453,6 +499,7 @@ export async function createManualOrderAction(
     },
     source,
     deliveryFee,
+    actualDeliveryCost: parsedCost.value,
     createdByEmail: auth.email,
     items: readLines(formData),
     acknowledgeBelowCost: formData.get("acknowledgeBelowCost") === "on",
