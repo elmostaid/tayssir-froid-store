@@ -9,6 +9,7 @@ import { flattenZodErrors } from "@/lib/validation/zodErrors";
 import { isProductSlugTaken, isSkuTakenByOtherProduct } from "@/lib/queries/adminProducts";
 import { computeSkuPrefixForCategory, findMaxSkuNumber } from "@/lib/products/skuGeneration";
 import { revalidateCatalog } from "@/lib/queries/catalogCache";
+import { isPubliclyVisibleStatus } from "@/lib/catalog/visibility";
 
 const OWNER_ONLY_ERROR = "هذا الإجراء مقصور على صاحب الحساب (Admin)." as const;
 
@@ -372,6 +373,78 @@ export async function quickUpdateProduct(
 export type ReorderUpdate = { id: number; sort_order: number };
 export type ReorderResult = { error: string | null; updated?: ReorderUpdate[] };
 
+/**
+ * إعادة ترقيم تصنيف واحد بعد نقل منتج داخله.
+ *
+ * **يُرقَّم المعروض وحده 1..V، وتُركَن المخفيّة بعده.** هذا جوهر الإصلاح:
+ * المرتبة التي يكتبها المدير يجب أن تساوي الموضع الذي يراه الزبون، وذلك
+ * مستحيل ما دامت مسودّة تحجز رقماً لا يظهر. فالمسودّات تأخذ أرقاماً بعد كل
+ * المعروض، محافِظةً على ترتيبها النسبي بينها — ومتى نُشر أحدها صار آخر
+ * المعروض، وهو نفس سلوك المنتج الجديد في createProduct.
+ *
+ * الترتيب المرجعي (sort_order ثم created_at تنازلياً ثم id تنازلياً) مطابق
+ * لترتيب العرض في catalog.ts حرفاً بحرف، وid آخرُ فاصل ثابت فلا يتبدّل
+ * ترتيب متساويين عشوائياً بين طلبين.
+ *
+ * القفل (FOR UPDATE) يمنع نقلين متزامنين في نفس التصنيف من إنتاج ترقيم
+ * متضارب، والكتابة تقع في عبارة UPDATE واحدة تشمل الصفوف المتغيّرة فقط.
+ */
+type CategoryRow = { id: number; sort_order: number; status: string };
+
+async function reorderCategory(
+  categoryId: number,
+  /** يُعيد ترتيب معرّفات المنتجات المعروضة كما يجب أن تظهر. */
+  reposition: (visibleIds: number[]) => number[]
+): Promise<ReorderUpdate[]> {
+  return sql.begin(async (tx) => {
+    const rows = await tx<CategoryRow[]>`
+      select id, sort_order, status
+      from public.products
+      where category_id = ${categoryId}
+      order by sort_order asc, created_at desc, id desc
+      for update
+    `;
+
+    const visibleIds = rows.filter((r) => isPubliclyVisibleStatus(r.status)).map((r) => r.id);
+    const hiddenIds = rows.filter((r) => !isPubliclyVisibleStatus(r.status)).map((r) => r.id);
+
+    const nextVisible = reposition(visibleIds);
+    // ترتيب نهائي واحد: المعروض بترتيبه الجديد، ثم المخفيّ بترتيبه كما كان.
+    const finalOrder = [...nextVisible, ...hiddenIds];
+
+    const current = new Map(rows.map((r) => [r.id, r.sort_order]));
+    const changed: ReorderUpdate[] = [];
+    finalOrder.forEach((id, index) => {
+      const next = index + 1;
+      if (current.get(id) !== next) changed.push({ id, sort_order: next });
+    });
+
+    if (changed.length === 0) return [];
+
+    // القوالب في VALUES تصل بلا نوع (text)، فالمقارنة مع bigint تفشل —
+    // لذلك التحويل صريح على الطرفين.
+    await tx`
+      update public.products p
+      set sort_order = v.sort_order::int
+      from (values ${tx(changed.map((c) => [c.id, c.sort_order]))}) as v(id, sort_order)
+      where p.id = v.id::bigint
+    `;
+
+    return changed;
+  });
+}
+
+/** ينقل عنصراً داخل مصفوفة من موضع إلى آخر، بلا تعديل الأصل. */
+function moveWithin(ids: number[], from: number, to: number): number[] {
+  const next = [...ids];
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item);
+  return next;
+}
+
+const NOT_VISIBLE_ERROR =
+  "هذا المنتج غير معروض في المتجر (مسودّة أو مؤرشف)، فليست له مرتبة عامة. انشره أولاً ثم رتّبه." as const;
+
 async function swapProductSortOrder(
   productId: number,
   direction: "up" | "down"
@@ -380,52 +453,33 @@ async function swapProductSortOrder(
   if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
   if (!isOwnerAdmin(admin)) return { error: OWNER_ONLY_ERROR };
 
-  const [current] = await sql<{ category_id: number }[]>`
-    select category_id from public.products where id = ${productId}
+  const [current] = await sql<{ category_id: number; status: string }[]>`
+    select category_id, status from public.products where id = ${productId}
   `;
   if (!current) return { error: null };
+  if (!isPubliclyVisibleStatus(current.status)) return { error: NOT_VISIBLE_ERROR };
 
-  // نفس ترتيب العرض الحقيقي بالضبط (catalog.ts وlistProductsAdmin):
-  // sort_order تصاعدياً، ثم created_at تنازلياً كـfallback ثابت للتساوي.
-  const ordered = await sql<{ id: number; sort_order: number }[]>`
-    select id, sort_order from public.products
-    where category_id = ${current.category_id}
-    order by sort_order asc, created_at desc, id desc
-  `;
-
-  const index = ordered.findIndex((p) => p.id === productId);
-  if (index === -1) return { error: null };
-
-  const neighborIndex = direction === "up" ? index - 1 : index + 1;
-  if (neighborIndex < 0 || neighborIndex >= ordered.length) {
-    return { error: null };
-  }
-
-  const currentEntry = ordered[index];
-  const neighbor = ordered[neighborIndex];
-
-  await sql.begin(async (tx) => {
-    await tx`update public.products set sort_order = ${neighbor.sort_order} where id = ${currentEntry.id}`;
-    await tx`update public.products set sort_order = ${currentEntry.sort_order} where id = ${neighbor.id}`;
+  let outOfRange = false;
+  const updated = await reorderCategory(current.category_id, (visibleIds) => {
+    const index = visibleIds.indexOf(productId);
+    if (index === -1) return visibleIds;
+    // الجار المقصود هو الجار **المعروض**. قبل هذا الإصلاح كان الجار قد يكون
+    // مسودّة، فتُبدَّل معها الأرقام ولا يتغيّر شيء على صفحة التصنيف — ضغطة
+    // تبدو معطّلة بلا سبب ظاهر.
+    const target = direction === "up" ? index - 1 : index + 1;
+    if (target < 0 || target >= visibleIds.length) {
+      outOfRange = true;
+      return visibleIds;
+    }
+    return moveWithin(visibleIds, index, target);
   });
 
-  // صفحة التصنيف للزبون force-dynamic أصلاً فلا تحتاج revalidatePath
-  // لتُحدَّث فعلياً عند أي زيارة/تحميل جديد — لكن نُنعشها بنفس النمط
-  // المعتمد أصلاً فـimageActions.ts لتفادي أي عرض من ذاكرة تنقّل جانب
-  // العميل (client-side router cache) إن كانت مفتوحة أصلاً فتبويب آخر.
-  // عمداً بلا revalidatePath("/admin/products"): هذا كان يفرض إعادة جلب/عرض
-  // كامل قائمة المنتجات فـلوحة الإدارة عند كل ضغطة (بطيء)، بينما الواجهة
-  // الآن تُحدَّث فوراً من القيمة المُرجَعة أدناه بلا أي طلب إضافي.
+  if (outOfRange) return { error: null };
+
   revalidatePath("/", "layout");
   revalidateCatalog();
 
-  return {
-    error: null,
-    updated: [
-      { id: currentEntry.id, sort_order: neighbor.sort_order },
-      { id: neighbor.id, sort_order: currentEntry.sort_order },
-    ],
-  };
+  return { error: null, updated };
 }
 
 export async function moveProductUp(productId: number): Promise<ReorderResult> {
@@ -436,16 +490,12 @@ export async function moveProductDown(productId: number): Promise<ReorderResult>
   return swapProductSortOrder(productId, "down");
 }
 
-// نقل منتج مباشرة إلى مرتبة مطلوبة داخل تصنيفه (خانة "المرتبة" + زر "نقل"):
-// بدل تكرار "↑"/"↓" عشرات المرات (بطيء، عشرات الطلبات المنفصلة)، عملية
-// واحدة فقاعدة البيانات: استعلام UPDATE وحيد (مع CTEs) يقفل صفوف التصنيف
-// (FOR UPDATE، لمنع تعارض نقلين متزامنين فنفس التصنيف)، يحسب مرتبة كل منتج
-// الحالية عبر row_number() بنفس ترتيب العرض الحقيقي، يُثبِّت المرتبة الهدف
-// بين 1 والعدد الكلي للتصنيف (clamp)، ثم يزيح فقط المنتجات الواقعة بين
-// المرتبة القديمة والجديدة بمقدار واحد (لإفساح/إغلاق الفراغ) — كل هذا فسطر
-// UPDATE واحد، بلا حلقة JS ولا استعلامات منفصلة متعددة. النتيجة: ترتيب
-// 1..N متصل بلا تكرار ولا فراغات داخل نفس التصنيف فقط، بلا أي تأثير على أي
-// تصنيف آخر.
+/**
+ * نقل منتج مباشرة إلى مرتبة مطلوبة داخل تصنيفه (خانة «المرتبة» + زر «نقل»).
+ *
+ * الرقم المكتوب يعني **الموضع على صفحة التصنيف**، لا الموضع بين كل الصفوف
+ * في القاعدة — وهذا ما كان مكسوراً. يُثبَّت بين 1 وعدد المنتجات المعروضة.
+ */
 export async function moveProductToRank(
   productId: number,
   targetRankRaw: number
@@ -458,47 +508,18 @@ export async function moveProductToRank(
     return { error: "أدخل رقم مرتبة صحيح (1 أو أكثر)." };
   }
 
-  const [current] = await sql<{ category_id: number }[]>`
-    select category_id from public.products where id = ${productId}
+  const [current] = await sql<{ category_id: number; status: string }[]>`
+    select category_id, status from public.products where id = ${productId}
   `;
   if (!current) return { error: null };
+  if (!isPubliclyVisibleStatus(current.status)) return { error: NOT_VISIBLE_ERROR };
 
-  const updated = await sql<ReorderUpdate[]>`
-    with locked as (
-      select id from public.products where category_id = ${current.category_id} for update
-    ),
-    current_list as (
-      select p.id, p.sort_order,
-        row_number() over (order by p.sort_order asc, p.created_at desc, p.id desc) as rn,
-        count(*) over () as total
-      from public.products p
-      join locked l on l.id = p.id
-    ),
-    old_rank as (
-      select rn, total from current_list where id = ${productId}
-    ),
-    target as (
-      select least(greatest(${targetRankRaw}::int, 1), total) as rank from old_rank
-    )
-    update public.products p
-    set sort_order = case
-      when cl.id = ${productId} then (select rank from target)
-      when cl.rn < (select rn from old_rank) and cl.rn >= (select rank from target) then cl.rn + 1
-      when cl.rn > (select rn from old_rank) and cl.rn <= (select rank from target) then cl.rn - 1
-      else cl.rn
-    end
-    from current_list cl
-    where p.id = cl.id
-      and cl.sort_order is distinct from (
-        case
-          when cl.id = ${productId} then (select rank from target)
-          when cl.rn < (select rn from old_rank) and cl.rn >= (select rank from target) then cl.rn + 1
-          when cl.rn > (select rn from old_rank) and cl.rn <= (select rank from target) then cl.rn - 1
-          else cl.rn
-        end
-      )
-    returning p.id, p.sort_order
-  `;
+  const updated = await reorderCategory(current.category_id, (visibleIds) => {
+    const index = visibleIds.indexOf(productId);
+    if (index === -1) return visibleIds;
+    const target = Math.min(Math.max(targetRankRaw, 1), visibleIds.length) - 1;
+    return moveWithin(visibleIds, index, target);
+  });
 
   revalidatePath("/", "layout");
   revalidateCatalog();

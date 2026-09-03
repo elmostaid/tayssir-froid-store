@@ -102,7 +102,7 @@ describe("ReorderableProductsList — تحديث الترتيب فوراً با�
 
     renderList();
 
-    const rows = screen.getAllByRole("spinbutton", { name: "مرتبة المنتج داخل تصنيفه" });
+    const rows = screen.getAllByRole("spinbutton", { name: "مرتبة المنتج على صفحة تصنيفه" });
     // الصف الثالث (منتج ج) هو index=2 فالعرض الأولي.
     fireEvent.change(rows[2], { target: { value: "1" } });
     const moveButtons = screen.getAllByRole("button", { name: "نقل" });
@@ -145,7 +145,7 @@ describe("ReorderableProductsList — تحديث الترتيب فوراً با�
 
     renderList();
 
-    const rows = screen.getAllByRole("spinbutton", { name: "مرتبة المنتج داخل تصنيفه" });
+    const rows = screen.getAllByRole("spinbutton", { name: "مرتبة المنتج على صفحة تصنيفه" });
     fireEvent.change(rows[0], { target: { value: "3" } });
     const moveButtons = screen.getAllByRole("button", { name: "نقل" });
     fireEvent.click(moveButtons[0]);
