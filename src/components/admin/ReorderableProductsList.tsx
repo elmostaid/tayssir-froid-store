@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { isPubliclyVisibleStatus } from "@/lib/catalog/visibility";
 import type { ProductFormState } from "@/app/admin/(protected)/products/actions";
 import { moveProductUp, moveProductDown, moveProductToRank } from "@/app/admin/(protected)/products/actions";
 import type { ImageActionState, UploadTargetState } from "@/app/admin/(protected)/products/imageActions";
@@ -75,16 +76,26 @@ export function ReorderableProductsList({
 
   return (
     <div className="mt-4 flex flex-col gap-3">
-      {products.map((product, index) => {
+      {products.map((product) => {
         const config = configById.get(product.id);
         if (!config) return null;
         // products مرتَّبة أصلاً حسب category_id ثم sort_order (من الخادم
         // أول مرة، ومن applyReorder بعد ذلك) — منتجات نفس التصنيف متتالية
         // دائماً، فمقارنة الجار السابق/اللاحق فنفس المصفوفة كافية لتحديد
         // أول/آخر منتج داخل تصنيفه.
-        const isFirstInCategory = index === 0 || products[index - 1].category_id !== product.category_id;
+        // «أول/آخر» تُحسَب بين المنتجات **المعروضة** وحدها، لأن "↑"/"↓" صارت
+        // تتنقّل بينها وتتخطّى المسودّات. لو بقيت على الترتيب الخام لظلّ سهم
+        // النزول مفعَّلاً على آخر منتج معروض (لأن مسودّة تليه) فيضغطه المدير
+        // ولا يقع شيء — نفس صنف العطل الذي جاء هذا الإصلاح كلّه لأجله.
+        const visibleNeighbors = products.filter(
+          (candidate) =>
+            candidate.category_id === product.category_id &&
+            isPubliclyVisibleStatus(candidate.status)
+        );
+        const visibleIndex = visibleNeighbors.findIndex((candidate) => candidate.id === product.id);
+        const isFirstInCategory = visibleIndex <= 0;
         const isLastInCategory =
-          index === products.length - 1 || products[index + 1].category_id !== product.category_id;
+          visibleIndex === -1 || visibleIndex === visibleNeighbors.length - 1;
 
         return (
           <ProductQuickEditRow

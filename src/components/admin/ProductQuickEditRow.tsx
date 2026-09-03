@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useActionState, useState, useTransition } from "react";
+import { isPubliclyVisibleStatus } from "@/lib/catalog/visibility";
 import type { ProductFormState } from "@/app/admin/(protected)/products/actions";
 import type { ImageActionState, UploadTargetState } from "@/app/admin/(protected)/products/imageActions";
 import type { AdminProduct, AdminProductImage } from "@/lib/queries/adminProducts";
@@ -67,6 +68,9 @@ export function ProductQuickEditRow({
   const [isReordering, startReorderTransition] = useTransition();
   const [reorderError, setReorderError] = useState<string | null>(null);
 
+  // بعد إصلاح الترقيم صار sort_order للمنتج المعروض مساوياً لموضعه على صفحة
+  // التصنيف بالضبط (المعروض يُرقَّم 1..V والمخفيّ يُركَن بعده)، فالخانة تعرضه
+  // كما هو ويعني ما تقوله.
   // خانة "المرتبة": قيمة نصية مستقلة (وليست مربوطة مباشرة بـproduct.sort_order
   // كـcontrolled input بلا وسيط) لتسمح للمستخدم بالكتابة بحرية، مع مزامنتها
   // من جديد كلما تغيّرت مرتبة المنتج الفعلية (نقل ناجح لهذا المنتج أو لجاره).
@@ -125,7 +129,7 @@ export function ProductQuickEditRow({
         <button
           type="button"
           onClick={(e) => handleMove(e, onMoveUp)}
-          disabled={isReordering || isFirstInCategory}
+          disabled={isReordering || isFirstInCategory || !isPubliclyVisibleStatus(product.status)}
           aria-label="طلّع المنتج للأعلى داخل نفس التصنيف"
           title="طلّع"
           className="flex min-h-9 min-w-9 items-center justify-center rounded-full border border-neutral-300 text-sm text-neutral-700 disabled:cursor-not-allowed disabled:opacity-30"
@@ -135,7 +139,7 @@ export function ProductQuickEditRow({
         <button
           type="button"
           onClick={(e) => handleMove(e, onMoveDown)}
-          disabled={isReordering || isLastInCategory}
+          disabled={isReordering || isLastInCategory || !isPubliclyVisibleStatus(product.status)}
           aria-label="هبّط المنتج للأسفل داخل نفس التصنيف"
           title="هبّط"
           className="flex min-h-9 min-w-9 items-center justify-center rounded-full border border-neutral-300 text-sm text-neutral-700 disabled:cursor-not-allowed disabled:opacity-30"
@@ -146,7 +150,7 @@ export function ProductQuickEditRow({
         <span className="mx-0.5 h-6 w-px shrink-0 bg-neutral-200" aria-hidden />
 
         <label className="flex items-center gap-1 text-xs text-neutral-600">
-          المرتبة
+          المرتبة على صفحة التصنيف
           <input
             type="number"
             inputMode="numeric"
@@ -154,19 +158,26 @@ export function ProductQuickEditRow({
             step={1}
             value={rankInput}
             onChange={(e) => setRankInput(e.target.value)}
-            disabled={isReordering}
-            aria-label="مرتبة المنتج داخل تصنيفه"
+            disabled={isReordering || !isPubliclyVisibleStatus(product.status)}
+            aria-label="مرتبة المنتج على صفحة تصنيفه"
             className="min-h-9 w-16 rounded-lg border border-neutral-300 px-2 py-1 text-center text-sm disabled:opacity-60"
           />
         </label>
         <button
           type="button"
           onClick={handleMoveToRank}
-          disabled={isReordering}
+          disabled={isReordering || !isPubliclyVisibleStatus(product.status)}
           className="min-h-9 rounded-lg border border-neutral-300 px-3 text-xs font-semibold text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
           نقل
         </button>
+
+        {!isPubliclyVisibleStatus(product.status) && (
+          <p className="w-full text-xs text-amber-700">
+            هذا المنتج غير معروض في المتجر ({product.status === "draft" ? "مسودّة" : "مؤرشف"})،
+            فليست له مرتبة على صفحة التصنيف. انشره ليأخذ مكانه في آخر القائمة، ثم رتّبه.
+          </p>
+        )}
 
         {reorderError && <p className="w-full text-xs text-red-600">{reorderError}</p>}
       </div>

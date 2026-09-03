@@ -152,14 +152,14 @@ describe("ProductQuickEditRow — أزرار ترتيب المنتج داخل ت
   describe("خانة 'المرتبة' + زر 'نقل'", () => {
     test("قيمتها الابتدائية هي sort_order الحالي للمنتج", () => {
       renderRow();
-      const rankInput = screen.getByRole("spinbutton", { name: "مرتبة المنتج داخل تصنيفه" }) as HTMLInputElement;
+      const rankInput = screen.getByRole("spinbutton", { name: "مرتبة المنتج على صفحة تصنيفه" }) as HTMLInputElement;
       expect(rankInput.value).toBe("3");
     });
 
     test("كتابة رقم صحيح والضغط على 'نقل' يستدعي onMoveToRank بالرقم المُدخَل فقط", async () => {
       const { onMoveToRank, onMoveUp, onMoveDown } = renderRow();
 
-      const rankInput = screen.getByRole("spinbutton", { name: "مرتبة المنتج داخل تصنيفه" });
+      const rankInput = screen.getByRole("spinbutton", { name: "مرتبة المنتج على صفحة تصنيفه" });
       fireEvent.change(rankInput, { target: { value: "2" } });
       fireEvent.click(screen.getByRole("button", { name: "نقل" }));
 
@@ -172,7 +172,7 @@ describe("ProductQuickEditRow — أزرار ترتيب المنتج داخل ت
     test("رقم غير صحيح (0، سالب، أو فارغ): رسالة خطأ محلية بلا أي استدعاء للخادم", async () => {
       const { onMoveToRank } = renderRow();
 
-      const rankInput = screen.getByRole("spinbutton", { name: "مرتبة المنتج داخل تصنيفه" });
+      const rankInput = screen.getByRole("spinbutton", { name: "مرتبة المنتج على صفحة تصنيفه" });
       fireEvent.change(rankInput, { target: { value: "0" } });
       fireEvent.click(screen.getByRole("button", { name: "نقل" }));
 
@@ -225,7 +225,7 @@ describe("ProductQuickEditRow — أزرار ترتيب المنتج داخل ت
         />
       );
 
-      const rankInput = screen.getByRole("spinbutton", { name: "مرتبة المنتج داخل تصنيفه" }) as HTMLInputElement;
+      const rankInput = screen.getByRole("spinbutton", { name: "مرتبة المنتج على صفحة تصنيفه" }) as HTMLInputElement;
       expect(rankInput.value).toBe("2");
     });
   });
