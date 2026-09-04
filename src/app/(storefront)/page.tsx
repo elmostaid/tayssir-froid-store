@@ -15,7 +15,7 @@ import { CategoryIcon } from "@/components/CategoryIcon";
 import { HowToOrder } from "@/components/HowToOrder";
 import { LoadMoreProducts } from "@/components/LoadMoreProducts";
 import { getCategoryImage } from "@/lib/categoryImages";
-import { isFreeDelivery, FREE_DELIVERY_HEADLINE } from "@/lib/delivery";
+import { isFreeDelivery } from "@/lib/delivery";
 import { resolveProductImageUrls } from "@/lib/storage/resolveProductImageUrl";
 import { TOP_DEMAND_SKUS } from "@/lib/catalog/topDemand";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
@@ -25,22 +25,26 @@ import { safeQuery } from "@/lib/safeQuery";
 // المنتجات والأسعار تأتي من قاعدة البيانات ويجب أن تكون محدَّثة دائماً.
 export const dynamic = "force-dynamic";
 
-// حُذف «الحد الأدنى للطلب: 1000 درهم» من هنا مع حذف الحاجز نفسه.
+// أربع جمل قصيرة، كل واحدة سطر واحد على الهاتف.
 //
-// وما حلّ محلّه ليس «اطلب أي كمية — بلا حد أدنى»: تلك الجملة كانت ستكذب
-// على الزبون، فالكمية الدنيا لكل منتج ما زالت قائمة (فيس فراكة أدناه 10
-// قطع مثلاً)، وكان سيصطدم بها بعد أن وعدناه بحرية مطلقة. الصياغة الحالية
-// تحفظ هوية الجملة وتقول الحقيقة كما هي: لا شرط مالي عام، والقيد الوحيد
-// الباقي هو كمية كل منتج على حدة.
+// «الحد الأدنى للطلب: 1000 درهم» حُذف سابقاً مع حذف الحاجز نفسه. وما تبقّى
+// من شرحٍ للكمية الدنيا («تختلف حسب المنتوج») حُذف الآن كذلك: كان ذيلاً
+// يُطيل أول سطر حتى يلتفّ سطرين على الهاتف، ويشرح قيداً لا يصادفه الزائر
+// إلا داخل صفحة المنتج حيث هو مكتوب أصلاً. الهيرو ليس مكان الشروط، بل
+// مكان سبب البقاء.
+//
+// ولا واحدة من الأربع تَعِد بما لا نفي به: لا «أي كمية»، ولا «بلا حد
+// أدنى» — الكمية الدنيا لكل منتج ما زالت قائمة وتظهر في مكانها.
 export function buildTrustPoints(deliveryFeePerCartonMad: number): string[] {
   return [
-    "أثمنة مناسبة للتجار والصنايعية — الكمية الدنيا تختلف حسب المنتوج",
+    "أثمنة مناسبة للتجار والحرفيين",
     "الدفع عند الاستلام بعد معاينة السلعة",
-    // مشتقّ من الإعداد لا مكتوب: إرجاع الرسوم يوماً يُرجع الجملة وحده.
+    // مشتقّ من الإعداد لا مكتوب: إرجاع الرسوم يوماً يُرجع الجملة وحده،
+    // فلا يبقى الهيرو يَعِد بمجانية أُلغيت.
     isFreeDelivery(deliveryFeePerCartonMad)
-      ? `🚚 ${FREE_DELIVERY_HEADLINE} 24–48 ساعة`
-      : "التوصيل لجميع مدن المغرب 24–48 ساعة",
-    "كلما زادت الكمية، كينقص الثمن",
+      ? "🚚 التوصيل بالمجان لجميع مناطق المغرب"
+      : "التوصيل لجميع مناطق المغرب 24–48 ساعة",
+    "تخفيضات خاصة للكميات الكبيرة",
   ];
 }
 
@@ -121,16 +125,22 @@ export default async function HomePage() {
   const trustPoints = buildTrustPoints(settings.deliveryFeePerCartonMad);
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6">
-      <section className="rounded-2xl bg-brand-turquoise-tint px-5 py-8">
+    <div className="mx-auto max-w-6xl px-4 pt-4 pb-5 sm:py-6">
+      {/* الحشو والمسافات مُصغَّرة على الهاتف وحده (القيم الأصلية محفوظة خلف
+          sm:)، لأن كل بكسل هنا يؤخّر أول منتج بثمنه عن عين الزائر — وهو ما
+          يقيسه ارتداد الصفحة الرئيسية. لا لون تغيّر ولا زر ولا بنية: نفس
+          البطاقة ونفس الأزرار، أقصر بنحو 80 بكسل على شاشة هاتف. */}
+      <section className="rounded-2xl bg-brand-turquoise-tint px-4 py-5 sm:px-5 sm:py-8">
         <span className="inline-block rounded-full bg-brand-orange px-3 py-1 text-xs font-semibold text-white">
           البيع بالجملة فقط
         </span>
-        <h1 className="mt-3 text-2xl font-bold text-neutral-900 sm:text-3xl">
+        {/* حجم العنوان كما هو (24px على الهاتف): التقصير جاء من المسافات
+            لا من الخطّ، فلا يصير النصّ أصعب قراءةً مما كان. */}
+        <h1 className="mt-2 text-2xl font-bold text-neutral-900 sm:mt-3 sm:text-3xl">
           قطع الغيار بالجملة
         </h1>
 
-        <ul className="mt-4 flex flex-col gap-1.5 text-sm text-neutral-700 sm:text-base">
+        <ul className="mt-3 flex flex-col gap-1 text-sm text-neutral-700 sm:mt-4 sm:gap-1.5 sm:text-base">
           {trustPoints.map((point) => (
             <li key={point} className="flex items-center gap-2">
               <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-brand-turquoise" />
@@ -139,7 +149,7 @@ export default async function HomePage() {
           ))}
         </ul>
 
-        <div className="mt-5 flex flex-col gap-2.5 sm:flex-row">
+        <div className="mt-4 flex flex-col gap-2 sm:mt-5 sm:flex-row sm:gap-2.5">
           <Link
             href="#categories"
             className="flex min-h-11 items-center justify-center rounded-full bg-brand-orange px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-orange-dark"
