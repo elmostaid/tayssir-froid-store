@@ -46,6 +46,7 @@ describe("buildCartWhatsAppMessage", () => {
   test("تحمل الطلبية والكميات والمجموع والمرجع", () => {
     const message = buildCartWhatsAppMessage({
       ...BASE,
+      deliveryFeePerCartonMad: 30,
       items: [item(), item({ productId: 2, sku: "TF-GAS-002", name: "غاز R32", unitPrice: 900, quantity: 1 })],
       subtotal: 3300,
     });
@@ -60,7 +61,7 @@ describe("buildCartWhatsAppMessage", () => {
   });
 
   test("لا تكتب حقول زبون فارغة — البيانات تُؤخذ في المحادثة", () => {
-    const message = buildCartWhatsAppMessage({ ...BASE, items: [item()], subtotal: 2400 });
+    const message = buildCartWhatsAppMessage({ deliveryFeePerCartonMad: 30, ...BASE, items: [item()], subtotal: 2400 });
 
     expect(message).not.toContain("الاسم الكامل:");
     expect(message).not.toContain("الهاتف:");
@@ -72,18 +73,20 @@ describe("buildCartWhatsAppMessage", () => {
   test("تكتب سطر المصدر حين يُعرف، وتحذفه حين لا يُعرف", () => {
     const withSource = buildCartWhatsAppMessage({
       ...BASE,
+      deliveryFeePerCartonMad: 30,
       items: [item()],
       subtotal: 2400,
       attributionNote: "facebook / cpc",
     });
     expect(withSource).toContain("المصدر: facebook / cpc");
 
-    const withoutSource = buildCartWhatsAppMessage({ ...BASE, items: [item()], subtotal: 2400 });
+    const withoutSource = buildCartWhatsAppMessage({ deliveryFeePerCartonMad: 30, ...BASE, items: [item()], subtotal: 2400 });
     expect(withoutSource).not.toContain("المصدر:");
 
     // مصدر بمسافات فقط لا يُنتج سطراً فارغاً.
     const blank = buildCartWhatsAppMessage({
       ...BASE,
+      deliveryFeePerCartonMad: 30,
       items: [item()],
       subtotal: 2400,
       attributionNote: "   ",
@@ -103,6 +106,7 @@ describe("buildCartWhatsAppMessage", () => {
 
     const message = buildCartWhatsAppMessage({
       ...BASE,
+      deliveryFeePerCartonMad: 30,
       items: many,
       subtotal: 99_000,
       attributionNote: "facebook / cpc",
@@ -123,6 +127,7 @@ describe("buildCartWhatsAppMessage", () => {
 
     const message = buildCartWhatsAppMessage({
       ...BASE,
+      deliveryFeePerCartonMad: 30,
       items: many,
       subtotal: 12_000,
       maxUrlBytes: 400,

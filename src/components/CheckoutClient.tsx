@@ -269,6 +269,7 @@ export function CheckoutClient({
             items,
             subtotal,
             whatsappNumber,
+            deliveryFeePerCartonMad,
             needsReview: confirmed.needsReview === true,
           })
         );

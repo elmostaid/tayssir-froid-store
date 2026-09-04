@@ -2,7 +2,7 @@ import type { CartItem } from "@/lib/cart/types";
 import { formatMad } from "@/lib/format";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
 import { customerAddressOrNull } from "@/lib/orders/customerAddress";
-import { totalDeliveryNote } from "@/lib/delivery";
+import { isFreeDelivery, totalDeliveryNote } from "@/lib/delivery";
 
 /**
  * رسالة الطلب على واتساب — بسقف صارم لطول الرابط.
@@ -48,12 +48,57 @@ export const MAX_WHATSAPP_URL_BYTES = 6500;
  *
  * القيمة الافتراضية تُبقي النصّ القديم لأي مُنادٍ لم يمرّر الرسوم بعد.
  */
-const legacyClosingNote = "(المجموع لا يشمل التوصيل — يُحسب بعد تجهيز الطلب)";
+/**
+ * ذيل الرسالة: المجموع وما يليه.
+ *
+ * **مع توصيل مجاني** لا يكفي حذف الجملة القديمة، لأن الزبون كان يقرأ رقماً
+ * واحداً يعرف أن مبلغاً سيُضاف إليه. فيصير الذيل ثلاثة أسطر تُنهي السؤال:
+ * مجموع المنتجات، ثم التوصيل مجاناً، ثم المبلغ النهائي — وهو نفس ما يُحفَظ
+ * في `orders.final_total`.
+ *
+ * **ومع رسوم قائمة** يعود السطران القديمان كما كانا حرفياً. هذا شرطُ
+ * التصميم لا تحسينُه: الرسوم قد تعود يوماً من /admin/settings، ويجب أن
+ * تعود معها الصيغة بلا نشر.
+ *
+ * ولا قيمة افتراضية هنا: الحقل إجباري على المُنادين الثلاثة، لأن جعله
+ * اختيارياً هو بعينه ما أبقى رسالة الطلب المؤكَّد على النصّ القديم بعد
+ * مجانية التوصيل — نداءٌ واحد نسيه، ولا شيء أوقفه.
+ */
+function totalLines(params: {
+  subtotal: number;
+  deliveryFeePerCartonMad: number;
+  /**
+   * عنوان بديل للمجموع حين ينتظر الطلب مراجعة مخزون. وجوده يمنع كتابة
+   * «المجموع النهائي»: مبلغٌ قد يتغيّر بعد المراجعة لا يُسمّى نهائياً.
+   */
+  provisionalLabel?: string;
+}): string[] {
+  const { subtotal, deliveryFeePerCartonMad, provisionalLabel } = params;
+  const amount = formatMad(subtotal);
 
-function closingNoteFor(deliveryFeePerCartonMad: number | undefined): string {
-  return deliveryFeePerCartonMad === undefined
-    ? legacyClosingNote
-    : totalDeliveryNote(deliveryFeePerCartonMad);
+  if (!isFreeDelivery(deliveryFeePerCartonMad)) {
+    return [
+      provisionalLabel ?? `المجموع ${amount}`,
+      totalDeliveryNote(deliveryFeePerCartonMad),
+    ];
+  }
+
+  const closing = [
+    "",
+    "✅ الدفع عند الاستلام بعد معاينة السلعة",
+    "🚚 التوصيل بالمجان لجميع مناطق المغرب",
+  ];
+
+  if (provisionalLabel) {
+    return [provisionalLabel, "🚚 التوصيل: مجاناً", ...closing];
+  }
+
+  return [
+    `مجموع المنتجات: ${amount}`,
+    "🚚 التوصيل: مجاناً",
+    `المجموع النهائي: ${amount}`,
+    ...closing,
+  ];
 }
 
 /**
@@ -158,8 +203,16 @@ export function buildConfirmedOrderMessage(params: {
   whatsappNumber: string;
   /** سطور لم يُحجز مخزونها — الطلب مسجَّل لكنه يحتاج مراجعة قبل التجهيز. */
   needsReview?: boolean;
-  /** رسوم التوصيل المُعدَّة — تحدّد سطر الخاتمة. */
-  deliveryFeePerCartonMad?: number;
+  /**
+   * رسوم التوصيل المُعدَّة — تحدّد ذيل الرسالة.
+   *
+   * **إجباري عمداً.** كان اختيارياً، فنُسي في نداء واحد
+   * (buildConfirmedOrderMessage داخل CheckoutClient) وبقيت رسالة الطلب
+   * تقول «المجموع لا يشمل التوصيل» بعد أن صار التوصيل مجانياً — وهو ما
+   * قرأه زبون حقيقي في الطلب TF-2026-0091. جعلُه إجبارياً ينقل الحراسة
+   * من اختبارٍ قد يُنسى إلى المُصرِّف نفسه: أي نداء يُغفله لا يُبنى.
+   */
+  deliveryFeePerCartonMad: number;
   maxUrlBytes?: number;
 }): string {
   const { storeName, customer, reference, orderNumber, items, subtotal, whatsappNumber } = params;
@@ -168,9 +221,13 @@ export function buildConfirmedOrderMessage(params: {
   const head = customerLines(storeName, customer, reference);
 
   // المجموع لا يُسمّى نهائياً ما دام سطرٌ ينتظر مراجعة المخزون.
-  const totalLabel = params.needsReview
-    ? `المجموع المطلوب قبل مراجعة المخزون ${formatMad(subtotal)}`
-    : `المجموع ${formatMad(subtotal)}`;
+  const tail = totalLines({
+    subtotal,
+    deliveryFeePerCartonMad: params.deliveryFeePerCartonMad,
+    provisionalLabel: params.needsReview
+      ? `المجموع المطلوب قبل مراجعة المخزون ${formatMad(subtotal)}`
+      : undefined,
+  });
 
   const compose = (lines: string[], hidden: number) => {
     const body = [
@@ -186,7 +243,7 @@ export function buildConfirmedOrderMessage(params: {
     if (hidden > 0) {
       body.push(`+${hidden} منتجات أخرى محفوظة كاملة في الطلب ${orderNumber}`);
     }
-    body.push("", totalLabel, closingNoteFor(params.deliveryFeePerCartonMad));
+    body.push("", ...tail);
     return body.join("\n");
   };
 
@@ -221,8 +278,16 @@ export function buildRescueOrderMessage(params: {
   items: CartItem[];
   subtotal: number;
   whatsappNumber: string;
-  /** رسوم التوصيل المُعدَّة — تحدّد سطر الخاتمة. */
-  deliveryFeePerCartonMad?: number;
+  /**
+   * رسوم التوصيل المُعدَّة — تحدّد ذيل الرسالة.
+   *
+   * **إجباري عمداً.** كان اختيارياً، فنُسي في نداء واحد
+   * (buildConfirmedOrderMessage داخل CheckoutClient) وبقيت رسالة الطلب
+   * تقول «المجموع لا يشمل التوصيل» بعد أن صار التوصيل مجانياً — وهو ما
+   * قرأه زبون حقيقي في الطلب TF-2026-0091. جعلُه إجبارياً ينقل الحراسة
+   * من اختبارٍ قد يُنسى إلى المُصرِّف نفسه: أي نداء يُغفله لا يُبنى.
+   */
+  deliveryFeePerCartonMad: number;
   maxUrlBytes?: number;
 }): string {
   const { storeName, customer, reference, items, subtotal, whatsappNumber } = params;
@@ -245,7 +310,10 @@ export function buildRescueOrderMessage(params: {
           "وإن لم تجدوه فاتصلوا بالزبون لتأكيد الباقي."
       );
     }
-    body.push("", `المجموع ${formatMad(subtotal)}`, closingNoteFor(params.deliveryFeePerCartonMad));
+    body.push(
+      "",
+      ...totalLines({ subtotal, deliveryFeePerCartonMad: params.deliveryFeePerCartonMad })
+    );
     return body.join("\n");
   };
 
@@ -295,8 +363,16 @@ export function buildCartWhatsAppMessage(params: {
   whatsappNumber: string;
   /** مصدر الزيارة مختصراً (مثلاً "facebook / cpc") — يُكتب سطراً واحداً. */
   attributionNote?: string | null;
-  /** رسوم التوصيل المُعدَّة — تحدّد سطر الخاتمة. */
-  deliveryFeePerCartonMad?: number;
+  /**
+   * رسوم التوصيل المُعدَّة — تحدّد ذيل الرسالة.
+   *
+   * **إجباري عمداً.** كان اختيارياً، فنُسي في نداء واحد
+   * (buildConfirmedOrderMessage داخل CheckoutClient) وبقيت رسالة الطلب
+   * تقول «المجموع لا يشمل التوصيل» بعد أن صار التوصيل مجانياً — وهو ما
+   * قرأه زبون حقيقي في الطلب TF-2026-0091. جعلُه إجبارياً ينقل الحراسة
+   * من اختبارٍ قد يُنسى إلى المُصرِّف نفسه: أي نداء يُغفله لا يُبنى.
+   */
+  deliveryFeePerCartonMad: number;
   maxUrlBytes?: number;
 }): string {
   const { storeName, reference, items, subtotal, whatsappNumber } = params;
@@ -320,8 +396,7 @@ export function buildCartWhatsAppMessage(params: {
     }
     body.push(
       "",
-      `المجموع ${formatMad(subtotal)}`,
-      closingNoteFor(params.deliveryFeePerCartonMad),
+      ...totalLines({ subtotal, deliveryFeePerCartonMad: params.deliveryFeePerCartonMad }),
       "",
       "بغيت نكمل هاد الطلب. غادي نعطيكم الاسم والمدينة والهاتف هنا."
     );
