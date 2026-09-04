@@ -3,12 +3,12 @@ import { buildTrustPoints } from "@/app/(storefront)/page";
 
 describe("buildTrustPoints (نقاط الثقة الأربع فأعلى الصفحة الرئيسية)", () => {
   test("الوعد الأول صار سعراً مناسباً للتاجر، لا حدّاً أدنى", () => {
-    // برسوم توصيل قائمة (30): الجملة القديمة كما هي.
+    // برسوم توصيل قائمة (30): سطر التوصيل وحده يعود لصيغته المدفوعة.
     expect(buildTrustPoints(30)).toEqual([
-      "أثمنة مناسبة للتجار والصنايعية — الكمية الدنيا تختلف حسب المنتوج",
+      "أثمنة مناسبة للتجار والحرفيين",
       "الدفع عند الاستلام بعد معاينة السلعة",
-      "التوصيل لجميع مدن المغرب 24–48 ساعة",
-      "كلما زادت الكمية، كينقص الثمن",
+      "التوصيل لجميع مناطق المغرب 24–48 ساعة",
+      "تخفيضات خاصة للكميات الكبيرة",
     ]);
   });
 
@@ -17,8 +17,26 @@ describe("buildTrustPoints (نقاط الثقة الأربع فأعلى الصف
   // /admin/settings لا تعديلَ كود.
   test("التوصيل المجاني يُعلَن حين تكون الرسوم صفراً", () => {
     const free = buildTrustPoints(0).join(" ");
-    expect(free).toContain("التوصيل بالمجان لجميع مدن المغرب");
+    expect(free).toContain("🚚 التوصيل بالمجان لجميع مناطق المغرب");
     expect(buildTrustPoints(30).join(" ")).not.toContain("بالمجان");
+  });
+
+  // الذيل الذي كان يُطيل أول سطر حتى يلتفّ سطرين على الهاتف.
+  test("لا شرح للكمية الدنيا في الهيرو", () => {
+    for (const fee of [0, 30]) {
+      const text = buildTrustPoints(fee).join(" ");
+      expect(text).not.toContain("الكمية الدنيا");
+      expect(text).not.toContain("حسب المنتوج");
+    }
+  });
+
+  // أربع نقاط قصيرة: الهيرو يُقاس بما يُخفيه من المنتجات تحته.
+  test("أربع نقاط فقط، وكل واحدة قصيرة تكفي سطراً واحداً", () => {
+    const points = buildTrustPoints(0);
+    expect(points).toHaveLength(4);
+    for (const point of points) {
+      expect(point.length).toBeLessThanOrEqual(40);
+    }
   });
 
   // الحاجز أُلغي نهائياً، فأي مبلغ يظهر هنا كشرط شراء يكون كذباً على
