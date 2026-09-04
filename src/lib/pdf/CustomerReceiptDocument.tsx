@@ -1,6 +1,7 @@
 import { Document, Page, Text, View, Image } from "@react-pdf/renderer";
 import { pdfStyles, LOGO_PATH } from "@/lib/pdf/theme";
 import { formatMad } from "@/lib/format";
+import { isFreeDelivery, FREE_DELIVERY_HEADLINE } from "@/lib/delivery";
 
 function Field({ label, value }: { label: string; value: string }) {
   return (
@@ -83,7 +84,9 @@ export function CustomerReceiptDocument({
           <Text style={pdfStyles.sectionTitle}>معلومات مهمة</Text>
           <Text style={{ fontSize: 9, marginBottom: 2 }}>طريقة الدفع: الدفع عند الاستلام فقط.</Text>
           <Text style={{ fontSize: 9, marginBottom: 2 }}>
-            التوصيل {formatMad(deliveryFeePerCartonMad)} لكل كرطونة، يُحدَّد عدد الكرطونات بعد تجهيز الطلب.
+            {isFreeDelivery(deliveryFeePerCartonMad)
+              ? `${FREE_DELIVERY_HEADLINE}. المبلغ أعلاه هو المبلغ النهائي.`
+              : `التوصيل ${formatMad(deliveryFeePerCartonMad)} لكل كرطونة، يُحدَّد عدد الكرطونات بعد تجهيز الطلب.`}
           </Text>
           <Text style={{ fontSize: 9 }}>هذا طلب أولي في انتظار تأكيد فريق Tayssir Froid.</Text>
         </View>

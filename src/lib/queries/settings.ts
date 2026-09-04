@@ -32,7 +32,10 @@ export type StoreSettings = {
 // تكرار نفس الكائن بحقوله السبعة فكل ملف.
 export const FALLBACK_SETTINGS: StoreSettings = {
   minOrderAmountMad: 1000,
-  deliveryFeePerCartonMad: 45,
+  // صفر = التوصيل مجاني. الاحتياطي يجب أن يوافق الإعداد الحقيقي، وإلا
+  // أعلن الموقعُ رسومَ توصيل للزبون في اللحظة التي تتعذّر فيها قراءة
+  // الإعدادات — وعدٌ خاطئ يولد من عطل شبكة.
+  deliveryFeePerCartonMad: 0,
   whatsappNumber: "+212722083458",
   storeCity: "مراكش - حي المحاميد",
   storeName: "Tayssir Froid",

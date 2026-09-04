@@ -15,6 +15,7 @@ import { CategoryIcon } from "@/components/CategoryIcon";
 import { HowToOrder } from "@/components/HowToOrder";
 import { LoadMoreProducts } from "@/components/LoadMoreProducts";
 import { getCategoryImage } from "@/lib/categoryImages";
+import { isFreeDelivery, FREE_DELIVERY_HEADLINE } from "@/lib/delivery";
 import { resolveProductImageUrls } from "@/lib/storage/resolveProductImageUrl";
 import { TOP_DEMAND_SKUS } from "@/lib/catalog/topDemand";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
@@ -31,11 +32,14 @@ export const dynamic = "force-dynamic";
 // قطع مثلاً)، وكان سيصطدم بها بعد أن وعدناه بحرية مطلقة. الصياغة الحالية
 // تحفظ هوية الجملة وتقول الحقيقة كما هي: لا شرط مالي عام، والقيد الوحيد
 // الباقي هو كمية كل منتج على حدة.
-export function buildTrustPoints(): string[] {
+export function buildTrustPoints(deliveryFeePerCartonMad: number): string[] {
   return [
     "أثمنة مناسبة للتجار والصنايعية — الكمية الدنيا تختلف حسب المنتوج",
     "الدفع عند الاستلام بعد معاينة السلعة",
-    "التوصيل لجميع مدن المغرب 24–48 ساعة",
+    // مشتقّ من الإعداد لا مكتوب: إرجاع الرسوم يوماً يُرجع الجملة وحده.
+    isFreeDelivery(deliveryFeePerCartonMad)
+      ? `🚚 ${FREE_DELIVERY_HEADLINE} 24–48 ساعة`
+      : "التوصيل لجميع مدن المغرب 24–48 ساعة",
     "كلما زادت الكمية، كينقص الثمن",
   ];
 }
@@ -114,7 +118,7 @@ export default async function HomePage() {
     settings.whatsappNumber,
     "مرحباً، أريد الاطلاع على منتجاتكم بالجملة."
   );
-  const trustPoints = buildTrustPoints();
+  const trustPoints = buildTrustPoints(settings.deliveryFeePerCartonMad);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">

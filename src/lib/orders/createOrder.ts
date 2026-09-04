@@ -1,5 +1,6 @@
 import { sql } from "@/lib/db";
 import { getSettings } from "@/lib/queries/settings";
+import { isFreeDelivery } from "@/lib/delivery";
 import { isValidMoroccanPhone, normalizePhone } from "@/lib/phone";
 import { isRateLimited } from "@/lib/orders/rateLimit";
 import {
@@ -169,16 +170,37 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     const attributionFirst = attribution?.first ? sql.json(attribution.first) : null;
     const attributionLast = attribution?.last ? sql.json(attribution.last) : null;
 
+    // التوصيل المجاني يجعل المبلغ نهائياً وقت الطلب.
+    //
+    // قبل هذا كان طلب الموقع يُحفَظ بـdelivery_fee = NULL وfinal_total =
+    // NULL، لأن الرسوم كانت تُحسَب بعدد الكراتين الذي لا يُعرَف إلا عند
+    // التجهيز؛ فيبقى المبلغ مؤقّتاً في لوحة الإدارة حتى يملأه المدير.
+    // ومع مجانية التوصيل لم يبقَ ما يُنتظَر: ما يدفعه الزبون هو مجموع
+    // المنتجات، فنكتبه صراحةً — صفراً للتوصيل ومجموعاً نهائياً — بدل ترك
+    // حقلين فارغين يوحيان بأن شيئاً ما زال معلَّقاً.
+    //
+    // والشرط مقصود: لو أعاد المالك الرسوم يوماً من /admin/settings، عاد
+    // السلوك القديم (NULL يملأه المدير) وحده، لأن الموقع حينها لا يعرف
+    // عدد الكراتين فعلاً ولا يجوز أن يخترع رقماً.
+    //
+    // ولا علاقة لهذا بـactual_delivery_cost: ذاك ما ندفعه نحن لشركة
+    // التوصيل، ويبقى NULL («غير مسجَّلة») يسجّله المدير كما كان تماماً.
+    const freeDelivery = isFreeDelivery(settings.deliveryFeePerCartonMad);
+    const deliveryFee = freeDelivery ? 0 : null;
+    const finalTotal = freeDelivery ? subtotal : null;
+
     const result = await sql.begin(async (trx) => {
       const inserted = await trx<{ id: number; public_reference: string; order_number: string }[]>`
         insert into public.orders (
           customer_name, customer_phone, customer_city, customer_address,
-          customer_notes, items_subtotal, status, source, idempotency_key,
+          customer_notes, items_subtotal, delivery_fee, final_total,
+          status, source, idempotency_key,
           attribution_first, attribution_last
         ) values (
           ${input.customer.fullName.trim()}, ${normalizedPhone}, ${input.customer.city.trim()},
           ${customerAddressOrNull(input.customer.address)}, ${input.customer.notes?.trim() || null},
-          ${subtotal}, 'new', 'website', ${input.idempotencyKey},
+          ${subtotal}, ${deliveryFee}, ${finalTotal},
+          'new', 'website', ${input.idempotencyKey},
           ${attributionFirst}, ${attributionLast}
         )
         on conflict (idempotency_key) do nothing

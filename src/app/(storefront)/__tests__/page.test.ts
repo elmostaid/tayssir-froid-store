@@ -3,7 +3,8 @@ import { buildTrustPoints } from "@/app/(storefront)/page";
 
 describe("buildTrustPoints (نقاط الثقة الأربع فأعلى الصفحة الرئيسية)", () => {
   test("الوعد الأول صار سعراً مناسباً للتاجر، لا حدّاً أدنى", () => {
-    expect(buildTrustPoints()).toEqual([
+    // برسوم توصيل قائمة (30): الجملة القديمة كما هي.
+    expect(buildTrustPoints(30)).toEqual([
       "أثمنة مناسبة للتجار والصنايعية — الكمية الدنيا تختلف حسب المنتوج",
       "الدفع عند الاستلام بعد معاينة السلعة",
       "التوصيل لجميع مدن المغرب 24–48 ساعة",
@@ -11,16 +12,25 @@ describe("buildTrustPoints (نقاط الثقة الأربع فأعلى الصف
     ]);
   });
 
+  // الإعداد وحده يقرّر الجملة: صفر ⇒ «بالمجان»، ورقمٌ موجب ⇒ الجملة
+  // القديمة. هذا ما يجعل التراجع عن مجانية التوصيل تعديلَ رقم في
+  // /admin/settings لا تعديلَ كود.
+  test("التوصيل المجاني يُعلَن حين تكون الرسوم صفراً", () => {
+    const free = buildTrustPoints(0).join(" ");
+    expect(free).toContain("التوصيل بالمجان لجميع مدن المغرب");
+    expect(buildTrustPoints(30).join(" ")).not.toContain("بالمجان");
+  });
+
   // الحاجز أُلغي نهائياً، فأي مبلغ يظهر هنا كشرط شراء يكون كذباً على
   // الزبون ويعيد إليه بالضبط التردّد الذي ألغينا الحاجز لأجله.
   test("لا يذكر أي مبلغ ولا أي شرط مالي عام", () => {
-    const text = buildTrustPoints().join(" ");
+    const text = buildTrustPoints(0).join(" ");
     expect(text).not.toMatch(/الحد الأدنى للطلب|أقل طلب|أقل قيمة/);
     expect(text).not.toMatch(/\d[\d.,]*\s*درهم/);
   });
 
   // «بلا حد أدنى» وعدٌ مطلق تكذّبه الكمية الدنيا لكل منتج.
   test("لا يعد الزبون بحرية مطلقة في الكمية", () => {
-    expect(buildTrustPoints().join(" ")).not.toMatch(/بلا حد أدنى|أي كمية/);
+    expect(buildTrustPoints(0).join(" ")).not.toMatch(/بلا حد أدنى|أي كمية/);
   });
 });

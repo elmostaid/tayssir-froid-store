@@ -3,6 +3,7 @@ import { buildWhatsAppLink } from "@/lib/whatsapp";
 import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 import { safeQuery } from "@/lib/safeQuery";
 import { formatMad } from "@/lib/format";
+import { isFreeDelivery, FREE_DELIVERY_HEADLINE } from "@/lib/delivery";
 
 export async function SiteFooter() {
   const settings = await safeQuery(
@@ -35,8 +36,14 @@ export async function SiteFooter() {
         </p>
         <p className="mt-1">{settings.storeCity}</p>
         <p className="mt-1">
-          التوصيل {formatMad(settings.deliveryFeePerCartonMad)} لكل كرطونة، يُحدَّد عدد
-          الكرطونات بعد تجهيز الطلب. الدفع عند الاستلام فقط.
+          {isFreeDelivery(settings.deliveryFeePerCartonMad) ? (
+            <>🚚 {FREE_DELIVERY_HEADLINE}. الدفع عند الاستلام فقط.</>
+          ) : (
+            <>
+              التوصيل {formatMad(settings.deliveryFeePerCartonMad)} لكل كرطونة، يُحدَّد عدد
+              الكرطونات بعد تجهيز الطلب. الدفع عند الاستلام فقط.
+            </>
+          )}
         </p>
         <a
           href={whatsappLink}
