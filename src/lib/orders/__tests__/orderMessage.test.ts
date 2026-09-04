@@ -43,6 +43,7 @@ const rescue = (items: CartItem[]) =>
     items,
     subtotal: total(items),
     whatsappNumber: NUMBER,
+    deliveryFeePerCartonMad: 30,
   });
 
 describe("مرجع الطلب", () => {
@@ -74,6 +75,7 @@ describe("سقف طول رابط واتساب", () => {
         items,
         subtotal: total(items),
         whatsappNumber: NUMBER,
+        deliveryFeePerCartonMad: 30,
       })
     );
     expect(link.length).toBeLessThanOrEqual(MAX_WHATSAPP_URL_BYTES);
@@ -90,6 +92,7 @@ describe("الرسالة المؤكَّدة — الطلب محفوظ", () => {
     items,
     subtotal: total(items),
     whatsappNumber: NUMBER,
+    deliveryFeePerCartonMad: 30,
   });
 
   test("تحمل رقم الطلب والمرجع وبيانات الزبون والمجموع", () => {
@@ -112,6 +115,7 @@ describe("الرسالة المؤكَّدة — الطلب محفوظ", () => {
       storeName: "Tayssir Froid", customer: CUSTOMER, reference: "W-3F9A2C81",
       orderNumber: "TF-2026-0031", items, subtotal: total(items),
       whatsappNumber: NUMBER, needsReview: true,
+      deliveryFeePerCartonMad: 30,
     });
     expect(msg).toContain("يحتاج مراجعة مخزون");
     expect(msg).toContain("المجموع المطلوب قبل مراجعة المخزون");
@@ -123,6 +127,7 @@ describe("الرسالة المؤكَّدة — الطلب محفوظ", () => {
     const msg = buildConfirmedOrderMessage({
       storeName: "Tayssir Froid", customer: CUSTOMER, reference: "W-3F9A2C81",
       orderNumber: "TF-2026-0031", items, subtotal: total(items), whatsappNumber: NUMBER,
+      deliveryFeePerCartonMad: 30,
     });
     expect(msg).toMatch(/\+\d+ منتجات أخرى محفوظة كاملة في الطلب TF-2026-0031/);
     expect(buildWhatsAppLink(NUMBER, msg).length).toBeLessThanOrEqual(MAX_WHATSAPP_URL_BYTES);

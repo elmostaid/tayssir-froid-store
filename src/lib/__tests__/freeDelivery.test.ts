@@ -68,9 +68,11 @@ describe("رسالة واتساب تتبع نفس الإعداد", () => {
     whatsappNumber: "+212722083458",
   };
 
-  test("بتوصيل مجاني: الرسالة تقول إن المبلغ نهائي", () => {
+  test("بتوصيل مجاني: الرسالة تُنهي المبلغ ولا تَعِد بإضافة", () => {
     const message = buildCartWhatsAppMessage({ ...base, deliveryFeePerCartonMad: 0 });
-    expect(message).toContain("المبلغ النهائي");
+    // الذيل الصريح (انظر orders/__tests__/freeDeliveryMessage.test.ts للتفصيل).
+    expect(message).toContain("المجموع النهائي");
+    expect(message).toContain("🚚 التوصيل: مجاناً");
     // ولا تَعِد الزبون بمبلغ إضافي لن يُضاف.
     expect(message).not.toContain("لا يشمل التوصيل");
   });
