@@ -19,6 +19,7 @@ export default async function CartPage() {
     <CartPageClient
       whatsappNumber={settings.whatsappNumber}
       storeName={settings.storeName}
+      deliveryFeePerCartonMad={settings.deliveryFeePerCartonMad}
     />
   );
 }

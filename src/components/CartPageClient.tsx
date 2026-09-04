@@ -8,16 +8,24 @@ import { cartItemKey, snapQuantity } from "@/lib/cart/cartMath";
 import { resolveImageUrl } from "@/lib/images";
 import { resolveCartImageUrls } from "@/app/(storefront)/cart/resolveCartImageUrls";
 import { formatMad } from "@/lib/format";
+import {
+  isFreeDelivery,
+  deliveryAmountLabel,
+  FREE_DELIVERY_HEADLINE,
+} from "@/lib/delivery";
 import { CartWhatsAppButton } from "@/components/CartWhatsAppButton";
 
 export function CartPageClient({
   whatsappNumber,
   storeName,
+  deliveryFeePerCartonMad,
 }: {
   whatsappNumber: string;
   storeName: string;
+  deliveryFeePerCartonMad: number;
 }) {
   const { items, subtotal, updateQuantity, removeItem, isHydrated } = useCart();
+  const freeDelivery = isFreeDelivery(deliveryFeePerCartonMad);
 
   // السلة (localStorage) لا تخزّن سوى storage_path الخام. نحلّه من جهة
   // الخادم (نفس resolveProductImageUrls المركزي، عبر resolveCartImageUrls)
@@ -173,9 +181,23 @@ export function CartPageClient({
           <span className="text-neutral-600">مجموع المنتجات</span>
           <span className="text-lg font-bold text-neutral-900">{formatMad(subtotal)}</span>
         </div>
+        {/* سطر التوصيل هنا أيضاً، لا في إتمام الطلب وحده: من يقرأ مجموعه في
+            السلة يقرّر عندها هل يُكمل، فالمجانية يجب أن تصله قبل الضغط لا
+            بعده. مشتقّة من الإعداد المركزي (lib/delivery.ts). */}
+        <div className="mt-1 flex items-center justify-between text-sm">
+          <span className="text-neutral-600">التوصيل</span>
+          <span
+            className={
+              freeDelivery ? "font-bold text-green-700" : "font-medium text-neutral-800"
+            }
+          >
+            {deliveryAmountLabel(deliveryFeePerCartonMad)}
+          </span>
+        </div>
         <p className="mt-1 text-xs text-neutral-500">
-          هذا المجموع لا يشمل مصاريف التوصيل، والتي تُحسب لاحقاً حسب عدد
-          الكرطونات بعد تجهيز الطلب.
+          {freeDelivery
+            ? `🚚 ${FREE_DELIVERY_HEADLINE}. المبلغ أعلاه هو ما ستدفعه عند الاستلام.`
+            : "هذا المجموع لا يشمل مصاريف التوصيل، والتي تُحسب لاحقاً حسب عدد الكرطونات بعد تجهيز الطلب."}
         </p>
 
         {/* طمأنة قصيرة قبل زر إتمام الطلب: الخطوة التالية واضحة وما بقاش
@@ -199,7 +221,11 @@ export function CartPageClient({
             إتمام الطلب
           </Link>
 
-          <CartWhatsAppButton whatsappNumber={whatsappNumber} storeName={storeName} />
+          <CartWhatsAppButton
+            whatsappNumber={whatsappNumber}
+            storeName={storeName}
+            deliveryFeePerCartonMad={deliveryFeePerCartonMad}
+          />
 
           <p className="text-center text-xs text-neutral-500">
             نبعثو ليك الطلبية جاهزة فواتساب، ونكملو معاك الاسم والمدينة تما.

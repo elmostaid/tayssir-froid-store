@@ -7,6 +7,7 @@ import {
 } from "@/lib/queries/orders";
 import { formatMad } from "@/lib/format";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
+import { isFreeDelivery } from "@/lib/delivery";
 import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 import { safeQuery } from "@/lib/safeQuery";
 import { ServiceUnavailableError } from "@/lib/serviceUnavailable";
@@ -87,8 +88,11 @@ export default async function OrderSuccessPage({ params }: Props) {
 
       <p className="mt-4 rounded-lg bg-brand-turquoise-tint px-3 py-3 text-sm text-brand-turquoise-dark">
         هذا طلب أولي في انتظار التأكيد. سيتواصل معك فريق Tayssir Froid قريباً
-        لتأكيد الطلب وتحديد عدد الكرطونات، وعندها سيُحتسب المجموع النهائي
-        شاملاً مصاريف التوصيل. الدفع عند الاستلام بعد معاينة السلعة.
+        لتأكيد الطلب.{" "}
+        {isFreeDelivery(settings.deliveryFeePerCartonMad)
+          ? "التوصيل بالمجان لجميع مدن المغرب، والمبلغ المعروض أعلاه هو المبلغ النهائي."
+          : "وتحديد عدد الكرطونات، وعندها سيُحتسب المجموع النهائي شاملاً مصاريف التوصيل."}{" "}
+        الدفع عند الاستلام بعد معاينة السلعة.
       </p>
 
       <a

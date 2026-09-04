@@ -12,6 +12,7 @@ import { registerPdfFonts } from "@/lib/pdf/theme";
 import { CustomerReceiptDocument } from "@/lib/pdf/CustomerReceiptDocument";
 import { escapeHtml, wrapHtmlDocument } from "@/lib/pdf/htmlFallback";
 import { formatMad } from "@/lib/format";
+import { isFreeDelivery, FREE_DELIVERY_HEADLINE } from "@/lib/delivery";
 
 export const runtime = "nodejs";
 
@@ -42,8 +43,11 @@ function receiptHtmlFallback(
     </table>
     <div class="field" style="margin-top:12px;font-weight:bold;"><span>مجموع المنتجات</span><span>${formatMad(order.itemsSubtotal)}</span></div>
     <p class="note">
-      طريقة الدفع: الدفع عند الاستلام فقط. التوصيل ${formatMad(deliveryFeePerCartonMad)} لكل كرطونة،
-      يُحدَّد عدد الكرطونات بعد تجهيز الطلب. هذا طلب أولي في انتظار تأكيد فريق Tayssir Froid.
+      طريقة الدفع: الدفع عند الاستلام فقط. ${
+        isFreeDelivery(deliveryFeePerCartonMad)
+          ? `${FREE_DELIVERY_HEADLINE}. المبلغ أعلاه هو المبلغ النهائي.`
+          : `التوصيل ${formatMad(deliveryFeePerCartonMad)} لكل كرطونة، يُحدَّد عدد الكرطونات بعد تجهيز الطلب.`
+      } هذا طلب أولي في انتظار تأكيد فريق Tayssir Froid.
     </p>
   `;
   return wrapHtmlDocument(`وصل الطلب ${order.publicReference}`, body);

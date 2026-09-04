@@ -2,6 +2,7 @@ import type { CartItem } from "@/lib/cart/types";
 import { formatMad } from "@/lib/format";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
 import { customerAddressOrNull } from "@/lib/orders/customerAddress";
+import { totalDeliveryNote } from "@/lib/delivery";
 
 /**
  * رسالة الطلب على واتساب — بسقف صارم لطول الرابط.
@@ -36,8 +37,24 @@ import { customerAddressOrNull } from "@/lib/orders/customerAddress";
  */
 export const MAX_WHATSAPP_URL_BYTES = 6500;
 
-const CLOSING_NOTE =
-  "(المجموع لا يشمل التوصيل — يُحسب بعد تجهيز الطلب)";
+/**
+ * السطر الذي يُذيَّل به المجموع في رسالة واتساب.
+ *
+ * كان ثابتاً يقول «المجموع لا يشمل التوصيل». صار مشتقّاً من رسوم التوصيل
+ * المُعدَّة مركزياً، لأن المجانية تغيّر معنى الرقم نفسه: مع رسوم قائمة
+ * المجموع مؤقّت، ومع توصيل مجاني هو المبلغ النهائي الذي سيُدفع عند
+ * الاستلام. رسالةٌ تقول للزبون إن مبلغاً آخر سيُضاف بينما لن يُضاف شيء
+ * ليست تفصيلاً تجميلياً — هي وعدٌ خاطئ في اليد التي تدفع.
+ *
+ * القيمة الافتراضية تُبقي النصّ القديم لأي مُنادٍ لم يمرّر الرسوم بعد.
+ */
+const legacyClosingNote = "(المجموع لا يشمل التوصيل — يُحسب بعد تجهيز الطلب)";
+
+function closingNoteFor(deliveryFeePerCartonMad: number | undefined): string {
+  return deliveryFeePerCartonMad === undefined
+    ? legacyClosingNote
+    : totalDeliveryNote(deliveryFeePerCartonMad);
+}
 
 /**
  * مرجع عشوائي لمسار لا يمرّ بحفظ طلب إطلاقاً (زرّ واتساب من السلة).
@@ -141,6 +158,8 @@ export function buildConfirmedOrderMessage(params: {
   whatsappNumber: string;
   /** سطور لم يُحجز مخزونها — الطلب مسجَّل لكنه يحتاج مراجعة قبل التجهيز. */
   needsReview?: boolean;
+  /** رسوم التوصيل المُعدَّة — تحدّد سطر الخاتمة. */
+  deliveryFeePerCartonMad?: number;
   maxUrlBytes?: number;
 }): string {
   const { storeName, customer, reference, orderNumber, items, subtotal, whatsappNumber } = params;
@@ -167,7 +186,7 @@ export function buildConfirmedOrderMessage(params: {
     if (hidden > 0) {
       body.push(`+${hidden} منتجات أخرى محفوظة كاملة في الطلب ${orderNumber}`);
     }
-    body.push("", totalLabel, CLOSING_NOTE);
+    body.push("", totalLabel, closingNoteFor(params.deliveryFeePerCartonMad));
     return body.join("\n");
   };
 
@@ -202,6 +221,8 @@ export function buildRescueOrderMessage(params: {
   items: CartItem[];
   subtotal: number;
   whatsappNumber: string;
+  /** رسوم التوصيل المُعدَّة — تحدّد سطر الخاتمة. */
+  deliveryFeePerCartonMad?: number;
   maxUrlBytes?: number;
 }): string {
   const { storeName, customer, reference, items, subtotal, whatsappNumber } = params;
@@ -224,7 +245,7 @@ export function buildRescueOrderMessage(params: {
           "وإن لم تجدوه فاتصلوا بالزبون لتأكيد الباقي."
       );
     }
-    body.push("", `المجموع ${formatMad(subtotal)}`, CLOSING_NOTE);
+    body.push("", `المجموع ${formatMad(subtotal)}`, closingNoteFor(params.deliveryFeePerCartonMad));
     return body.join("\n");
   };
 
@@ -274,6 +295,8 @@ export function buildCartWhatsAppMessage(params: {
   whatsappNumber: string;
   /** مصدر الزيارة مختصراً (مثلاً "facebook / cpc") — يُكتب سطراً واحداً. */
   attributionNote?: string | null;
+  /** رسوم التوصيل المُعدَّة — تحدّد سطر الخاتمة. */
+  deliveryFeePerCartonMad?: number;
   maxUrlBytes?: number;
 }): string {
   const { storeName, reference, items, subtotal, whatsappNumber } = params;
@@ -298,7 +321,7 @@ export function buildCartWhatsAppMessage(params: {
     body.push(
       "",
       `المجموع ${formatMad(subtotal)}`,
-      CLOSING_NOTE,
+      closingNoteFor(params.deliveryFeePerCartonMad),
       "",
       "بغيت نكمل هاد الطلب. غادي نعطيكم الاسم والمدينة والهاتف هنا."
     );
