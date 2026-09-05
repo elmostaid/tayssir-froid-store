@@ -1,6 +1,16 @@
 # TF_FREE_SHIPPING_WEB_SALES_SEP2026 — الحملة جاهزة، والإطلاق موقوف
 
-**الحالة: لم تُنشأ ولم تُنفَق. مانع واحد باقٍ يمنع الإنشاء (§7).**
+**الحالة: ACTIVE منذ 2026-09-06 00:44 بتوقيت المغرب (2026-09-05 23:44 UTC).**
+
+| | |
+|---|---|
+| Campaign | `120251410257090742` — TF_FREE_SHIPPING_WEB_SALES_SEP2026 |
+| Ad Set | `120251410276590742` — MA_MEN_18-64_EXCL_MARRAKECH_AUTO_PLACEMENTS |
+| Ad | `120251410295360742` — TF_VIDEO_FREE_SHIPPING_36S |
+| Video | `2018952122079389` |
+| Page | `110763048410978` · Pixel `2565914390520172` |
+| الميزانية | CBO يومية `1000` وحدة صغرى = **10.00 $** (ضُبطت ثم أُكِّدت بنداء مستقل) |
+| bid_strategy | `LOWEST_COST_WITHOUT_CAP` |
 
 هذه الوثيقة هي الـbaseline المطلوب في البند 11 من التكليف: كل ما تقرّر
 ولماذا، مكتوباً **قبل** أوّل دولار حتى تكون المقارنة مع التاريخ نزيهة، لا
@@ -251,16 +261,11 @@ Checkout، لا Tracking. المضاف ملفّان ساكنان تحت `public/
 
 ## 7. المانعان
 
-### أ. الكتابة معطّلة في Windsor
+### أ. الكتابة معطّلة في Windsor — ✅ رُفع
 
-```
-create_ad_video → Write actions are disabled for the Windsor user
-smailmostaid123@gmail.com
-```
-
-بوّابة على مستوى حساب Windsor تسبق Meta نفسها، لا إعداد في Ads Manager.
-تُفتح من: Settings → API Access → *Enable write actions for Claude,
-ChatGPT & API* — https://onboard.windsor.ai/app/settings/account
+فتحها صاحب المتجر بتاريخ 2026-09-05 (Settings → API Access → *Enable
+write actions for Claude, ChatGPT & API*). قبلها كان كل نداء كتابة يرتدّ
+عند بوّابة في Windsor تسبق Meta نفسها، لا عند إعداد في Ads Manager.
 
 ### ب. Facebook Page ID — ✅ وصل
 
@@ -271,6 +276,18 @@ Ads (لا `page_id` ولا `page_name`)، ولا موصل Instagram (يُخرج 
 و`username` فقط)، وصفحة فيسبوك العامّة تردّ بجدار تسجيل دخول. فلا يُبحث
 عنه مرّة أخرى.
 
-**لم يُنشأ شيء على Meta ولم يُنفق درهم واحد.** فور رفع المانع (أ): رفع
-الفيديو ← إنشاء الحملة ← Ad Set ← الإعلان ← ضبط `conversion_domain` إلى
-`tayssirfroid.com` ← التفعيل ← تقرير الإطلاق بالمعرّفات.
+### ما اعترض أثناء الإنشاء نفسه
+
+1. **`bid_amount` مطلوب.** افتراضي الحساب استراتيجية بحدّ أدنى للمزايدة.
+   الحلّ لم يكن اختراع سقف — سقفٌ عشوائي بميزانية 10 $ يخنق التوصيل ويمنع
+   الخروج من Learning — بل `LOWEST_COST_WITHOUT_CAP`: الميزانية اليومية
+   هي السقف الحقيقي وحدها.
+2. **`advantage_audience` إلزامي.** ضُبط على **0**. القيمة 1 تحوّل العمر
+   والجنس إلى «اقتراحات» تتجاوزها Meta، فيصير الجمهور الذي وثّقناه غير
+   الجمهور الذي يعمل، وتصير المقارنة مع التاريخ غير قابلة للقراءة. نحن
+   نختبر التوصيل المجاني، لا محرّك جمهور Meta.
+3. **Meta رفضت الصورة المصغّرة وقبلت الفيديو من نفس المضيف.** جالب
+   الفيديو يتجاهل robots.txt وجالب الصور يحترمه — انظر `public/ads/
+   README.md`. نُقلت الصورة إلى `/feed/` المسموح.
+
+`conversion_domain = tayssirfroid.com` مضبوط على الإعلان.
