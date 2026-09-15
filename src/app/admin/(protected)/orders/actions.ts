@@ -9,6 +9,7 @@ import { ORDER_STATUSES, type OrderStatus } from "@/lib/queries/adminOrders";
 import { RESTOCKING_STATUSES } from "@/lib/orders/orderStatus";
 import { revalidateCatalog } from "@/lib/queries/catalogCache";
 import { createManualOrder } from "@/lib/orders/createManualOrder";
+import { convertWhatsappLeadToOrder } from "@/lib/orders/convertWhatsappLead";
 import { updateOrderLines } from "@/lib/orders/updateOrderLines";
 import { isManualOrderSource } from "@/lib/orders/orderSource";
 import type { LineRequest } from "@/lib/orders/resolveLines";
@@ -512,6 +513,55 @@ export async function createManualOrderAction(
   // المخزون تغيّر فعلاً، فصفحات الكتالوج العامة يجب أن تعكسه.
   revalidateCatalog();
   revalidatePath("/admin/orders");
+  revalidatePath("/admin");
+  redirect(`/admin/orders/${result.orderId}`);
+}
+
+/**
+ * تحويل whatsapp_lead إلى طلب حقيقي (TF-2026-XXXX)، عبر createManualOrder
+ * نفسه (المصدر يُحسم هنا حصراً كـ'whatsapp'، بلا اعتماد على أي قيمة يرسلها
+ * النموذج). الحماية الحقيقية من تحويل مزدوج (ضغطتان متزامنتان) في
+ * convertWhatsappLeadToOrder نفسه — تحديث SQL ذرّي واحد، لا هنا.
+ */
+export async function convertWhatsappLeadAction(
+  _prevState: OrderEditState,
+  formData: FormData
+): Promise<OrderEditState> {
+  const auth = await requireOwner();
+  if ("error" in auth) return { error: auth.error };
+
+  const leadId = Number(formData.get("leadId"));
+  if (!Number.isInteger(leadId) || leadId <= 0) return { error: "الطلب غير صالح." };
+
+  const feeRaw = String(formData.get("deliveryFee") ?? "").trim();
+  const deliveryFee = feeRaw === "" ? 0 : Number(feeRaw);
+
+  const parsedCost = parseDeliveryCostInput(String(formData.get("actualDeliveryCost") ?? ""));
+  if (!parsedCost.ok) return { error: parsedCost.message };
+
+  const result = await convertWhatsappLeadToOrder({
+    leadId,
+    customer: {
+      fullName: String(formData.get("fullName") ?? ""),
+      phone: String(formData.get("phone") ?? ""),
+      city: String(formData.get("city") ?? ""),
+      address: String(formData.get("address") ?? ""),
+      notes: String(formData.get("notes") ?? "") || null,
+    },
+    deliveryFee,
+    actualDeliveryCost: parsedCost.value,
+    createdByEmail: auth.email,
+    items: readLines(formData),
+    acknowledgeBelowCost: formData.get("acknowledgeBelowCost") === "on",
+  });
+
+  if (!result.ok) {
+    return { error: result.errors[0]?.message ?? "تعذّر تحويل الطلب.", fieldErrors: result.errors };
+  }
+
+  revalidateCatalog();
+  revalidatePath("/admin/orders");
+  revalidatePath("/admin/orders/whatsapp");
   revalidatePath("/admin");
   redirect(`/admin/orders/${result.orderId}`);
 }

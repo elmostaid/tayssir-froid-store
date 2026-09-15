@@ -39,7 +39,8 @@ const UNREADABLE_CART: CreateOrderResult = {
   ],
 };
 
-function parseItems(raw: unknown): CartItemInput[] | null {
+/** يُستعمل أيضاً من /api/whatsapp-leads — نفس شكل السلة، نفس القراءة بالضبط. */
+export function parseItems(raw: unknown): CartItemInput[] | null {
   try {
     const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
     if (!Array.isArray(parsed)) return null;

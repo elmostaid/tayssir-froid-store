@@ -61,6 +61,20 @@ export const MANUAL_LINE_RULES: ResolveLinesOptions = {
   enforceAvailability: false,
 };
 
+/**
+ * سلة "أكمل الطلب عبر واتساب" — لقطة إعلامية لا طلب مُلزِم بعد. لا فرض
+ * توفّر ولا قواعد كمية (الزبون قد يعدّل كل شيء في محادثة واتساب لاحقاً)،
+ * ولا ثمن خاص (لم يُتَّفق على شيء بعد). enforceAvailability/enforceQuantityRules
+ * بقيمة false تعني أصلاً أن reject() لن يُستدعى أبداً هنا (انظر الشرطين
+ * أسفله) — كل سطر يصل بسعره واسمه الحاليين من القاعدة دائماً.
+ */
+export const WHATSAPP_LEAD_LINE_RULES: ResolveLinesOptions = {
+  allowPriceOverride: false,
+  enforceQuantityRules: false,
+  enforceAvailability: false,
+  rejectLinesInsteadOfFailing: true,
+};
+
 export type ResolvedLines = {
   lines: OrderLine[];
   errors: CreateOrderFieldError[];

@@ -6,6 +6,7 @@ import { listAdminOrders, ORDER_STATUSES, type OrderStatus } from "@/lib/queries
 import { ORDER_STATUS_LABELS, ORDER_STATUS_BADGE_CLASSES } from "@/lib/orders/orderStatus";
 import { formatMad } from "@/lib/format";
 import { isPayableTotalFinal, orderPayableTotal } from "@/lib/orders/orderTotals";
+import { countPendingWhatsappLeads } from "@/lib/queries/whatsappLeads";
 
 export const dynamic = "force-dynamic";
 
@@ -23,26 +24,42 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
   const { q, status, city, from, to, deleted } = await searchParams;
   const validStatus = ORDER_STATUSES.includes(status as OrderStatus) ? (status as OrderStatus) : undefined;
 
-  const orders = await listAdminOrders({
-    query: q,
-    status: validStatus,
-    city,
-    dateFrom: from,
-    dateTo: to,
-  });
+  const [orders, pendingWhatsappLeads] = await Promise.all([
+    listAdminOrders({
+      query: q,
+      status: validStatus,
+      city,
+      dateFrom: from,
+      dateTo: to,
+    }),
+    countPendingWhatsappLeads(),
+  ]);
 
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-bold text-neutral-800">الطلبات</h1>
-        {owner && (
+        <div className="flex flex-wrap items-center gap-2">
           <Link
-            href="/admin/orders/new"
-            className="min-h-11 rounded-full bg-brand-orange px-4 py-2 text-sm font-semibold text-white"
+            href="/admin/orders/whatsapp"
+            className="flex min-h-9 items-center gap-1.5 rounded-full border border-green-300 bg-green-50 px-3 py-1.5 text-xs font-semibold text-green-700"
           >
-            + إضافة طلب يدوي / واتساب
+            طلبات واتساب
+            {pendingWhatsappLeads > 0 && (
+              <span className="rounded-full bg-green-600 px-1.5 py-0.5 text-[10px] text-white">
+                {pendingWhatsappLeads}
+              </span>
+            )}
           </Link>
-        )}
+          {owner && (
+            <Link
+              href="/admin/orders/new"
+              className="min-h-11 rounded-full bg-brand-orange px-4 py-2 text-sm font-semibold text-white"
+            >
+              + إضافة طلب يدوي / واتساب
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* رسالة نجاح بعد حذف طلب — القائمة أدناه مُعاد جلبها أصلاً
