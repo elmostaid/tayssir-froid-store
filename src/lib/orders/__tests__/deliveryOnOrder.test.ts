@@ -7,21 +7,22 @@ vi.mock("@/lib/pixel/capi", () => ({ sendCapiEvent: vi.fn() }));
 const { createOrder } = await import("@/lib/orders/createOrder");
 
 /**
- * ما يُكتب فعلاً في صفّ الطلب حين يكون التوصيل مجانياً.
+ * ما يُكتب فعلاً في صفّ الطلب تحت سياسة التوصيل الحالية.
  *
- * الفحص على القاعدة لا على الواجهة: نصٌّ يقول «مجاناً» بينما الصفّ يحمل
- * NULL في delivery_fee يترك لوحة الإدارة تنتظر رقماً لن يأتي، ويُبقي مبلغ
- * الطلب مؤقّتاً بلا سبب.
+ * الفحص على القاعدة لا على الواجهة، لأن الواجهة وحدها لا تكفي: يمكن أن
+ * تختفي كلمة «مجاناً» من كل صفحة بينما يبقى الصفّ يحمل `delivery_fee = 0`،
+ * فيُطبع الوعد الملغى في بون التحضير وفي الوصل وفي كل تقرير، ويقرأه من
+ * يسلّم الطلب بيده.
  *
  * وملفٌ مستقلّ عمداً: `getSettings` مغلَّفة بـ`cache()`، فأول قراءة في
  * العملية تُثبَّت. لضبط الإعداد قبل أي قراءة نحتاج سجلّ وحدات نظيفاً،
  * وvitest يعزل كل ملف اختبار وحده.
  *
- * والأهمّ المُختبَر هنا: مجانية التوصيل على الزبون **لا تلمس**
- * `actual_delivery_cost` — ما ندفعه نحن لشركة التوصيل مصروف حقيقي مستمرّ،
- * وصفرٌ هناك كذبٌ محاسبي لا تخفيض.
+ * والأهمّ المُختبَر هنا: سياسة ما يدفعه الزبون **لا تلمس**
+ * `actual_delivery_cost` — ما ندفعه نحن لشركة التوصيل مصروف حقيقي مستمرّ
+ * للمحاسبة الداخلية، ويبقى NULL («غير مسجَّلة») يملؤه المدير كما كان.
  */
-const SKU = "FREE-DEL-FIX-001";
+const SKU = "DELIVERY-POLICY-001";
 let productId: number;
 let previousFee: unknown;
 
@@ -31,9 +32,11 @@ beforeAll(async () => {
   `;
   previousFee = value;
 
-  // صفر = مجاني، قبل أي استدعاء لـcreateOrder في هذه العملية.
+  // الإعداد يُثبَّت على قيمة موجبة عمداً: النتيجة يجب ألّا تتغيّر به
+  // إطلاقاً بعد اليوم. لو عاد أحدهم يشتقّ delivery_fee من هذا الرقم،
+  // سقط هذا الاختبار — وهو الحارس المقصود.
   await sql`
-    update public.settings set value = to_jsonb(0::numeric)
+    update public.settings set value = to_jsonb(45::numeric)
     where key = 'delivery_fee_per_carton_mad'
   `;
 
@@ -45,7 +48,7 @@ beforeAll(async () => {
       sku, slug, category_id, name_ar, unit_label,
       min_order_qty, qty_increment, purchase_price, sale_price, stock_quantity, status
     ) values (
-      ${SKU}, 'free-del-fix-001', ${category.id}, 'منتج اختبار التوصيل المجاني',
+      ${SKU}, 'delivery-policy-001', ${category.id}, 'منتج اختبار سياسة التوصيل',
       'قطعة', 1, 1, 90.00, 120.00, 50, 'published'
     )
     returning id
@@ -61,8 +64,8 @@ afterAll(async () => {
   `;
 });
 
-describe("طلب الموقع مع توصيل مجاني", () => {
-  test("يُسجَّل delivery_fee = 0 ومجموعاً نهائياً، وactual_delivery_cost يبقى NULL", async () => {
+describe("طلب الموقع تحت سياسة «المصاريف تُحدَّد عند التأكيد»", () => {
+  test("يُسجَّل delivery_fee = NULL وfinal_total = NULL، وactual_delivery_cost يبقى NULL", async () => {
     const result = await createOrder({
       items: [{ productId, variantId: null, quantity: 2 }],
       customer: {
@@ -90,14 +93,14 @@ describe("طلب الموقع مع توصيل مجاني", () => {
       from public.orders where public_reference = ${result.publicReference}
     `;
 
-    // صفر صريح، لا NULL — والفرق بينهما هو كل الفائدة، لذلك نتحقّق من
-    // عدم كونه NULL قبل تحويله رقماً (Number(null) يساوي 0 ويُخفي العطل).
-    expect(row.delivery_fee).not.toBeNull();
-    expect(Number(row.delivery_fee)).toBe(0);
+    // NULL لا صفر — والفرق بينهما هو كل الفائدة. صفرٌ يعني «الزبون لا
+    // يدفع شيئاً للتوصيل»، وهو الوعد الذي أُلغي؛ وNULL يعني «لم يُحدَّد
+    // بعد»، وهو ما تقوله السياسة. ولذلك يُفحص الحقل نفسه لا قيمته
+    // الرقمية: Number(null) يساوي صفراً ويُخفي العطل تماماً.
+    expect(row.delivery_fee).toBeNull();
+    expect(row.final_total).toBeNull();
 
-    // المجموع النهائي = مجموع المنتجات وحده، بلا أي إضافة.
-    expect(row.final_total).not.toBeNull();
-    expect(Number(row.final_total)).toBe(Number(row.items_subtotal));
+    // ومجموع المنتجات يبقى محسوباً كما هو — السياسة تمسّ التوصيل وحده.
     expect(Number(row.items_subtotal)).toBe(240);
 
     // نظام تكلفتنا الحقيقية لم يُمَسّ: «غير مسجَّلة» يملؤها المدير لاحقاً.

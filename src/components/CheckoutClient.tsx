@@ -8,9 +8,9 @@ import { cartItemKey } from "@/lib/cart/cartMath";
 import { isValidMoroccanPhone } from "@/lib/phone";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
 import {
-  isFreeDelivery,
-  deliveryAmountLabel,
-  FREE_DELIVERY_HEADLINE,
+  DELIVERY_AVAILABILITY,
+  DELIVERY_COST_TIMING,
+  deliveryStatusLabel,
 } from "@/lib/delivery";
 import { CartWhatsAppButton } from "@/components/CartWhatsAppButton";
 import {
@@ -61,19 +61,16 @@ function toGaItem(item: CartItem): GaItem {
 // إن فشل الاتصال بقاعدة البيانات لأي سبب، لا نُظهر أي خطأ للزبون ولا نغيّر
 // رسالة واتساب أو وجهتها، فقط نُسجّل الفشل في الخادم للتصحيح لاحقاً.
 export function CheckoutClient({
-  deliveryFeePerCartonMad,
   whatsappNumber,
   storeName,
   codEnabled,
 }: {
-  deliveryFeePerCartonMad: number;
   whatsappNumber: string;
   storeName: string;
   codEnabled: boolean;
 }) {
   const { items, subtotal, isHydrated, clearCart } = useCart();
   // مشتقّ من الإعداد المركزي، لا مكتوب في الكود — انظر lib/delivery.ts.
-  const freeDelivery = isFreeDelivery(deliveryFeePerCartonMad);
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [city, setCity] = useState("");
@@ -121,10 +118,9 @@ export function CheckoutClient({
         items,
         subtotal,
         whatsappNumber,
-        deliveryFeePerCartonMad,
       })
     );
-  }, [storeName, whatsappNumber, deliveryFeePerCartonMad, fullName, phone, city, address, notes, items, subtotal, idempotencyKey]);
+  }, [storeName, whatsappNumber, fullName, phone, city, address, notes, items, subtotal, idempotencyKey]);
 
   if (!isHydrated) {
     return (
@@ -157,9 +153,7 @@ export function CheckoutClient({
         <p className="mt-2 text-sm text-neutral-600">
           إذا لم يفتح واتساب تلقائياً، اضغط على الزر أدناه لإرسال الطلب. سنتواصل
           معكم لتأكيد الطلب.
-          {freeDelivery
-            ? " التوصيل بالمجان، والمبلغ المعروض هو المبلغ النهائي."
-            : " والمجموع النهائي شامل التوصيل."}
+          {` ${DELIVERY_AVAILABILITY}، و${DELIVERY_COST_TIMING}.`}
         </p>
         {(sentHref ?? whatsappHref) && (
           <a
@@ -213,7 +207,6 @@ export function CheckoutClient({
       whatsappNumber,
       buildRescueOrderMessage({
         storeName, customer, reference, items, subtotal, whatsappNumber,
-        deliveryFeePerCartonMad,
       })
     );
 
@@ -269,7 +262,6 @@ export function CheckoutClient({
             items,
             subtotal,
             whatsappNumber,
-            deliveryFeePerCartonMad,
             needsReview: confirmed.needsReview === true,
           })
         );
@@ -361,37 +353,23 @@ export function CheckoutClient({
           <span className="font-medium text-neutral-800">{formatMad(subtotal)}</span>
         </div>
         {/* سطر التوصيل صريح في الملخّص، لا مجرّد لافتة ترويجية: الزبون الذي
-            يقرأ فاتورة يبحث عن السطر لا عن الشعار. و«مجاناً» تُشتقّ من
-            الإعداد المركزي، فلو عادت الرسوم يوماً عاد المبلغ مكانه وحده. */}
+            يقرأ فاتورة يبحث عن السطر لا عن الشعار. وما يحمله السطر حالةٌ لا
+            مبلغ — انظر lib/delivery.ts. */}
         <div className="mt-1 flex items-center justify-between text-sm">
           <span className="text-neutral-600">التوصيل</span>
-          <span
-            className={
-              freeDelivery ? "font-bold text-green-700" : "font-medium text-neutral-800"
-            }
-          >
-            {deliveryAmountLabel(deliveryFeePerCartonMad)}
-          </span>
+          <span className="font-medium text-neutral-800">{deliveryStatusLabel()}</span>
         </div>
-        {/* المجموع النهائي: مجموع المنتجات وحده ما دام التوصيل مجانياً — لا
-            يُضاف إليه شيء، وهو نفس المبلغ الذي سيُدفع عند الاستلام. */}
+        {/* «مجموع المنتجات» لا «المجموع النهائي»: مصاريف التوصيل تُحدَّد عند
+            التأكيد، فتسميةُ هذا الرقم نهائياً وعدٌ يُكسَر عند الباب. */}
         <div className="mt-2 flex items-center justify-between border-t border-neutral-200 pt-2 text-base font-bold">
-          <span>المجموع النهائي</span>
+          <span>مجموع المنتجات</span>
           <span className="text-brand-orange">{formatMad(subtotal)}</span>
         </div>
-        {/* نفس المربّع ونفس مكانه وألوانه وحجمه — النصّ وحده يتبدّل حسب
-            الإعداد. */}
+        {/* نفس المربّع ونفس مكانه وألوانه وحجمه — النصّ وحده تبدّل. */}
         <p className="mt-2 rounded-lg bg-brand-turquoise-tint px-3 py-2 text-xs text-brand-turquoise-dark">
-          {freeDelivery ? (
-            <>🚚 {FREE_DELIVERY_HEADLINE} — بلا حدّ أدنى وبلا شروط.</>
-          ) : (
-            <>
-              🚚 التوصيل {Math.round(deliveryFeePerCartonMad)} درهم فقط للكرطونة.
-              <br />
-              يمكن جمع منتجات مختلفة في نفس الكرطونة، والكرطونة يمكن أن تحمل حتى
-              2000 درهم من السلع.
-            </>
-          )}
+          🚚 {DELIVERY_AVAILABILITY}.
+          <br />
+          {DELIVERY_COST_TIMING}، فالمبلغ أعلاه لا يشملها بعد.
         </p>
       </div>
 
@@ -519,7 +497,6 @@ export function CheckoutClient({
         <CartWhatsAppButton
           whatsappNumber={whatsappNumber}
           storeName={storeName}
-          deliveryFeePerCartonMad={deliveryFeePerCartonMad}
           label="أكمل الطلب عبر واتساب"
           className="flex min-h-12 w-full items-center justify-center gap-2 rounded-full border-2 border-whatsapp px-5 text-base font-bold text-whatsapp-dark transition-colors hover:bg-whatsapp/10"
         />

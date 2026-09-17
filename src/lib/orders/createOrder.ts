@@ -1,6 +1,5 @@
 import { sql } from "@/lib/db";
 import { getSettings } from "@/lib/queries/settings";
-import { isFreeDelivery } from "@/lib/delivery";
 import { isValidMoroccanPhone, normalizePhone } from "@/lib/phone";
 import { isRateLimited } from "@/lib/orders/rateLimit";
 import {
@@ -170,24 +169,24 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     const attributionFirst = attribution?.first ? sql.json(attribution.first) : null;
     const attributionLast = attribution?.last ? sql.json(attribution.last) : null;
 
-    // التوصيل المجاني يجعل المبلغ نهائياً وقت الطلب.
+    // مصاريف التوصيل غير معلومة وقت الطلب — فتُكتب NULL لا صفراً.
     //
-    // قبل هذا كان طلب الموقع يُحفَظ بـdelivery_fee = NULL وfinal_total =
-    // NULL، لأن الرسوم كانت تُحسَب بعدد الكراتين الذي لا يُعرَف إلا عند
-    // التجهيز؛ فيبقى المبلغ مؤقّتاً في لوحة الإدارة حتى يملأه المدير.
-    // ومع مجانية التوصيل لم يبقَ ما يُنتظَر: ما يدفعه الزبون هو مجموع
-    // المنتجات، فنكتبه صراحةً — صفراً للتوصيل ومجموعاً نهائياً — بدل ترك
-    // حقلين فارغين يوحيان بأن شيئاً ما زال معلَّقاً.
+    // الفرق ليس شكلياً: صفرٌ يعني «الزبون لا يدفع شيئاً مقابل التوصيل»،
+    // وهو بالضبط الوعد الذي أُلغي. وNULL يعني «لم يُحدَّد بعد»، وهو ما
+    // تقوله السياسة الحالية حرفياً: التوصيل متوفّر، ومصاريفه تُحدَّد لكل
+    // طلب عند التأكيد. كتابةُ صفرٍ هنا كانت ستُبقي الوعد حيّاً في
+    // القاعدة وفي بون التحضير وفي كل تقرير، بعد أن اختفى من الواجهة.
     //
-    // والشرط مقصود: لو أعاد المالك الرسوم يوماً من /admin/settings، عاد
-    // السلوك القديم (NULL يملأه المدير) وحده، لأن الموقع حينها لا يعرف
-    // عدد الكراتين فعلاً ولا يجوز أن يخترع رقماً.
+    // وNULL ليس مساراً جديداً: هو ما كان عليه طلب الموقع قبل المجانية،
+    // ولوحة الإدارة تملأه بعد أن يُعرف عدد الكراتين (updateOrderLines
+    // وactions.ts)، وكل قارئ يتعامل معه أصلاً — `coalesce(final_total,
+    // items_subtotal)` في التقارير، و`order.finalTotal &&` في بون
+    // التحضير والوصل.
     //
     // ولا علاقة لهذا بـactual_delivery_cost: ذاك ما ندفعه نحن لشركة
-    // التوصيل، ويبقى NULL («غير مسجَّلة») يسجّله المدير كما كان تماماً.
-    const freeDelivery = isFreeDelivery(settings.deliveryFeePerCartonMad);
-    const deliveryFee = freeDelivery ? 0 : null;
-    const finalTotal = freeDelivery ? subtotal : null;
+    // التوصيل، ويبقى كما هو تماماً للمحاسبة الداخلية.
+    const deliveryFee = null;
+    const finalTotal = null;
 
     const result = await sql.begin(async (trx) => {
       const inserted = await trx<{ id: number; public_reference: string; order_number: string }[]>`
