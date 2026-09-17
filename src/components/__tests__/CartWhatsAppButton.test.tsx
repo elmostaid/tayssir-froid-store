@@ -48,7 +48,6 @@ function renderButton() {
       <CartWhatsAppButton
         whatsappNumber="+212722083458"
         storeName="Tayssir Froid"
-        deliveryFeePerCartonMad={0}
       />
     </CartProvider>
   );

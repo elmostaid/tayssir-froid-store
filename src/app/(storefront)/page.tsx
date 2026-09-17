@@ -15,7 +15,7 @@ import { CategoryIcon } from "@/components/CategoryIcon";
 import { HowToOrder } from "@/components/HowToOrder";
 import { LoadMoreProducts } from "@/components/LoadMoreProducts";
 import { getCategoryImage } from "@/lib/categoryImages";
-import { isFreeDelivery } from "@/lib/delivery";
+import { DELIVERY_AVAILABILITY } from "@/lib/delivery";
 import { resolveProductImageUrls } from "@/lib/storage/resolveProductImageUrl";
 import { TOP_DEMAND_SKUS } from "@/lib/catalog/topDemand";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
@@ -35,15 +35,14 @@ export const dynamic = "force-dynamic";
 //
 // ولا واحدة من الأربع تَعِد بما لا نفي به: لا «أي كمية»، ولا «بلا حد
 // أدنى» — الكمية الدنيا لكل منتج ما زالت قائمة وتظهر في مكانها.
-export function buildTrustPoints(deliveryFeePerCartonMad: number): string[] {
+export function buildTrustPoints(): string[] {
   return [
     "أثمنة مناسبة للتجار والحرفيين",
     "الدفع عند الاستلام بعد معاينة السلعة",
-    // مشتقّ من الإعداد لا مكتوب: إرجاع الرسوم يوماً يُرجع الجملة وحده،
-    // فلا يبقى الهيرو يَعِد بمجانية أُلغيت.
-    isFreeDelivery(deliveryFeePerCartonMad)
-      ? "🚚 التوصيل بالمجان لجميع مناطق المغرب"
-      : "التوصيل لجميع مناطق المغرب 24–48 ساعة",
+    // توفّرٌ لا ثمن: الهيرو يقول أين نصل، لا بكم. المصاريف تُحدَّد لكل
+    // طلب عند التأكيد، فلا يجوز أن يَعِد هذا السطر بمجانية ولا أن يعرض
+    // رقماً لم يُحسب بعد.
+    `🚚 ${DELIVERY_AVAILABILITY}`,
     "تخفيضات خاصة للكميات الكبيرة",
   ];
 }
@@ -122,7 +121,7 @@ export default async function HomePage() {
     settings.whatsappNumber,
     "مرحباً، أريد الاطلاع على منتجاتكم بالجملة."
   );
-  const trustPoints = buildTrustPoints(settings.deliveryFeePerCartonMad);
+  const trustPoints = buildTrustPoints();
 
   return (
     <div className="mx-auto max-w-6xl px-4 pt-4 pb-5 sm:py-6">

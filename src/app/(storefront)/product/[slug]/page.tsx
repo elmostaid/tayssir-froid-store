@@ -12,7 +12,7 @@ import { resolveImageUrl } from "@/lib/images";
 import { resolveProductImageUrl, resolveProductImageUrls } from "@/lib/storage/resolveProductImageUrl";
 import { formatMad } from "@/lib/format";
 import { buildProductWhatsAppLink } from "@/lib/whatsapp";
-import { isFreeDelivery, FREE_DELIVERY_HEADLINE } from "@/lib/delivery";
+import { DELIVERY_AVAILABILITY, DELIVERY_COST_TIMING } from "@/lib/delivery";
 import { safeQuery } from "@/lib/safeQuery";
 import { AddToCartForm } from "@/components/AddToCartForm";
 import { ProductViewContentPixel } from "@/components/ProductViewContentPixel";
@@ -273,17 +273,8 @@ export default async function ProductPage({ params }: Props) {
           <ul className="mt-4 flex flex-col gap-1.5 rounded-xl bg-neutral-100 p-4 text-xs text-neutral-600">
             <li>البيع بالجملة فقط</li>
             <li>الدفع عند الاستلام بعد معاينة السلعة</li>
-            {isFreeDelivery(settings.deliveryFeePerCartonMad) ? (
-              <li className="font-semibold text-green-700">🚚 {FREE_DELIVERY_HEADLINE}</li>
-            ) : (
-              <>
-                <li>التوصيل لجميع مدن المغرب</li>
-                <li>
-                  التوصيل {formatMad(settings.deliveryFeePerCartonMad)} للكرطونة
-                  (يُحدَّد عدد الكرطونات بعد تجهيز الطلب)
-                </li>
-              </>
-            )}
+            <li>🚚 {DELIVERY_AVAILABILITY}</li>
+            <li>{DELIVERY_COST_TIMING}</li>
           </ul>
         </div>
       </div>

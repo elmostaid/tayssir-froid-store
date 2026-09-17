@@ -67,7 +67,6 @@ function renderCheckout() {
   return render(
     <CartProvider>
       <CheckoutClient
-        deliveryFeePerCartonMad={30}
         whatsappNumber="+212600000000"
         storeName="Tayssir Froid"
         codEnabled={true}

@@ -6,20 +6,17 @@ import {
   type OrderSummary,
   type OrderLineSummary,
 } from "@/lib/queries/orders";
-import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
-import { safeQuery } from "@/lib/safeQuery";
 import { registerPdfFonts } from "@/lib/pdf/theme";
 import { CustomerReceiptDocument } from "@/lib/pdf/CustomerReceiptDocument";
 import { escapeHtml, wrapHtmlDocument } from "@/lib/pdf/htmlFallback";
 import { formatMad } from "@/lib/format";
-import { isFreeDelivery, FREE_DELIVERY_HEADLINE } from "@/lib/delivery";
+import { DELIVERY_AVAILABILITY, DELIVERY_COST_TIMING } from "@/lib/delivery";
 
 export const runtime = "nodejs";
 
 function receiptHtmlFallback(
   order: OrderSummary,
   items: OrderLineSummary[],
-  deliveryFeePerCartonMad: number
 ): string {
   const rows = items
     .map(
@@ -43,11 +40,8 @@ function receiptHtmlFallback(
     </table>
     <div class="field" style="margin-top:12px;font-weight:bold;"><span>مجموع المنتجات</span><span>${formatMad(order.itemsSubtotal)}</span></div>
     <p class="note">
-      طريقة الدفع: الدفع عند الاستلام فقط. ${
-        isFreeDelivery(deliveryFeePerCartonMad)
-          ? `${FREE_DELIVERY_HEADLINE}. المبلغ أعلاه هو المبلغ النهائي.`
-          : `التوصيل ${formatMad(deliveryFeePerCartonMad)} لكل كرطونة، يُحدَّد عدد الكرطونات بعد تجهيز الطلب.`
-      } هذا طلب أولي في انتظار تأكيد فريق Tayssir Froid.
+      طريقة الدفع: الدفع عند الاستلام فقط. ${DELIVERY_AVAILABILITY}، و${DELIVERY_COST_TIMING}،
+      فالمبلغ أعلاه لا يشملها بعد. هذا طلب أولي في انتظار تأكيد فريق Tayssir Froid.
     </p>
   `;
   return wrapHtmlDocument(`وصل الطلب ${order.publicReference}`, body);
@@ -64,10 +58,9 @@ export async function GET(
     return NextResponse.json({ error: "الطلب غير موجود." }, { status: 404 });
   }
 
-  const [items, settings] = await Promise.all([
-    getOrderItemsByPublicReference(reference),
-    safeQuery(() => getSettings(), FALLBACK_SETTINGS, "receiptPdf.getSettings"),
-  ]);
+  // الإعدادات لم تعد تدخل في الوصل: نصّ التوصيل صار سياسةً واحدة في
+  // lib/delivery.ts لا مبلغاً يُقرأ من الإعداد.
+  const items = await getOrderItemsByPublicReference(reference);
 
   try {
     registerPdfFonts();
@@ -78,7 +71,6 @@ export async function GET(
         customerName: order.customerName,
         customerCity: order.customerCity,
         itemsSubtotal: order.itemsSubtotal,
-        deliveryFeePerCartonMad: settings.deliveryFeePerCartonMad,
         items: items.map((item, i) => ({
           id: i,
           name: item.productNameSnapshot,
@@ -100,7 +92,7 @@ export async function GET(
     // نفس احتياط بون التحضير: بعض تركيبات النصوص العربية تُسقط مكتبة PDF —
     // نعرض HTML بدل خطأ 500 خام حتى يبقى وصل الطلب قابلاً للعرض والطباعة.
     console.error("receipt.pdf: فشل توليد PDF، التراجع إلى HTML", reference, error);
-    return new NextResponse(receiptHtmlFallback(order, items, settings.deliveryFeePerCartonMad), {
+    return new NextResponse(receiptHtmlFallback(order, items), {
       headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "private, no-store" },
     });
   }

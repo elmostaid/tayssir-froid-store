@@ -45,14 +45,12 @@ import { trackAnalyticsEvent } from "@/lib/analytics/track";
 export function CartWhatsAppButton({
   whatsappNumber,
   storeName,
-  deliveryFeePerCartonMad,
   className,
   label = "أكمل الطلب عبر واتساب",
 }: {
   whatsappNumber: string;
   storeName: string;
   /** رسوم التوصيل المُعدَّة — تحدّد سطر الخاتمة في الرسالة. */
-  deliveryFeePerCartonMad: number;
   className?: string;
   /** نصّ الزر. `null` يعني أيقونة وحدها — للشريط الضيّق أسفل الشاشة. */
   label?: string | null;
@@ -94,11 +92,10 @@ export function CartWhatsAppButton({
         items,
         subtotal,
         whatsappNumber,
-        deliveryFeePerCartonMad,
         attributionNote,
       })
     );
-  }, [items, subtotal, whatsappNumber, storeName, deliveryFeePerCartonMad, reference]);
+  }, [items, subtotal, whatsappNumber, storeName, reference]);
 
   if (!href) return null;
 
