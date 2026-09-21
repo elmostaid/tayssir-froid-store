@@ -7,6 +7,8 @@ import { ORDER_STATUS_LABELS, ORDER_STATUS_BADGE_CLASSES } from "@/lib/orders/or
 import { formatMad } from "@/lib/format";
 import { isPayableTotalFinal, orderPayableTotal } from "@/lib/orders/orderTotals";
 import { countPendingWhatsappLeads } from "@/lib/queries/whatsappLeads";
+import { loadSection } from "@/lib/admin/sectionData";
+import { SectionUnavailable } from "@/components/admin/SectionUnavailable";
 
 export const dynamic = "force-dynamic";
 
@@ -24,16 +26,28 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
   const { q, status, city, from, to, deleted } = await searchParams;
   const validStatus = ORDER_STATUSES.includes(status as OrderStatus) ? (status as OrderStatus) : undefined;
 
-  const [orders, pendingWhatsappLeads] = await Promise.all([
-    listAdminOrders({
-      query: q,
-      status: validStatus,
-      city,
-      dateFrom: from,
-      dateTo: to,
-    }),
-    countPendingWhatsappLeads(),
+  // استعلامان فقط، فهما دون حدّ التزامن (ثلاثة) ويبقى للـlayout سلوت في
+  // المجمّع. لكن فشل أيٍّ منهما كان يُسقط الصفحة كلها؛ الآن يسقط قسمه وحده،
+  // ولا يُعرَض «0 طلب» أو قائمة فارغة في مكان قائمة لم تصل.
+  const [ordersResult, pendingWhatsappLeadsResult] = await Promise.all([
+    loadSection(
+      () =>
+        listAdminOrders({
+          query: q,
+          status: validStatus,
+          city,
+          dateFrom: from,
+          dateTo: to,
+        }),
+      "orders.list"
+    ),
+    loadSection(() => countPendingWhatsappLeads(), "orders.pendingWhatsappLeads"),
   ]);
+
+  const orders = ordersResult.ok ? ordersResult.value : null;
+  const pendingWhatsappLeads = pendingWhatsappLeadsResult.ok
+    ? pendingWhatsappLeadsResult.value
+    : null;
 
   return (
     <div>
@@ -45,7 +59,7 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
             className="flex min-h-9 items-center gap-1.5 rounded-full border border-green-300 bg-green-50 px-3 py-1.5 text-xs font-semibold text-green-700"
           >
             طلبات واتساب
-            {pendingWhatsappLeads > 0 && (
+            {pendingWhatsappLeads !== null && pendingWhatsappLeads > 0 && (
               <span className="rounded-full bg-green-600 px-1.5 py-0.5 text-[10px] text-white">
                 {pendingWhatsappLeads}
               </span>
@@ -104,9 +118,11 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
         </button>
       </form>
 
-      <p className="mt-3 text-sm text-neutral-500">{orders.length} طلب</p>
+      {orders !== null && <p className="mt-3 text-sm text-neutral-500">{orders.length} طلب</p>}
 
-      {orders.length === 0 ? (
+      {orders === null ? (
+        <SectionUnavailable label="قائمة الطلبات" />
+      ) : orders.length === 0 ? (
         <p className="mt-6 text-sm text-neutral-500">لا توجد طلبات مطابقة.</p>
       ) : (
         <div className="mt-4 flex flex-col gap-2">

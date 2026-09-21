@@ -14,8 +14,11 @@ import {
   rate,
   REPORT_TIME_ZONE,
   type AbandonedCartRow,
+  type AbandonedCarts,
 } from "@/lib/queries/adminAnalytics";
 import { getSettings } from "@/lib/queries/settings";
+import { inBatches, loadSection, type SectionData } from "@/lib/admin/sectionData";
+import { SectionUnavailable } from "@/components/admin/SectionUnavailable";
 import {
   RANGE_LABELS,
   RANGE_PRESETS,
@@ -304,30 +307,67 @@ export default async function AdminAnalyticsPage({
   const range = resolveRange(rangeParam, from, to);
 
   // الحدّ الأدنى يأتي من الإعدادات: لو غيّرتَه غداً، يتبعه قسم السلات
-  // المتروكة من تلقاء نفسه بلا لمس أي كود.
-  const settings = await getSettings();
+  // المتروكة من تلقاء نفسه بلا لمس أي كود. مقروء وحده قبل الدفعات لأن
+  // استعلام السلات المتروكة يحتاجه وسيطاً — وهو مخزَّن (unstable_cache)
+  // فلا يكلّف اتصالاً في الغالب.
+  const settingsResult = await loadSection(() => getSettings(), "analytics.settings");
+  const minOrderAmountMad = settingsResult.ok ? settingsResult.value.minOrderAmountMad : null;
 
-  const [totals, orders, daily, ordersDaily, sources, devices, browsers, abandoned] =
-    await Promise.all([
-      getAnalyticsTotals(range),
-      getOrdersTotals(range),
-      getAnalyticsDaily(range),
-      getOrdersDaily(range),
-      getAnalyticsSources(range),
-      getAnalyticsByDevice(range),
-      getAnalyticsByBrowser(range),
-      getAbandonedCarts(range, settings.minOrderAmountMad),
-    ]);
+  // ثماني استعلامات على ثلاث دفعات (3 + 3 + 2) بدل ثمانية دفعة واحدة:
+  // المجمّع سعته خمسة، وكان الطلب الواحد يطلب ثمانية + استعلام الـlayout.
+  // الترتيب يتبع ترتيب الصفحة، فيصل أعلاها أولاً.
+  const [
+    totalsResult,
+    ordersResult,
+    abandonedResult,
+    dailyResult,
+    ordersDailyResult,
+    sourcesResult,
+    devicesResult,
+    browsersResult,
+  ] = await inBatches([
+    () => loadSection(() => getAnalyticsTotals(range), "analytics.totals"),
+    () => loadSection(() => getOrdersTotals(range), "analytics.ordersTotals"),
+    () =>
+      minOrderAmountMad === null
+        ? // تعذّرت الإعدادات، فالحدّ الذي يُصنَّف به حجم السلة غير معروف.
+          // لا نستعمل قيمة احتياطية: تصنيف «كبيرة/صغيرة» بحدّ مُخترَع خطأ
+          // يُقرأ كأنه حقيقة.
+          Promise.resolve<SectionData<AbandonedCarts>>({ ok: false })
+        : loadSection(
+            () => getAbandonedCarts(range, minOrderAmountMad),
+            "analytics.abandonedCarts"
+          ),
+    () => loadSection(() => getAnalyticsDaily(range), "analytics.daily"),
+    () => loadSection(() => getOrdersDaily(range), "analytics.ordersDaily"),
+    () => loadSection(() => getAnalyticsSources(range), "analytics.sources"),
+    () => loadSection(() => getAnalyticsByDevice(range), "analytics.devices"),
+    () => loadSection(() => getAnalyticsByBrowser(range), "analytics.browsers"),
+  ] as const);
 
-  const ordersByDay = new Map(ordersDaily.map((row) => [row.day, row]));
-  const days = [...new Set([...daily.map((d) => d.day), ...ordersDaily.map((d) => d.day)])].sort(
-    (a, b) => (a < b ? 1 : -1)
-  );
+  const totals = totalsResult.ok ? totalsResult.value : null;
+  const orders = ordersResult.ok ? ordersResult.value : null;
+  const abandoned = abandonedResult.ok ? abandonedResult.value : null;
+  const daily = dailyResult.ok ? dailyResult.value : null;
+  const ordersDaily = ordersDailyResult.ok ? ordersDailyResult.value : null;
+  const sources = sourcesResult.ok ? sourcesResult.value : null;
+  const devices = devicesResult.ok ? devicesResult.value : null;
+  const browsers = browsersResult.ok ? browsersResult.value : null;
 
-  const aov = orders.orders > 0 ? orders.revenueMad / orders.orders : 0;
-  const conversion = rate(orders.orders, totals.sessions);
-  const purchaseGap = orders.orders - totals.purchaseEvents;
-  const isEmpty = totals.sessions === 0 && orders.orders === 0;
+  const ordersByDay = new Map((ordersDaily ?? []).map((row) => [row.day, row]));
+  const days =
+    daily === null || ordersDaily === null
+      ? []
+      : [...new Set([...daily.map((d) => d.day), ...ordersDaily.map((d) => d.day)])].sort((a, b) =>
+          a < b ? 1 : -1
+        );
+
+  // كل مشتقّ هنا يصير null إن نقص أحد طرفيه — لا صفر يحلّ محلّ رقم لم يصل.
+  const aov = orders === null ? null : orders.orders > 0 ? orders.revenueMad / orders.orders : 0;
+  const conversion = orders === null || totals === null ? null : rate(orders.orders, totals.sessions);
+  const purchaseGap = orders === null || totals === null ? null : orders.orders - totals.purchaseEvents;
+  // «لا توجد بيانات» ادّعاء عن القاعدة، فلا يُقال إلا حين وصل الرقمان فعلاً.
+  const isEmpty = totals !== null && orders !== null && totals.sessions === 0 && orders.orders === 0;
 
   return (
     <div>
@@ -363,7 +403,7 @@ export default async function AdminAnalyticsPage({
       ) : (
         <>
           {/* ملاحظة سلامة البيانات: تظهر فقط عند وجود فرق حقيقي. */}
-          {purchaseGap !== 0 && (
+          {purchaseGap !== null && purchaseGap !== 0 && totals !== null && orders !== null && (
             <div
               className={`mt-4 rounded-xl border p-3 text-sm ${
                 purchaseGap > 0
@@ -388,107 +428,144 @@ export default async function AdminAnalyticsPage({
             الأرقام الأساسية
           </SectionTitle>
           <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-            <StatCard label="الزوّار" value={num(totals.sessions)} hint="جلسات فريدة" accent="turquoise" />
-            <StatCard
-              label="زيارات صفحة الهبوط"
-              value={num(totals.landingPageViews)}
-              hint="أحداث"
-            />
-            <StatCard
-              label="شاهدوا منتجاً"
-              value={num(totals.productViewSessions)}
-              hint={`${num(totals.productViewEvents)} حدث مشاهدة`}
-            />
-            <StatCard
-              label="أضافوا للسلة"
-              value={num(totals.addToCartSessions)}
-              hint="أشخاص (جلسات فريدة)"
-              accent="turquoise"
-            />
-            <StatCard
-              label="أحداث الإضافة للسلة"
-              value={num(totals.addToCartEvents)}
-              hint={
-                totals.addToCartSessions > 0
-                  ? `${(totals.addToCartEvents / totals.addToCartSessions).toFixed(1)} إضافة لكل شخص`
-                  : "أحداث"
-              }
-            />
-            <StatCard
-              label="وصلوا Checkout"
-              value={num(totals.checkoutSessions)}
-              hint="أشخاص (جلسات فريدة)"
-            />
-            <StatCard
-              label="طلبات الموقع"
-              value={num(orders.orders)}
-              hint="من جدول الطلبات — الموقع وحده"
-              accent="orange"
-            />
-            <StatCard
-              label="الإيراد"
-              value={formatMad(orders.revenueMad)}
-              hint="طلبات الموقع وحدها"
-              accent="orange"
-              compact
-            />
-            <StatCard
-              label="نسبة التحويل"
-              value={pct(conversion)}
-              hint="زائر ← طلب"
-              accent="orange"
-            />
-            <StatCard label="متوسط قيمة الطلب" value={formatMad(aov)} hint="الإيراد ÷ الطلبات" compact />
+            {totals === null ? (
+              <div className="col-span-2 sm:col-span-3 lg:col-span-5">
+                <SectionUnavailable label="أرقام القياس (الزوّار، المشاهدات، الإضافة للسلة، Checkout)" />
+              </div>
+            ) : (
+              <>
+                <StatCard label="الزوّار" value={num(totals.sessions)} hint="جلسات فريدة" accent="turquoise" />
+                <StatCard
+                  label="زيارات صفحة الهبوط"
+                  value={num(totals.landingPageViews)}
+                  hint="أحداث"
+                />
+                <StatCard
+                  label="شاهدوا منتجاً"
+                  value={num(totals.productViewSessions)}
+                  hint={`${num(totals.productViewEvents)} حدث مشاهدة`}
+                />
+                <StatCard
+                  label="أضافوا للسلة"
+                  value={num(totals.addToCartSessions)}
+                  hint="أشخاص (جلسات فريدة)"
+                  accent="turquoise"
+                />
+                <StatCard
+                  label="أحداث الإضافة للسلة"
+                  value={num(totals.addToCartEvents)}
+                  hint={
+                    totals.addToCartSessions > 0
+                      ? `${(totals.addToCartEvents / totals.addToCartSessions).toFixed(1)} إضافة لكل شخص`
+                      : "أحداث"
+                  }
+                />
+                <StatCard
+                  label="وصلوا Checkout"
+                  value={num(totals.checkoutSessions)}
+                  hint="أشخاص (جلسات فريدة)"
+                />
+              </>
+            )}
+            {orders === null || aov === null ? (
+              <div className="col-span-2 sm:col-span-3 lg:col-span-5">
+                <SectionUnavailable label="طلبات الموقع وإيرادها ونسبة التحويل" />
+              </div>
+            ) : (
+              <>
+                <StatCard
+                  label="طلبات الموقع"
+                  value={num(orders.orders)}
+                  hint="من جدول الطلبات — الموقع وحده"
+                  accent="orange"
+                />
+                <StatCard
+                  label="الإيراد"
+                  value={formatMad(orders.revenueMad)}
+                  hint="طلبات الموقع وحدها"
+                  accent="orange"
+                  compact
+                />
+                {conversion !== null && (
+                  <StatCard
+                    label="نسبة التحويل"
+                    value={pct(conversion)}
+                    hint="زائر ← طلب"
+                    accent="orange"
+                  />
+                )}
+                <StatCard label="متوسط قيمة الطلب" value={formatMad(aov)} hint="الإيراد ÷ الطلبات" compact />
+              </>
+            )}
           </div>
 
           <SectionTitle note="كل مرحلة تعدّ الأشخاص (جلسات فريدة)، ما عدا الطلبات فهي من جدول الطلبات.">
             القمع (Funnel)
           </SectionTitle>
-          <div className="mt-3 flex flex-col gap-4 rounded-xl border border-neutral-200 bg-white p-4">
-            <FunnelStep
-              label="الزوّار"
-              value={totals.sessions}
-              fromPrevious={null}
-              fromSessions={100}
-              width={100}
-            />
-            <FunnelStep
-              label="شاهدوا منتجاً"
-              value={totals.productViewSessions}
-              fromPrevious={rate(totals.productViewSessions, totals.sessions)}
-              fromSessions={rate(totals.productViewSessions, totals.sessions)}
-              width={rate(totals.productViewSessions, totals.sessions)}
-            />
-            <FunnelStep
-              label="أضافوا للسلة"
-              value={totals.addToCartSessions}
-              fromPrevious={rate(totals.addToCartSessions, totals.productViewSessions)}
-              fromSessions={rate(totals.addToCartSessions, totals.sessions)}
-              width={rate(totals.addToCartSessions, totals.sessions)}
-            />
-            <FunnelStep
-              label="وصلوا Checkout"
-              value={totals.checkoutSessions}
-              fromPrevious={rate(totals.checkoutSessions, totals.addToCartSessions)}
-              fromSessions={rate(totals.checkoutSessions, totals.sessions)}
-              width={rate(totals.checkoutSessions, totals.sessions)}
-            />
-            <FunnelStep
-              label="اشتروا"
-              value={orders.orders}
-              fromPrevious={rate(orders.orders, totals.checkoutSessions)}
-              fromSessions={rate(orders.orders, totals.sessions)}
-              width={rate(orders.orders, totals.sessions)}
-            />
-          </div>
+          {totals === null ? (
+            <SectionUnavailable label="مراحل القمع (الزوّار ← المشاهدة ← السلة ← Checkout)" />
+          ) : (
+            <div className="mt-3 flex flex-col gap-4 rounded-xl border border-neutral-200 bg-white p-4">
+              <FunnelStep
+                label="الزوّار"
+                value={totals.sessions}
+                fromPrevious={null}
+                fromSessions={100}
+                width={100}
+              />
+              <FunnelStep
+                label="شاهدوا منتجاً"
+                value={totals.productViewSessions}
+                fromPrevious={rate(totals.productViewSessions, totals.sessions)}
+                fromSessions={rate(totals.productViewSessions, totals.sessions)}
+                width={rate(totals.productViewSessions, totals.sessions)}
+              />
+              <FunnelStep
+                label="أضافوا للسلة"
+                value={totals.addToCartSessions}
+                fromPrevious={rate(totals.addToCartSessions, totals.productViewSessions)}
+                fromSessions={rate(totals.addToCartSessions, totals.sessions)}
+                width={rate(totals.addToCartSessions, totals.sessions)}
+              />
+              <FunnelStep
+                label="وصلوا Checkout"
+                value={totals.checkoutSessions}
+                fromPrevious={rate(totals.checkoutSessions, totals.addToCartSessions)}
+                fromSessions={rate(totals.checkoutSessions, totals.sessions)}
+                width={rate(totals.checkoutSessions, totals.sessions)}
+              />
+              {orders === null ? (
+                // مرحلة «اشتروا» تُقرأ من جدول الطلبات لا من القياس. لم تصل،
+                // فلا تُرسَم بصفر: قمع ينتهي عند صفر شراء قرار خاطئ كامل.
+                <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">
+                  مرحلة «اشتروا» غير معروضة: تعذّر تحميل عدد الطلبات من جدول الطلبات، ولا يُرسَم
+                  هنا صفر مكانه.
+                </p>
+              ) : (
+                <FunnelStep
+                  label="اشتروا"
+                  value={orders.orders}
+                  fromPrevious={rate(orders.orders, totals.checkoutSessions)}
+                  fromSessions={rate(orders.orders, totals.sessions)}
+                  width={rate(orders.orders, totals.sessions)}
+                />
+              )}
+            </div>
+          )}
 
           <SectionTitle
-            note={`كل جلسة أضافت للسلة ولم يُسجَّل لها شراء. لم يعد للمتجر حدّ أدنى للطلب، فالمبلغ ${formatMad(settings.minOrderAmountMad)} يُستعمل هنا مِسطرةً لتمييز السلة الصغيرة من الكبيرة فقط — حتى تبقى المقارنة مع ما قبل إلغاء الحد ممكنة على نفس البيانات.`}
+            note={
+              minOrderAmountMad === null
+                ? "كل جلسة أضافت للسلة ولم يُسجَّل لها شراء."
+                : `كل جلسة أضافت للسلة ولم يُسجَّل لها شراء. لم يعد للمتجر حدّ أدنى للطلب، فالمبلغ ${formatMad(minOrderAmountMad)} يُستعمل هنا مِسطرةً لتمييز السلة الصغيرة من الكبيرة فقط — حتى تبقى المقارنة مع ما قبل إلغاء الحد ممكنة على نفس البيانات.`
+            }
           >
             السلات المتروكة
           </SectionTitle>
 
-          {abandoned.summary.abandoned === 0 ? (
+          {abandoned === null || minOrderAmountMad === null ? (
+            <SectionUnavailable label="السلات المتروكة وقيمتها" />
+          ) : abandoned.summary.abandoned === 0 ? (
             <div className="mt-3 rounded-xl border border-dashed border-neutral-300 bg-white p-6 text-center">
               <p className="text-sm font-semibold text-neutral-700">لا توجد سلة متروكة في هذه الفترة</p>
               <p className="mt-1 text-xs text-neutral-500">
@@ -502,7 +579,7 @@ export default async function AdminAnalyticsPage({
                 <span className="font-bold">{num(abandoned.summary.abandoned)}</span> شخصاً أضافوا
                 للسلة ولم يشتروا:{" "}
                 <span className="font-bold">{num(abandoned.summary.stoppedBelowMinimum)}</span>{" "}
-                سلّتهم تحت {formatMad(settings.minOrderAmountMad)}،{" "}
+                سلّتهم تحت {formatMad(minOrderAmountMad)}،{" "}
                 <span className="font-bold">{num(abandoned.summary.reachedMinimumNoCheckout)}</span>{" "}
                 سلّتهم فوقه ولم يفتحوا Checkout، و
                 <span className="font-bold">{num(abandoned.summary.reachedCheckoutNoPurchase)}</span>{" "}
@@ -517,12 +594,12 @@ export default async function AdminAnalyticsPage({
                   accent="orange"
                 />
                 <StatCard
-                  label={`سلّة تحت ${formatMad(settings.minOrderAmountMad)}`}
+                  label={`سلّة تحت ${formatMad(minOrderAmountMad)}`}
                   value={num(abandoned.summary.stoppedBelowMinimum)}
                   hint="ولم يفتحوا Checkout"
                 />
                 <StatCard
-                  label={`سلّة فوق ${formatMad(settings.minOrderAmountMad)}`}
+                  label={`سلّة فوق ${formatMad(minOrderAmountMad)}`}
                   value={num(abandoned.summary.reachedMinimumNoCheckout)}
                   hint="ولم يفتحوا Checkout — أثمن ما نخسره"
                 />
@@ -541,7 +618,7 @@ export default async function AdminAnalyticsPage({
               </div>
 
               {/* تحذير الدقّة: يظهر فقط حين يوجد فارق تتبّع حقيقي. */}
-              {purchaseGap > 0 && (
+              {purchaseGap !== null && purchaseGap > 0 && (
                 <p className="mt-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">
                   انتبه: هناك {num(purchaseGap)} طلباً حقيقياً بلا حدث شراء مُسجَّل في هذه الفترة، فقد
                   يظهر حتى {num(purchaseGap)} من هؤلاء هنا وهم قد اشتروا فعلاً. جدول الطلبات يبقى
@@ -675,209 +752,229 @@ export default async function AdminAnalyticsPage({
           <SectionTitle note="هذا الجدول يجيب عن السؤال: هل انخفضت الطلبات بسبب قلّة الزوّار أم بسبب مرحلة بعينها؟">
             حسب اليوم
           </SectionTitle>
-          {/* الهاتف: بطاقة لكل يوم — الأرقام المهمة مرئية بلا أي تمرير جانبي. */}
-          <div className="mt-3 flex flex-col gap-2 sm:hidden">
-            {days.map((day) => {
-              const row = daily.find((d) => d.day === day);
-              const order = ordersByDay.get(day);
-              const sessions = row?.sessions ?? 0;
-              const dayOrders = order?.orders ?? 0;
-              return (
-                <div key={day} className="rounded-xl border border-neutral-200 bg-white p-3">
-                  <div className="flex items-baseline justify-between">
-                    <span className="text-sm font-bold tabular-nums text-neutral-800" dir="ltr">
-                      {day}
-                    </span>
-                    <span className="text-sm">
-                      <span className="font-bold text-brand-orange">{num(dayOrders)} طلب</span>
-                      <span className="text-neutral-500"> · {pct(rate(dayOrders, sessions))}</span>
-                    </span>
-                  </div>
-                  <div className="mt-2 grid grid-cols-3 gap-2 border-t border-neutral-100 pt-2">
-                    <MiniStat label="الزوّار" value={num(sessions)} />
-                    <MiniStat label="شاهدوا منتجاً" value={num(row?.productViewSessions ?? 0)} />
-                    <MiniStat label="أضافوا للسلة" value={num(row?.addToCartSessions ?? 0)} />
-                    <MiniStat label="أحداث الإضافة" value={num(row?.addToCartEvents ?? 0)} muted />
-                    <MiniStat label="Checkout" value={num(row?.checkoutSessions ?? 0)} />
-                    <MiniStat label="الإيراد" value={formatMad(order?.revenueMad ?? 0)} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="mt-3 hidden overflow-x-auto rounded-xl border border-neutral-200 bg-white sm:block">
-            <table className="w-full min-w-[46rem] text-sm">
-              <thead className="bg-neutral-50 text-xs text-neutral-600">
-                <tr>
-                  <th className="px-3 py-2 text-right font-semibold">اليوم</th>
-                  <th className="px-3 py-2 text-right font-semibold">الزوّار</th>
-                  <th className="px-3 py-2 text-right font-semibold">شاهدوا منتجاً</th>
-                  <th className="px-3 py-2 text-right font-semibold">أضافوا للسلة</th>
-                  <th className="px-3 py-2 text-right font-semibold">أحداث الإضافة</th>
-                  <th className="px-3 py-2 text-right font-semibold">Checkout</th>
-                  <th className="px-3 py-2 text-right font-semibold">الطلبات</th>
-                  <th className="px-3 py-2 text-right font-semibold">التحويل</th>
-                  <th className="px-3 py-2 text-right font-semibold">الإيراد</th>
-                </tr>
-              </thead>
-              <tbody>
-                {days.map((day) => {
-                  const row = daily.find((d) => d.day === day);
-                  const order = ordersByDay.get(day);
-                  const sessions = row?.sessions ?? 0;
-                  const dayOrders = order?.orders ?? 0;
-                  return (
-                    <tr key={day} className="border-t border-neutral-100">
-                      <td className="px-3 py-2 font-semibold tabular-nums text-neutral-800" dir="ltr">
+          {daily === null || ordersDaily === null ? (
+            <SectionUnavailable label="الأرقام اليومية (الزوّار والطلبات حسب اليوم)" />
+          ) : (
+            <>
+            {/* الهاتف: بطاقة لكل يوم — الأرقام المهمة مرئية بلا أي تمرير جانبي. */}
+            <div className="mt-3 flex flex-col gap-2 sm:hidden">
+              {days.map((day) => {
+                const row = daily.find((d) => d.day === day);
+                const order = ordersByDay.get(day);
+                const sessions = row?.sessions ?? 0;
+                const dayOrders = order?.orders ?? 0;
+                return (
+                  <div key={day} className="rounded-xl border border-neutral-200 bg-white p-3">
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-sm font-bold tabular-nums text-neutral-800" dir="ltr">
                         {day}
-                      </td>
-                      <td className="px-3 py-2 tabular-nums">{num(sessions)}</td>
-                      <td className="px-3 py-2 tabular-nums">{num(row?.productViewSessions ?? 0)}</td>
-                      <td className="px-3 py-2 tabular-nums">{num(row?.addToCartSessions ?? 0)}</td>
-                      <td className="px-3 py-2 tabular-nums text-neutral-500">
-                        {num(row?.addToCartEvents ?? 0)}
-                      </td>
-                      <td className="px-3 py-2 tabular-nums">{num(row?.checkoutSessions ?? 0)}</td>
-                      <td className="px-3 py-2 tabular-nums font-bold text-brand-orange">
-                        {num(dayOrders)}
-                      </td>
-                      <td className="px-3 py-2 tabular-nums">{pct(rate(dayOrders, sessions))}</td>
-                      <td className="px-3 py-2 tabular-nums">{formatMad(order?.revenueMad ?? 0)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                      </span>
+                      <span className="text-sm">
+                        <span className="font-bold text-brand-orange">{num(dayOrders)} طلب</span>
+                        <span className="text-neutral-500"> · {pct(rate(dayOrders, sessions))}</span>
+                      </span>
+                    </div>
+                    <div className="mt-2 grid grid-cols-3 gap-2 border-t border-neutral-100 pt-2">
+                      <MiniStat label="الزوّار" value={num(sessions)} />
+                      <MiniStat label="شاهدوا منتجاً" value={num(row?.productViewSessions ?? 0)} />
+                      <MiniStat label="أضافوا للسلة" value={num(row?.addToCartSessions ?? 0)} />
+                      <MiniStat label="أحداث الإضافة" value={num(row?.addToCartEvents ?? 0)} muted />
+                      <MiniStat label="Checkout" value={num(row?.checkoutSessions ?? 0)} />
+                      <MiniStat label="الإيراد" value={formatMad(order?.revenueMad ?? 0)} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-3 hidden overflow-x-auto rounded-xl border border-neutral-200 bg-white sm:block">
+              <table className="w-full min-w-[46rem] text-sm">
+                <thead className="bg-neutral-50 text-xs text-neutral-600">
+                  <tr>
+                    <th className="px-3 py-2 text-right font-semibold">اليوم</th>
+                    <th className="px-3 py-2 text-right font-semibold">الزوّار</th>
+                    <th className="px-3 py-2 text-right font-semibold">شاهدوا منتجاً</th>
+                    <th className="px-3 py-2 text-right font-semibold">أضافوا للسلة</th>
+                    <th className="px-3 py-2 text-right font-semibold">أحداث الإضافة</th>
+                    <th className="px-3 py-2 text-right font-semibold">Checkout</th>
+                    <th className="px-3 py-2 text-right font-semibold">الطلبات</th>
+                    <th className="px-3 py-2 text-right font-semibold">التحويل</th>
+                    <th className="px-3 py-2 text-right font-semibold">الإيراد</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {days.map((day) => {
+                    const row = daily.find((d) => d.day === day);
+                    const order = ordersByDay.get(day);
+                    const sessions = row?.sessions ?? 0;
+                    const dayOrders = order?.orders ?? 0;
+                    return (
+                      <tr key={day} className="border-t border-neutral-100">
+                        <td className="px-3 py-2 font-semibold tabular-nums text-neutral-800" dir="ltr">
+                          {day}
+                        </td>
+                        <td className="px-3 py-2 tabular-nums">{num(sessions)}</td>
+                        <td className="px-3 py-2 tabular-nums">{num(row?.productViewSessions ?? 0)}</td>
+                        <td className="px-3 py-2 tabular-nums">{num(row?.addToCartSessions ?? 0)}</td>
+                        <td className="px-3 py-2 tabular-nums text-neutral-500">
+                          {num(row?.addToCartEvents ?? 0)}
+                        </td>
+                        <td className="px-3 py-2 tabular-nums">{num(row?.checkoutSessions ?? 0)}</td>
+                        <td className="px-3 py-2 tabular-nums font-bold text-brand-orange">
+                          {num(dayOrders)}
+                        </td>
+                        <td className="px-3 py-2 tabular-nums">{pct(rate(dayOrders, sessions))}</td>
+                        <td className="px-3 py-2 tabular-nums">{formatMad(order?.revenueMad ?? 0)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            </>
+          )}
 
           <SectionTitle note="وسوم UTM تُلتقط من رابط الإعلان عند أول صفحة، وتبقى منسوبة للجلسة كلها.">
             مصادر الزوّار
           </SectionTitle>
-          {/* الهاتف: بطاقة لكل مصدر. */}
-          <div className="mt-3 flex flex-col gap-2 sm:hidden">
-            {sources.length === 0 && (
-              <p className="rounded-xl border border-neutral-200 bg-white p-4 text-center text-xs text-neutral-500">
-                لا توجد مصادر مُسجَّلة بعد.
-              </p>
-            )}
-            {sources.map((source, index) => (
-              <div key={index} className="rounded-xl border border-neutral-200 bg-white p-3">
-                <p className="text-sm font-semibold text-neutral-800">
-                  {source.utmSource ?? "مباشر"}
-                  {source.utmMedium ? ` · ${source.utmMedium}` : ""}
+          {sources === null ? (
+            <SectionUnavailable label="مصادر الزوّار وحملاتها" />
+          ) : (
+            <>
+            {/* الهاتف: بطاقة لكل مصدر. */}
+            <div className="mt-3 flex flex-col gap-2 sm:hidden">
+              {sources.length === 0 && (
+                <p className="rounded-xl border border-neutral-200 bg-white p-4 text-center text-xs text-neutral-500">
+                  لا توجد مصادر مُسجَّلة بعد.
                 </p>
-                <p className="text-[11px] leading-snug text-neutral-500">
-                  {source.utmCampaign ?? "بلا حملة"}
-                  {source.utmContent ? ` · ${source.utmContent}` : ""}
-                </p>
-                <div className="mt-2 grid grid-cols-4 gap-2 border-t border-neutral-100 pt-2">
-                  <MiniStat label="الزوّار" value={num(source.sessions)} />
-                  <MiniStat label="للسلة" value={num(source.addToCartSessions)} />
-                  <MiniStat label="Checkout" value={num(source.checkoutSessions)} />
-                  <MiniStat label="شراء" value={num(source.purchaseEvents)} />
+              )}
+              {sources.map((source, index) => (
+                <div key={index} className="rounded-xl border border-neutral-200 bg-white p-3">
+                  <p className="text-sm font-semibold text-neutral-800">
+                    {source.utmSource ?? "مباشر"}
+                    {source.utmMedium ? ` · ${source.utmMedium}` : ""}
+                  </p>
+                  <p className="text-[11px] leading-snug text-neutral-500">
+                    {source.utmCampaign ?? "بلا حملة"}
+                    {source.utmContent ? ` · ${source.utmContent}` : ""}
+                  </p>
+                  <div className="mt-2 grid grid-cols-4 gap-2 border-t border-neutral-100 pt-2">
+                    <MiniStat label="الزوّار" value={num(source.sessions)} />
+                    <MiniStat label="للسلة" value={num(source.addToCartSessions)} />
+                    <MiniStat label="Checkout" value={num(source.checkoutSessions)} />
+                    <MiniStat label="شراء" value={num(source.purchaseEvents)} />
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
 
-          <div className="mt-3 hidden overflow-x-auto rounded-xl border border-neutral-200 bg-white sm:block">
-            <table className="w-full min-w-[48rem] text-sm">
-              <thead className="bg-neutral-50 text-xs text-neutral-600">
-                <tr>
-                  <th className="px-3 py-2 text-right font-semibold">المصدر</th>
-                  <th className="px-3 py-2 text-right font-semibold">الوسيط</th>
-                  <th className="px-3 py-2 text-right font-semibold">الحملة</th>
-                  <th className="px-3 py-2 text-right font-semibold">الإعلان</th>
-                  <th className="px-3 py-2 text-right font-semibold">الإحالة</th>
-                  <th className="px-3 py-2 text-right font-semibold">الزوّار</th>
-                  <th className="px-3 py-2 text-right font-semibold">أضافوا للسلة</th>
-                  <th className="px-3 py-2 text-right font-semibold">Checkout</th>
-                  <th className="px-3 py-2 text-right font-semibold">شراء</th>
-                  <th className="px-3 py-2 text-right font-semibold">التحويل</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sources.length === 0 && (
+            <div className="mt-3 hidden overflow-x-auto rounded-xl border border-neutral-200 bg-white sm:block">
+              <table className="w-full min-w-[48rem] text-sm">
+                <thead className="bg-neutral-50 text-xs text-neutral-600">
                   <tr>
-                    <td colSpan={10} className="px-3 py-4 text-center text-xs text-neutral-500">
-                      لا توجد مصادر مُسجَّلة بعد.
-                    </td>
+                    <th className="px-3 py-2 text-right font-semibold">المصدر</th>
+                    <th className="px-3 py-2 text-right font-semibold">الوسيط</th>
+                    <th className="px-3 py-2 text-right font-semibold">الحملة</th>
+                    <th className="px-3 py-2 text-right font-semibold">الإعلان</th>
+                    <th className="px-3 py-2 text-right font-semibold">الإحالة</th>
+                    <th className="px-3 py-2 text-right font-semibold">الزوّار</th>
+                    <th className="px-3 py-2 text-right font-semibold">أضافوا للسلة</th>
+                    <th className="px-3 py-2 text-right font-semibold">Checkout</th>
+                    <th className="px-3 py-2 text-right font-semibold">شراء</th>
+                    <th className="px-3 py-2 text-right font-semibold">التحويل</th>
                   </tr>
-                )}
-                {sources.map((source, index) => (
-                  <tr key={index} className="border-t border-neutral-100">
-                    <td className="px-3 py-2">{source.utmSource ?? "مباشر"}</td>
-                    <td className="px-3 py-2 text-neutral-500">{source.utmMedium ?? "—"}</td>
-                    <td className="px-3 py-2">{source.utmCampaign ?? "—"}</td>
-                    <td className="px-3 py-2 text-neutral-500">{source.utmContent ?? "—"}</td>
-                    <td className="px-3 py-2 text-neutral-500" dir="ltr">
-                      {source.referrerHost ?? "—"}
-                    </td>
-                    <td className="px-3 py-2 tabular-nums font-semibold">{num(source.sessions)}</td>
-                    <td className="px-3 py-2 tabular-nums">{num(source.addToCartSessions)}</td>
-                    <td className="px-3 py-2 tabular-nums">{num(source.checkoutSessions)}</td>
-                    <td className="px-3 py-2 tabular-nums">{num(source.purchaseEvents)}</td>
-                    <td className="px-3 py-2 tabular-nums">
-                      {pct(rate(source.purchaseEvents, source.sessions))}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {sources.length === 0 && (
+                    <tr>
+                      <td colSpan={10} className="px-3 py-4 text-center text-xs text-neutral-500">
+                        لا توجد مصادر مُسجَّلة بعد.
+                      </td>
+                    </tr>
+                  )}
+                  {sources.map((source, index) => (
+                    <tr key={index} className="border-t border-neutral-100">
+                      <td className="px-3 py-2">{source.utmSource ?? "مباشر"}</td>
+                      <td className="px-3 py-2 text-neutral-500">{source.utmMedium ?? "—"}</td>
+                      <td className="px-3 py-2">{source.utmCampaign ?? "—"}</td>
+                      <td className="px-3 py-2 text-neutral-500">{source.utmContent ?? "—"}</td>
+                      <td className="px-3 py-2 text-neutral-500" dir="ltr">
+                        {source.referrerHost ?? "—"}
+                      </td>
+                      <td className="px-3 py-2 tabular-nums font-semibold">{num(source.sessions)}</td>
+                      <td className="px-3 py-2 tabular-nums">{num(source.addToCartSessions)}</td>
+                      <td className="px-3 py-2 tabular-nums">{num(source.checkoutSessions)}</td>
+                      <td className="px-3 py-2 tabular-nums">{num(source.purchaseEvents)}</td>
+                      <td className="px-3 py-2 tabular-nums">
+                        {pct(rate(source.purchaseEvents, source.sessions))}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            </>
+          )}
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <SectionTitle>الأجهزة</SectionTitle>
-              <div className="mt-3 overflow-hidden rounded-xl border border-neutral-200 bg-white">
-                <table className="w-full text-sm">
-                  <thead className="bg-neutral-50 text-xs text-neutral-600">
-                    <tr>
-                      <th className="px-3 py-2 text-right font-semibold">الجهاز</th>
-                      <th className="px-3 py-2 text-right font-semibold">الزوّار</th>
-                      <th className="px-3 py-2 text-right font-semibold">للسلة</th>
-                      <th className="px-3 py-2 text-right font-semibold">شراء</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {devices.map((row) => (
-                      <tr key={row.key} className="border-t border-neutral-100">
-                        <td className="px-3 py-2">{DEVICE_LABELS[row.key] ?? row.key}</td>
-                        <td className="px-3 py-2 tabular-nums font-semibold">{num(row.sessions)}</td>
-                        <td className="px-3 py-2 tabular-nums">{num(row.addToCartSessions)}</td>
-                        <td className="px-3 py-2 tabular-nums">{num(row.purchaseEvents)}</td>
+              {devices === null ? (
+                <SectionUnavailable label="توزيع الزوّار حسب الجهاز" />
+              ) : (
+                <div className="mt-3 overflow-hidden rounded-xl border border-neutral-200 bg-white">
+                  <table className="w-full text-sm">
+                    <thead className="bg-neutral-50 text-xs text-neutral-600">
+                      <tr>
+                        <th className="px-3 py-2 text-right font-semibold">الجهاز</th>
+                        <th className="px-3 py-2 text-right font-semibold">الزوّار</th>
+                        <th className="px-3 py-2 text-right font-semibold">للسلة</th>
+                        <th className="px-3 py-2 text-right font-semibold">شراء</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {devices.map((row) => (
+                        <tr key={row.key} className="border-t border-neutral-100">
+                          <td className="px-3 py-2">{DEVICE_LABELS[row.key] ?? row.key}</td>
+                          <td className="px-3 py-2 tabular-nums font-semibold">{num(row.sessions)}</td>
+                          <td className="px-3 py-2 tabular-nums">{num(row.addToCartSessions)}</td>
+                          <td className="px-3 py-2 tabular-nums">{num(row.purchaseEvents)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
             <div>
               <SectionTitle>المتصفحات</SectionTitle>
-              <div className="mt-3 overflow-hidden rounded-xl border border-neutral-200 bg-white">
-                <table className="w-full text-sm">
-                  <thead className="bg-neutral-50 text-xs text-neutral-600">
-                    <tr>
-                      <th className="px-3 py-2 text-right font-semibold">المتصفح</th>
-                      <th className="px-3 py-2 text-right font-semibold">الزوّار</th>
-                      <th className="px-3 py-2 text-right font-semibold">للسلة</th>
-                      <th className="px-3 py-2 text-right font-semibold">شراء</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {browsers.map((row) => (
-                      <tr key={row.key} className="border-t border-neutral-100">
-                        <td className="px-3 py-2">{BROWSER_LABELS[row.key] ?? row.key}</td>
-                        <td className="px-3 py-2 tabular-nums font-semibold">{num(row.sessions)}</td>
-                        <td className="px-3 py-2 tabular-nums">{num(row.addToCartSessions)}</td>
-                        <td className="px-3 py-2 tabular-nums">{num(row.purchaseEvents)}</td>
+              {browsers === null ? (
+                <SectionUnavailable label="توزيع الزوّار حسب المتصفح" />
+              ) : (
+                <div className="mt-3 overflow-hidden rounded-xl border border-neutral-200 bg-white">
+                  <table className="w-full text-sm">
+                    <thead className="bg-neutral-50 text-xs text-neutral-600">
+                      <tr>
+                        <th className="px-3 py-2 text-right font-semibold">المتصفح</th>
+                        <th className="px-3 py-2 text-right font-semibold">الزوّار</th>
+                        <th className="px-3 py-2 text-right font-semibold">للسلة</th>
+                        <th className="px-3 py-2 text-right font-semibold">شراء</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {browsers.map((row) => (
+                        <tr key={row.key} className="border-t border-neutral-100">
+                          <td className="px-3 py-2">{BROWSER_LABELS[row.key] ?? row.key}</td>
+                          <td className="px-3 py-2 tabular-nums font-semibold">{num(row.sessions)}</td>
+                          <td className="px-3 py-2 tabular-nums">{num(row.addToCartSessions)}</td>
+                          <td className="px-3 py-2 tabular-nums">{num(row.purchaseEvents)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         </>

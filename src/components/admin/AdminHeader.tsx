@@ -39,11 +39,16 @@ function isItemActive(pathname: string, href: string): boolean {
 export function AdminHeader({
   role,
   email,
-  newOrdersCount,
+  iconBadge,
+  menuBadge,
 }: {
   role: AdminRole;
   email: string;
-  newOrdersCount: number;
+  // عقدتان يُصيّرهما الخادم ويبثّهما داخل <Suspense> — لا رقم يُنتظَر قبل
+  // رسم الهيكل. غيابهما (null) هو الحالة الطبيعية حين لا توجد طلبات جديدة
+  // أو حين يتعذّر عدّها؛ الفرق بينهما لا يُعرض للمستخدم كرقم.
+  iconBadge?: React.ReactNode;
+  menuBadge?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
@@ -82,11 +87,7 @@ export function AdminHeader({
               strokeLinecap="round"
             />
           </svg>
-          {newOrdersCount > 0 && (
-            <span className="absolute -end-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-orange px-0.5 text-[10px] font-bold text-white">
-              {newOrdersCount > 9 ? "9+" : newOrdersCount}
-            </span>
-          )}
+          {iconBadge}
         </button>
 
         <div className="min-w-0 flex-1">
@@ -151,11 +152,7 @@ export function AdminHeader({
                       }`}
                     >
                       <span>{item.label}</span>
-                      {item.href === "/admin/orders" && newOrdersCount > 0 && (
-                        <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-brand-orange px-1 text-xs font-semibold text-white">
-                          {newOrdersCount}
-                        </span>
-                      )}
+                      {item.href === "/admin/orders" ? menuBadge : null}
                     </Link>
                   );
                 })}
