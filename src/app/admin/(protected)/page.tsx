@@ -210,6 +210,10 @@ export default async function AdminDashboardPage() {
         )}
       </section>
 
+      {/* ترتيب البطاقات كما كان: بطاقة المخزون ثالثةً بين بطاقات المبيعات.
+          مصدرها استعلام آخر، فهي محروسة وحدها — ولذلك تُقسَم بطاقات المبيعات
+          حولها بدل أن تُزاح هي إلى آخر الشبكة. إعلان التعذُّر يبقى واحداً
+          لكل استعلام فاشل. */}
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
         {stats === null ? (
           <div className="col-span-2 sm:col-span-3">
@@ -219,12 +223,6 @@ export default async function AdminDashboardPage() {
           <>
             <StatCard label="طلبات اليوم" value={String(stats.ordersToday)} />
             <StatCard label="مبيعات اليوم (المنتجات)" value={formatMad(stats.salesTodayMad)} accent />
-            <StatCard label="مبيعات 7 أيام (المنتجات)" value={formatMad(stats.sales7DaysMad)} accent />
-            <StatCard
-              label="مبيعات الشهر (المنتجات)"
-              value={formatMad(stats.salesThisMonthMad)}
-              accent
-            />
           </>
         )}
         {lowStockCount === null ? (
@@ -233,6 +231,16 @@ export default async function AdminDashboardPage() {
           </div>
         ) : (
           <StatCard label="منتجات مخزونها منخفض" value={String(lowStockCount)} />
+        )}
+        {stats !== null && (
+          <>
+            <StatCard label="مبيعات 7 أيام (المنتجات)" value={formatMad(stats.sales7DaysMad)} accent />
+            <StatCard
+              label="مبيعات الشهر (المنتجات)"
+              value={formatMad(stats.salesThisMonthMad)}
+              accent
+            />
+          </>
         )}
       </div>
 

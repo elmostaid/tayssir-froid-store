@@ -302,27 +302,33 @@ export default async function AdminReportsPage({
                 </div>
               </dl>
             </div>
+            </>
+          )}
 
-            {/* التحذير الذي يجعل الرقم أعلاه قابلاً للتصديق: ما الذي لم يُقَس؟ */}
-            {bySource!.totals.ordersMissingDeliveryCost > 0 && (
-              <p className="mt-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">
-                <span className="font-bold">
-                  تكلفة التوصيل غير مسجَّلة في {bySource!.totals.ordersMissingDeliveryCost} طلباً
-                </span>{" "}
-                من الطلبات المسلَّمة في هذا المدى، وقد حصّلنا منها{" "}
-                <span className="font-semibold tabular-nums">
-                  {formatMad(bySource!.totals.deliveryFeesMissingCostMad)}
-                </span>{" "}
-                توصيلاً. هذه الطلبات <span className="font-semibold">خارج الحساب أعلاه بالكامل</span>{" "}
-                — لم تُحتسَب بصفر، لأن صفراً يعني أن توصيلها لم يكلّفنا شيئاً وهذا غير صحيح. صافي
-                الربح الحقيقي أعلاه لا يعرف تكلفتها بعد.{" "}
-                <Link href="/admin/orders" className="font-semibold underline">
-                  سجّلها من صفحة كل طلب
-                </Link>
-                .
-              </p>
-            )}
+          {/* التحذير الذي يجعل الرقم أعلاه قابلاً للتصديق: ما الذي لم يُقَس؟
+              مصدره bySource وحده، فهو خارج حارس expenses عمداً: تعذُّر
+              المصاريف لا يُخفي معلومةً وصلت فعلاً عن التوصيل. */}
+          {bySource!.totals.ordersMissingDeliveryCost > 0 && (
+            <p className="mt-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">
+              <span className="font-bold">
+                تكلفة التوصيل غير مسجَّلة في {bySource!.totals.ordersMissingDeliveryCost} طلباً
+              </span>{" "}
+              من الطلبات المسلَّمة في هذا المدى، وقد حصّلنا منها{" "}
+              <span className="font-semibold tabular-nums">
+                {formatMad(bySource!.totals.deliveryFeesMissingCostMad)}
+              </span>{" "}
+              توصيلاً. هذه الطلبات <span className="font-semibold">خارج الحساب أعلاه بالكامل</span>{" "}
+              — لم تُحتسَب بصفر، لأن صفراً يعني أن توصيلها لم يكلّفنا شيئاً وهذا غير صحيح. صافي
+              الربح الحقيقي أعلاه لا يعرف تكلفتها بعد.{" "}
+              <Link href="/admin/orders" className="font-semibold underline">
+                سجّلها من صفحة كل طلب
+              </Link>
+              .
+            </p>
+          )}
 
+          {expenses !== null && (
+            <>
             {/* المصاريف وصافي الربح — نفس المدى المختار أعلاه بالضبط. */}
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="rounded-xl border border-neutral-200 bg-white p-4">
