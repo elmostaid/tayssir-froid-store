@@ -7,6 +7,8 @@ import { ORDER_STATUS_LABELS, ORDER_STATUS_BADGE_CLASSES, type OrderStatus } fro
 import { formatMad } from "@/lib/format";
 import { orderPayableTotal } from "@/lib/orders/orderTotals";
 import { getDashboardSummary, type DayCounters } from "@/lib/queries/adminDashboardSummary";
+import { inBatches, loadSection } from "@/lib/admin/sectionData";
+import { SectionUnavailable } from "@/components/admin/SectionUnavailable";
 
 export const dynamic = "force-dynamic";
 
@@ -108,13 +110,26 @@ export default async function AdminDashboardPage() {
     redirect("/admin/orders");
   }
 
-  const [stats, recentOrders, lowStockProducts, lowStockCount, summary] = await Promise.all([
-    getDashboardOrderStats(),
-    getRecentAdminOrders(5),
-    getLowStockProductsAdmin(5),
-    countLowStockProductsAdmin(),
-    getDashboardSummary(),
-  ]);
+  // دفعتان من ثلاثة وواحدة، لا خمسة دفعةً واحدة: المجمّع سعته خمسة، وفوق
+  // الصفحة يأتي استعلام الـlayout الذي يُصيَّر بالتوازي (التفصيل في
+  // lib/admin/sectionData.ts). الترتيب يتبع الصفحة: «اليوم في سطر» أولاً.
+  //
+  // ولا رقم يحلّ محلّ رقم لم يصل: بطاقة «مبيعات اليوم 0,00 درهم» تُقرأ يوماً
+  // بلا بيع، وهذا قرار يُتّخذ على معلومة خاطئة.
+  const [summaryResult, statsResult, lowStockCountResult, recentOrdersResult, lowStockProductsResult] =
+    await inBatches([
+      () => loadSection(() => getDashboardSummary(), "dashboard.summary"),
+      () => loadSection(() => getDashboardOrderStats(), "dashboard.stats"),
+      () => loadSection(() => countLowStockProductsAdmin(), "dashboard.lowStockCount"),
+      () => loadSection(() => getRecentAdminOrders(5), "dashboard.recentOrders"),
+      () => loadSection(() => getLowStockProductsAdmin(5), "dashboard.lowStockProducts"),
+    ] as const);
+
+  const summary = summaryResult.ok ? summaryResult.value : null;
+  const stats = statsResult.ok ? statsResult.value : null;
+  const lowStockCount = lowStockCountResult.ok ? lowStockCountResult.value : null;
+  const recentOrders = recentOrdersResult.ok ? recentOrdersResult.value : null;
+  const lowStockProducts = lowStockProductsResult.ok ? lowStockProductsResult.value : null;
 
   return (
     <div>
@@ -134,69 +149,99 @@ export default async function AdminDashboardPage() {
           الزوّار والقمع من قياس الموقع؛ الطلبات والمبيعات من كل المصادر (الموقع وواتساب والهاتف
           والمحل). نسبة التحويل من طلبات الموقع وحدها، لأنها وحدها ما يتحوّل عن زيارة.
         </p>
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <TodayCard
-            label="زوّار اليوم"
-            href="/admin/analytics?range=today"
-            today={summary.today.sessions}
-            yesterday={summary.yesterday.sessions}
-            accent="turquoise"
-          />
-          <TodayCard
-            label="شاهدوا منتجاً"
-            href="/admin/analytics?range=today"
-            today={summary.today.productViewSessions}
-            yesterday={summary.yesterday.productViewSessions}
-          />
-          <TodayCard
-            label="أضافوا للسلة"
-            href="/admin/analytics?range=today"
-            today={summary.today.addToCartSessions}
-            yesterday={summary.yesterday.addToCartSessions}
-          />
-          <TodayCard
-            label="وصلوا Checkout"
-            href="/admin/analytics?range=today"
-            today={summary.today.checkoutSessions}
-            yesterday={summary.yesterday.checkoutSessions}
-          />
-          <TodayCard
-            label="الطلبات (كل المصادر)"
-            href="/admin/orders"
-            today={summary.today.orders}
-            yesterday={summary.yesterday.orders}
-            accent="orange"
-          />
-          <TodayCard
-            label="مبيعات اليوم (المنتجات)"
-            href="/admin/reports?range=today"
-            today={summary.today.salesMad}
-            yesterday={summary.yesterday.salesMad}
-            format={formatMad}
-            accent="orange"
-          />
-          <TodayCard
-            label="نسبة التحويل"
-            href="/admin/analytics?range=today"
-            today={Math.round(conversion(summary.today) * 10) / 10}
-            yesterday={Math.round(conversion(summary.yesterday) * 10) / 10}
-            format={(value) => `${value}%`}
-          />
-          <TodayCard
-            label="السلات المتروكة"
-            href="/admin/analytics?range=today"
-            today={summary.today.abandonedCarts}
-            yesterday={summary.yesterday.abandonedCarts}
-          />
-        </div>
+        {summary === null ? (
+          <SectionUnavailable label="أرقام اليوم ومقارنتها بأمس" />
+        ) : (
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <TodayCard
+              label="زوّار اليوم"
+              href="/admin/analytics?range=today"
+              today={summary.today.sessions}
+              yesterday={summary.yesterday.sessions}
+              accent="turquoise"
+            />
+            <TodayCard
+              label="شاهدوا منتجاً"
+              href="/admin/analytics?range=today"
+              today={summary.today.productViewSessions}
+              yesterday={summary.yesterday.productViewSessions}
+            />
+            <TodayCard
+              label="أضافوا للسلة"
+              href="/admin/analytics?range=today"
+              today={summary.today.addToCartSessions}
+              yesterday={summary.yesterday.addToCartSessions}
+            />
+            <TodayCard
+              label="وصلوا Checkout"
+              href="/admin/analytics?range=today"
+              today={summary.today.checkoutSessions}
+              yesterday={summary.yesterday.checkoutSessions}
+            />
+            <TodayCard
+              label="الطلبات (كل المصادر)"
+              href="/admin/orders"
+              today={summary.today.orders}
+              yesterday={summary.yesterday.orders}
+              accent="orange"
+            />
+            <TodayCard
+              label="مبيعات اليوم (المنتجات)"
+              href="/admin/reports?range=today"
+              today={summary.today.salesMad}
+              yesterday={summary.yesterday.salesMad}
+              format={formatMad}
+              accent="orange"
+            />
+            <TodayCard
+              label="نسبة التحويل"
+              href="/admin/analytics?range=today"
+              today={Math.round(conversion(summary.today) * 10) / 10}
+              yesterday={Math.round(conversion(summary.yesterday) * 10) / 10}
+              format={(value) => `${value}%`}
+            />
+            <TodayCard
+              label="السلات المتروكة"
+              href="/admin/analytics?range=today"
+              today={summary.today.abandonedCarts}
+              yesterday={summary.yesterday.abandonedCarts}
+            />
+          </div>
+        )}
       </section>
 
+      {/* ترتيب البطاقات كما كان: بطاقة المخزون ثالثةً بين بطاقات المبيعات.
+          مصدرها استعلام آخر، فهي محروسة وحدها — ولذلك تُقسَم بطاقات المبيعات
+          حولها بدل أن تُزاح هي إلى آخر الشبكة. إعلان التعذُّر يبقى واحداً
+          لكل استعلام فاشل. */}
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <StatCard label="طلبات اليوم" value={String(stats.ordersToday)} />
-        <StatCard label="مبيعات اليوم (المنتجات)" value={formatMad(stats.salesTodayMad)} accent />
-        <StatCard label="منتجات مخزونها منخفض" value={String(lowStockCount)} />
-        <StatCard label="مبيعات 7 أيام (المنتجات)" value={formatMad(stats.sales7DaysMad)} accent />
-        <StatCard label="مبيعات الشهر (المنتجات)" value={formatMad(stats.salesThisMonthMad)} accent />
+        {stats === null ? (
+          <div className="col-span-2 sm:col-span-3">
+            <SectionUnavailable label="طلبات اليوم ومبيعات اليوم والأسبوع والشهر" />
+          </div>
+        ) : (
+          <>
+            <StatCard label="طلبات اليوم" value={String(stats.ordersToday)} />
+            <StatCard label="مبيعات اليوم (المنتجات)" value={formatMad(stats.salesTodayMad)} accent />
+          </>
+        )}
+        {lowStockCount === null ? (
+          <div className="col-span-2 sm:col-span-3">
+            <SectionUnavailable label="عدد المنتجات ذات المخزون المنخفض" />
+          </div>
+        ) : (
+          <StatCard label="منتجات مخزونها منخفض" value={String(lowStockCount)} />
+        )}
+        {stats !== null && (
+          <>
+            <StatCard label="مبيعات 7 أيام (المنتجات)" value={formatMad(stats.sales7DaysMad)} accent />
+            <StatCard
+              label="مبيعات الشهر (المنتجات)"
+              value={formatMad(stats.salesThisMonthMad)}
+              accent
+            />
+          </>
+        )}
       </div>
 
       {/* المبيعات هنا = مجموع قيمة المنتجات (items_subtotal) للطلبات غير
@@ -210,20 +255,24 @@ export default async function AdminDashboardPage() {
       <h2 className="mt-6 border-r-4 border-brand-turquoise pr-3 text-base font-bold text-neutral-800">
         الطلبات حسب الحالة
       </h2>
-      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {STATUS_ORDER.map((status) => (
-          <div key={status} className="rounded-xl border border-neutral-200 bg-white p-3">
-            <span
-              className={`inline-block rounded-full px-2 py-0.5 text-xs ${ORDER_STATUS_BADGE_CLASSES[status]}`}
-            >
-              {ORDER_STATUS_LABELS[status]}
-            </span>
-            <p className="mt-1.5 text-lg font-bold text-neutral-800">
-              {stats.countsByStatus[status]}
-            </p>
-          </div>
-        ))}
-      </div>
+      {stats === null ? (
+        <SectionUnavailable label="عدد الطلبات في كل حالة" />
+      ) : (
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {STATUS_ORDER.map((status) => (
+            <div key={status} className="rounded-xl border border-neutral-200 bg-white p-3">
+              <span
+                className={`inline-block rounded-full px-2 py-0.5 text-xs ${ORDER_STATUS_BADGE_CLASSES[status]}`}
+              >
+                {ORDER_STATUS_LABELS[status]}
+              </span>
+              <p className="mt-1.5 text-lg font-bold text-neutral-800">
+                {stats.countsByStatus[status]}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div>
@@ -235,7 +284,9 @@ export default async function AdminDashboardPage() {
               كل الطلبات
             </Link>
           </div>
-          {recentOrders.length === 0 ? (
+          {recentOrders === null ? (
+            <SectionUnavailable label="أحدث الطلبات" />
+          ) : recentOrders.length === 0 ? (
             <p className="mt-3 text-sm text-neutral-500">لا توجد طلبات بعد.</p>
           ) : (
             <div className="mt-3 flex flex-col gap-2">
@@ -276,7 +327,9 @@ export default async function AdminDashboardPage() {
               كل المنتجات
             </Link>
           </div>
-          {lowStockProducts.length === 0 ? (
+          {lowStockProducts === null ? (
+            <SectionUnavailable label="قائمة المنتجات ذات المخزون المنخفض" />
+          ) : lowStockProducts.length === 0 ? (
             <p className="mt-3 text-sm text-neutral-500">لا يوجد منتج بمخزون منخفض حالياً.</p>
           ) : (
             <div className="mt-3 flex flex-col gap-2">
@@ -315,7 +368,7 @@ export default async function AdminDashboardPage() {
           className="flex items-center justify-between gap-2 rounded-xl border border-neutral-200 bg-white p-4 hover:border-brand-turquoise"
         >
           <span className="text-sm font-semibold text-neutral-800">الطلبات الجديدة</span>
-          {stats.countsByStatus.new > 0 && (
+          {stats !== null && stats.countsByStatus.new > 0 && (
             <span className="shrink-0 rounded-full bg-brand-orange px-2 py-0.5 text-xs font-bold text-white">
               {stats.countsByStatus.new}
             </span>
@@ -332,7 +385,7 @@ export default async function AdminDashboardPage() {
           className="flex items-center justify-between gap-2 rounded-xl border border-neutral-200 bg-white p-4 hover:border-brand-turquoise"
         >
           <span className="text-sm font-semibold text-neutral-800">مخزون منخفض</span>
-          {lowStockCount > 0 && (
+          {lowStockCount !== null && lowStockCount > 0 && (
             <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700">
               {lowStockCount}
             </span>
