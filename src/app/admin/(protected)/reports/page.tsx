@@ -5,6 +5,7 @@ import {
   getSalesBySource,
   getDeliveredOrdersProfitBreakdown,
   getBestSellingProducts,
+  getEarliestOrderDay,
 } from "@/lib/queries/adminReports";
 import { getDashboardOrderStats } from "@/lib/queries/adminOrders";
 import { getExpensesTotal } from "@/lib/queries/adminExpenses";
@@ -14,7 +15,11 @@ import { deliveryMargin } from "@/lib/orders/deliveryCost";
 import Link from "next/link";
 import { inBatches, loadSection } from "@/lib/admin/sectionData";
 import { SectionUnavailable } from "@/components/admin/SectionUnavailable";
-import { RANGE_LABELS, RANGE_PRESETS, resolveRange } from "@/lib/analytics/dateRange";
+import {
+  RANGE_LABELS,
+  REPORT_RANGE_PRESETS,
+  resolveRange,
+} from "@/lib/analytics/dateRange";
 import {
   isOrderSource,
   ORDER_SOURCES,
@@ -93,6 +98,17 @@ export default async function AdminReportsPage({
   const bestByQuantity = bestByQuantityResult.ok ? bestByQuantityResult.value : null;
   const bestByValue = bestByValueResult.ok ? bestByValueResult.value : null;
 
+  // أول يوم فيه طلب — للعرض وحده، وفي «منذ البداية» وحدها فلا تحمل بقية
+  // الاختيارات استعلاماً لا تستعمله. خارج الدفعات لأنه لا يُطلَق معها أصلاً
+  // في الحالة الغالبة، وحين يُطلَق فهو وحده (اتصال واحد، `min` على عمود
+  // مفهرس) فلا يزيد ضغطاً على المجمّع.
+  const firstOrderDayResult =
+    range.preset === "all_time"
+      ? await loadSection(() => getEarliestOrderDay(), "reports.earliestOrderDay")
+      : null;
+  const firstOrderDay =
+    firstOrderDayResult?.ok === true ? firstOrderDayResult.value : null;
+
   // صافي الربح الحقيقي = الربح الخام + صافي أثر التوصيل − مصاريف التشغيل.
   //
   // ثلاثة أشياء لا تدخل هنا، وكلٌّ لسبب:
@@ -151,7 +167,7 @@ export default async function AdminReportsPage({
 
       {/* فلاتر: نموذج GET عادي بلا JavaScript. */}
       <div className="mt-3 flex flex-wrap gap-2">
-        {RANGE_PRESETS.filter((preset) => preset !== "custom").map((preset) => (
+        {REPORT_RANGE_PRESETS.map((preset) => (
           <Link
             key={preset}
             href={`/admin/reports?range=${preset}${source ? `&source=${source}` : ""}`}
@@ -165,6 +181,29 @@ export default async function AdminReportsPage({
           </Link>
         ))}
       </div>
+
+      {/* المدى المُغطّى فعلاً — يظهر في «منذ البداية» وحدها.
+          بداية المدى ثابتة في الكود (تسبق أول طلب بسنوات) لأن الأرقام لا
+          تنتظر أي قراءة ثانية؛ وهذا السطر يقول للمدير أول يومٍ سُجّل فيه
+          طلب حقيقياً. تعذُّر قراءته يُخفي السطر ولا يمسّ أي مجموع.
+          نفس ستايل بقية التوضيحات (text-xs/neutral-500) وسطر مستقلّ
+          فيلتفّ على الهاتف بلا أن يضغط الأزرار. */}
+      {range.preset === "all_time" && (
+        <p className="mt-2 text-xs leading-relaxed text-neutral-500">
+          يُحتسَب من{" "}
+          {firstOrderDay ? (
+            <>
+              أول طلب مسجَّل{" "}
+              <span className="font-semibold text-neutral-700">{firstOrderDay}</span>
+            </>
+          ) : (
+            <>أول طلب مسجَّل</>
+          )}{" "}
+          إلى اليوم{" "}
+          <span className="font-semibold text-neutral-700">{range.toDay}</span> — بلا أي
+          حدّ للمدة.
+        </p>
+      )}
       <div className="mt-2 flex flex-wrap gap-2">
         <Link
           href={`/admin/reports?range=${range.preset}`}

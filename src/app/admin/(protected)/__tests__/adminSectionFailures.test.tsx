@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+import { ORDER_STATUSES, type OrderStatus } from "@/lib/orders/orderStatus";
 
 /**
  * ما تتحقّق منه هذه الاختبارات هو الشرط الذي طُلب حرفياً بعد عطل
@@ -36,6 +37,7 @@ vi.mock("@/lib/queries/adminReports", async (importOriginal) => {
     getProfitSummary: vi.fn(actual.getProfitSummary),
     getBestSellingProducts: vi.fn(actual.getBestSellingProducts),
     getDeliveredOrdersProfitBreakdown: vi.fn(actual.getDeliveredOrdersProfitBreakdown),
+    getEarliestOrderDay: vi.fn(actual.getEarliestOrderDay),
   };
 });
 
@@ -223,5 +225,139 @@ describe("/admin/orders", () => {
     expect(html).not.toContain("لا توجد طلبات مطابقة.");
     // الصفحة نفسها ما زالت خدّامة: الفلترة وزر الطلب اليدوي في مكانهما.
     expect(html).toContain("فلترة");
+  });
+});
+
+/**
+ * «منذ البداية» — المطلوب هنا ليس أن يظهر زرٌّ جديد، بل أن يختفي السقف.
+ *
+ * كان أقصى مدى متاحاً 30 يوماً، فكل ما قبلها كان محجوباً عن التقرير كاملاً.
+ * لذلك الاختبار الحاسم هو الحدّ الذي يصل فعلاً إلى SQL: أن يسبق أي شيء
+ * يمكن أن يُنتجه «آخر 30 يوم»، فيقع كل طلب مسجَّل داخل المدى.
+ *
+ * كل الاستعلامات مُزيَّفة هنا، فالاختبار لا يحتاج قاعدة بيانات.
+ */
+describe("/admin/reports?range=all_time", () => {
+  const EMPTY_SOURCE_ROW = {
+    deliveredOrders: 0,
+    revenueMad: 0,
+    deliveryFeesMad: 0,
+    deliveryCostRecordedMad: 0,
+    deliveryFeesOnCostedMad: 0,
+    deliveryNetMad: 0,
+    ordersMissingDeliveryCost: 0,
+    deliveryFeesMissingCostMad: 0,
+    cogsMad: 0,
+    grossProfitMad: 0,
+    ordersWithMissingCost: 0,
+    pendingOrders: 0,
+    pendingRevenueMad: 0,
+  };
+
+  async function mockEverything(earliestDay: string | null = "2026-08-18") {
+    const reports = await import("@/lib/queries/adminReports");
+    const expenses = await import("@/lib/queries/adminExpenses");
+    const orders = await import("@/lib/queries/adminOrders");
+
+    vi.mocked(reports.getSalesBySource).mockResolvedValue({
+      rows: [{ source: "website", ...EMPTY_SOURCE_ROW }],
+      totals: EMPTY_SOURCE_ROW,
+    });
+    vi.mocked(reports.getProfitSummary).mockResolvedValue({
+      deliveredOrdersCount: 0,
+      deliveredRevenueMad: "0",
+      cancelledOrdersCount: 0,
+      returnedOrdersCount: 0,
+      cogsMad: "0",
+      grossProfitMad: "0",
+      profitTodayMad: "0",
+      profitLast7DaysMad: "0",
+      profitThisMonthMad: "0",
+      approximateProfitOrdersCount: 0,
+    });
+    vi.mocked(reports.getBestSellingProducts).mockResolvedValue([]);
+    vi.mocked(reports.getDeliveredOrdersProfitBreakdown).mockResolvedValue([]);
+    vi.mocked(reports.getEarliestOrderDay).mockResolvedValue(earliestDay);
+    vi.mocked(expenses.getExpensesTotal).mockResolvedValue({
+      totalMad: 0,
+      count: 0,
+      byCategory: [],
+    });
+    vi.mocked(orders.getDashboardOrderStats).mockResolvedValue({
+      ordersToday: 0,
+      salesTodayMad: "0",
+      sales7DaysMad: "0",
+      salesThisMonthMad: "0",
+      countsByStatus: Object.fromEntries(
+        ORDER_STATUSES.map((status) => [status, 0])
+      ) as Record<OrderStatus, number>,
+    });
+
+    return reports;
+  }
+
+  test("الحدّ الأدنى المُرسَل إلى SQL يسبق «آخر 30 يوم» فلا يبقى شيء خارج المدى", async () => {
+    const reports = await mockEverything();
+    await renderReports("all_time");
+
+    const [rangeArg] = vi.mocked(reports.getSalesBySource).mock.calls.at(-1)!;
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    expect(rangeArg.from.getTime()).toBeLessThan(thirtyDaysAgo.getTime());
+    // وسنة كاملة إلى الوراء كذلك — «شهرين أو عام أو أكثر» كما طُلب.
+    const aYearAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+    expect(rangeArg.from.getTime()).toBeLessThan(aYearAgo.getTime());
+    // والحدّ الأعلى يمتدّ إلى ما بعد الآن (منتصف ليل الغد المحلي).
+    expect(rangeArg.to.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  test("المصاريف تُقرأ بنفس المدى الموسَّع لا بمدى آخر", async () => {
+    await mockEverything();
+    const { getExpensesTotal } = await import("@/lib/queries/adminExpenses");
+    await renderReports("all_time");
+
+    const [fromDay, toDay] = vi.mocked(getExpensesTotal).mock.calls.at(-1)!;
+    expect(fromDay < "2010-01-01").toBe(true);
+    expect(toDay >= "2026-09-28").toBe(true);
+  });
+
+  test("الزرّ معروض، والصفحة تقول من أي يوم تُحتسَب", async () => {
+    await mockEverything("2026-08-18");
+    const html = await renderReports("all_time");
+
+    expect(html).toContain("منذ البداية");
+    expect(html).toContain("/admin/reports?range=all_time");
+    expect(html).toContain("2026-08-18");
+    expect(html).toContain("يُحتسَب من");
+    expect(html).not.toContain(UNAVAILABLE);
+  });
+
+  test("تعذُّر قراءة أول يوم لا يُسقط الصفحة ولا يمسّ الأرقام", async () => {
+    const reports = await mockEverything();
+    vi.mocked(reports.getEarliestOrderDay).mockRejectedValueOnce(DB_DOWN());
+
+    const html = await renderReports("all_time");
+
+    // الصفحة كاملة، ولا إعلان تعذُّر: هذا السطر توضيحي لا قسم بيانات.
+    expect(html).toContain("التقارير والأرباح");
+    expect(html).toContain("منذ البداية");
+    expect(html).not.toContain(UNAVAILABLE);
+    // والمدى المُرسَل إلى SQL لم يتأثّر إطلاقاً.
+    const [rangeArg] = vi.mocked(reports.getSalesBySource).mock.calls.at(-1)!;
+    expect(rangeArg.from.getTime()).toBeLessThan(Date.now() - 365 * 24 * 60 * 60 * 1000);
+  });
+
+  test("«آخر 30 يوم» لم يتغيّر: لا يُقرأ أول يوم أصلاً ولا يظهر السطر", async () => {
+    const reports = await mockEverything();
+    // سجلّ النداءات مشترك بين اختبارات الملف (لا clearMocks بينها)، فنمحوه
+    // هنا حتى يقيس التأكيد هذا التصيير وحده لا ما قبله.
+    vi.mocked(reports.getEarliestOrderDay).mockClear();
+
+    const html = await renderReports("30d");
+
+    expect(vi.mocked(reports.getEarliestOrderDay)).not.toHaveBeenCalled();
+    expect(html).not.toContain("يُحتسَب من");
+    const [rangeArg] = vi.mocked(reports.getSalesBySource).mock.calls.at(-1)!;
+    const thirtyOneDaysAgo = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
+    expect(rangeArg.from.getTime()).toBeGreaterThan(thirtyOneDaysAgo.getTime());
   });
 });

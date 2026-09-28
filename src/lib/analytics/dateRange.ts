@@ -8,7 +8,15 @@ import { REPORT_TIME_ZONE } from "@/lib/queries/adminAnalytics";
  * لكل تاريخ على حدة، فيبقى الحساب صحيحاً في رمضان وخارجه بلا أي صيانة.
  */
 
-export const RANGE_PRESETS = ["today", "yesterday", "7d", "30d", "month", "custom"] as const;
+export const RANGE_PRESETS = [
+  "today",
+  "yesterday",
+  "7d",
+  "30d",
+  "month",
+  "all_time",
+  "custom",
+] as const;
 export type RangePreset = (typeof RANGE_PRESETS)[number];
 
 export const RANGE_LABELS: Record<RangePreset, string> = {
@@ -17,8 +25,43 @@ export const RANGE_LABELS: Record<RangePreset, string> = {
   "7d": "آخر 7 أيام",
   "30d": "آخر 30 يوم",
   month: "الشهر الحالي",
+  all_time: "منذ البداية",
   custom: "مدة مخصّصة",
 };
+
+/**
+ * الاختيارات المعروضة كأزرار في كل صفحة — لكل صفحة قائمتها، لا فلترة مكرّرة
+ * في الواجهة.
+ *
+ * `custom` مستثنى من الاثنتين لأن له نموذجه الخاص (حقلا تاريخ) لا زرّاً.
+ * و`all_time` معروض في التقارير وحدها عمداً: أرقام التقارير مجموعات SQL على
+ * جدول الطلبات (خمسة صفوف على الأكثر، واحد لكل مصدر)، فتوسيع المدى لا يزيد
+ * شيئاً في حجم ما يُنقل ولا في عدد الصفوف. أما صفحة التحليلات فتقرأ
+ * analytics_events — صفٌّ لكل حدث زائر — ومدى مفتوح هناك مسحٌ كامل للجدول
+ * بلا فائدة للمدير. من أراد مدى أطول في التحليلات فله «مدة مخصّصة».
+ */
+export const REPORT_RANGE_PRESETS = RANGE_PRESETS.filter(
+  (preset) => preset !== "custom"
+);
+export const ANALYTICS_RANGE_PRESETS = RANGE_PRESETS.filter(
+  (preset) => preset !== "custom" && preset !== "all_time"
+);
+
+/**
+ * بداية «منذ البداية».
+ *
+ * ليس تاريخ أقدم طلب — وهذا مقصود. قراءة أقدم طلب تعني استعلاماً إضافياً
+ * يجب أن ينجح قبل أن تُحسب أي أرقام، وفشله كان سيُنتج مدى يوماً واحداً
+ * يبدو صحيحاً وهو خاطئ. أما تاريخ ثابت يسبق أول طلب بسنوات فيجعل شرط
+ * `created_at >= from` لا يستثني شيئاً أصلاً، فالمجموع هو مجموع كل ما في
+ * الجدول بلا اعتماد على أي قراءة ثانية.
+ *
+ * المتجر أُنشئ في 2026، والقيمة هنا تسبقه بعشرين سنة — ولو أُدخل طلب
+ * تاريخه قبلها (استيراد قديم مثلاً) لظهر خارج المدى؛ لذلك تُقرأ بداية
+ * الطلبات الفعلية وتُعرض للمدير (getEarliestOrderDay)، فيرى بعينه أن المدى
+ * يغطّي أول يوم سُجّل فيه طلب.
+ */
+export const ALL_TIME_START_DAY = "2006-01-01";
 
 const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -128,6 +171,10 @@ export function resolveRange(
     toDay = fromDay;
   } else if (preset === "30d") {
     fromDay = addDays(today, -29);
+    toDay = today;
+  } else if (preset === "all_time") {
+    // لا حدّ أدنى: البداية تسبق أول طلب بسنوات، فالشرط لا يستثني شيئاً.
+    fromDay = ALL_TIME_START_DAY;
     toDay = today;
   } else if (preset === "month") {
     // من أول الشهر المحلي إلى اليوم. نشتقّه من نصّ اليوم نفسه لا من كائن

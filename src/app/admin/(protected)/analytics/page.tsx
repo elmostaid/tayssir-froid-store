@@ -20,8 +20,8 @@ import { getSettings } from "@/lib/queries/settings";
 import { inBatches, loadSection, type SectionData } from "@/lib/admin/sectionData";
 import { SectionUnavailable } from "@/components/admin/SectionUnavailable";
 import {
+  ANALYTICS_RANGE_PRESETS,
   RANGE_LABELS,
-  RANGE_PRESETS,
   resolveRange,
   type RangePreset,
 } from "@/lib/analytics/dateRange";
@@ -219,7 +219,7 @@ function RangePicker({
   return (
     <div className="mt-3">
       <div className="flex flex-wrap gap-2">
-        {RANGE_PRESETS.filter((p) => p !== "custom").map((p) => (
+        {ANALYTICS_RANGE_PRESETS.map((p) => (
           <Link
             key={p}
             href={`/admin/analytics?range=${p}`}
@@ -304,7 +304,16 @@ export default async function AdminAnalyticsPage({
   if (!isOwnerAdmin(admin)) redirect("/admin/orders");
 
   const { range: rangeParam, from, to } = await searchParams;
-  const range = resolveRange(rangeParam, from, to);
+  // «منذ البداية» اختيار صفحة التقارير وحدها (انظر ANALYTICS_RANGE_PRESETS):
+  // هناك الأرقام مجموعات SQL على جدول الطلبات، وهنا تُقرأ analytics_events
+  // بصفٍّ لكل حدث زائر. لا زرّ يؤدّي إلى هنا، لكن رابطاً مكتوباً بيدٍ قد
+  // يفعل — فيُعاد إلى 30 يوماً بدل مسح الجدول كاملاً. من أراد مدى أطول
+  // فله «مدة مخصّصة» بحدّين يختارهما.
+  const range = resolveRange(
+    rangeParam === "all_time" ? "30d" : rangeParam,
+    from,
+    to
+  );
 
   // الحدّ الأدنى يأتي من الإعدادات: لو غيّرتَه غداً، يتبعه قسم السلات
   // المتروكة من تلقاء نفسه بلا لمس أي كود. مقروء وحده قبل الدفعات لأن

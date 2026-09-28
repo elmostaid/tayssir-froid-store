@@ -1,4 +1,5 @@
 import { sql } from "@/lib/db";
+import { REPORT_TIME_ZONE } from "@/lib/queries/adminAnalytics";
 
 // تقارير الأرباح فقط — لوحة الإدارة حصرياً، تعتمد على purchase_price السري
 // (لا تُستعمل أبداً خارج مسارات /admin، ولا يظهر ثمن الشراء أو الربح في أي
@@ -408,4 +409,31 @@ export async function getBestSellingProducts(
     totalQuantity: r.total_quantity,
     totalValueMad: r.total_value,
   }));
+}
+
+/**
+ * أقدم يوم محلي فيه طلب مسجَّل — أو null إن لم يُسجَّل أي طلب بعد.
+ *
+ * للعرض وحده: تقول للمدير من أي يوم فعلاً يبدأ مدى «منذ البداية» بدل أن
+ * يقرأ تاريخاً ثابتاً لا معنى له. أرقام التقرير **لا** تمرّ من هنا إطلاقاً
+ * (انظر ALL_TIME_START_DAY في lib/analytics/dateRange.ts)، فتعذُّر هذه
+ * القراءة يُخفي سطر التوضيح ولا يُنقص درهماً واحداً من أي مجموع.
+ *
+ * بلا فلترة حالة عمداً: هذا حدّ المدى لا حسابُ ربح. الطلب الملغى يوسّع
+ * المدى ولا يدخل أي مجموع — الاستثناء يبقى حيث هو، داخل كل استعلام
+ * (`where o.status = 'delivered'`). ولو قصرناه على المسلَّمة لبدأ المدى
+ * بعد أول طلب فعلي، فيقول للمدير بداية ليست البداية.
+ *
+ * التوقيت: التحويل إلى توقيت المغرب يقع في SQL بنفس REPORT_TIME_ZONE الذي
+ * تستعمله بقية الصفحة، فلا ينحرف اليوم المعروض بساعة عن اليوم المحسوب.
+ */
+export async function getEarliestOrderDay(): Promise<string | null> {
+  const [row] = await sql<{ day: string | null }[]>`
+    select to_char(
+             min(created_at) at time zone ${REPORT_TIME_ZONE},
+             'YYYY-MM-DD'
+           ) as day
+    from public.orders
+  `;
+  return row?.day ?? null;
 }
