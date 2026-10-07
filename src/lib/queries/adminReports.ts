@@ -437,3 +437,141 @@ export async function getEarliestOrderDay(): Promise<string | null> {
   `;
   return row?.day ?? null;
 }
+
+/**
+ * قُمع الزائر من الإعلان إلى الطلب المُسلَّم، مرحلةً مرحلة.
+ *
+ * ## لماذا هذا التقرير
+ *
+ * قبله لم يكن أحد يرى أين ينكسر المسار. وكل قرار في الحملة كان يُبنى على
+ * أرقام Meta وحدها — وهي تعرف الزيارة والسلّة، ولا تعرف أبداً أن الطلب
+ * الذي أبلغت عنه لم يُؤكَّد ثم أُلغي. فالمراحل الأولى تُقرأ من
+ * `analytics_events` (قياسنا، لا Meta)، والأخيرة من `orders` نفسها.
+ *
+ * ## حدّان مُعلَنان
+ *
+ * - المراحل حتى `order_submitted` تُعدّ **جلسات مميّزة** لا أحداثاً:
+ *   الزبون يضيف خمس قطع فتُسجَّل خمسة `add_to_cart`، وعدّها كخمسة يجعل
+ *   "نسبة التحويل" بلا معنى. (118 حدثاً من 46 جلسة في حملة واحدة.)
+ * - `adOnly` يقصر القياس على الجلسات التي تحمل مُعرّف نقرة إعلانية
+ *   (`has_click_id`). بدونها يختلط ترافيك الإعلان بالمباشر والعضوي،
+ *   فيبدو القُمع أفضل أو أسوأ مما هو لأسباب لا علاقة لها بالإعلان.
+ */
+export type FunnelStage = {
+  key: string;
+  label: string;
+  /** جلسات مميّزة (المراحل السلوكية) أو عدد طلبات (المراحل التجارية). */
+  count: number;
+  /** نسبة التحويل من المرحلة السابقة، أو null للمرحلة الأولى. */
+  fromPreviousPct: number | null;
+  /** نسبة البقاء من أول مرحلة. */
+  fromTopPct: number | null;
+};
+
+export type FunnelReport = {
+  stages: FunnelStage[];
+  cancellations: { reason: string; orders: number; valueMad: string }[];
+  cancelledTotal: number;
+};
+
+export async function getFunnelReport(
+  range: { from: Date; to: Date },
+  adOnly: boolean
+): Promise<FunnelReport> {
+  // جلسات مميّزة لكل حدث سلوكي. `filter` بدل استعلام لكل مرحلة: مسحٌ واحد
+  // على نافذة واحدة بدل تسعة.
+  const [behaviour] = await sql<
+    {
+      lpv: number;
+      atc: number;
+      checkout: number;
+      submitted: number;
+      confirm_wa: number;
+    }[]
+  >`
+    select
+      count(distinct session_id) filter (where event_name = 'landing_page_view')::int as lpv,
+      count(distinct session_id) filter (where event_name = 'add_to_cart')::int as atc,
+      count(distinct session_id) filter (where event_name = 'begin_checkout')::int as checkout,
+      count(distinct session_id) filter (where event_name = 'order_submitted')::int as submitted,
+      count(distinct session_id) filter (where event_name = 'confirm_on_whatsapp')::int as confirm_wa
+    from public.analytics_events
+    where occurred_at >= ${range.from} and occurred_at < ${range.to}
+      and (${adOnly} = false or has_click_id)
+  `;
+
+  // المراحل التجارية من الطلبات: الحالة الحاضرة لا تكفي (طلب مُسلَّم مرّ
+  // بـconfirmed قطعاً)، فنقرأ "وصل إلى" من سجل الحالات مع الحالة الحالية.
+  const [commercial] = await sql<
+    { contacted: number; confirmed: number; shipped: number; delivered: number; cancelled: number }[]
+  >`
+    with o as (
+      select id, status from public.orders
+      where created_at >= ${range.from} and created_at < ${range.to}
+        and source = 'website'
+    ),
+    reached as (
+      select o.id,
+        bool_or(h.status = 'contacted') as ever_contacted,
+        bool_or(h.status in ('confirmed','preparing','shipped','delivered')) as ever_confirmed,
+        bool_or(h.status in ('shipped','delivered')) as ever_shipped,
+        bool_or(h.status = 'delivered') as ever_delivered,
+        bool_or(h.status = 'cancelled') as ever_cancelled
+      from o left join public.order_status_history h on h.order_id = o.id
+      group by o.id
+    )
+    select
+      count(*) filter (where ever_contacted)::int as contacted,
+      count(*) filter (where ever_confirmed)::int  as confirmed,
+      count(*) filter (where ever_shipped)::int    as shipped,
+      count(*) filter (where ever_delivered)::int  as delivered,
+      count(*) filter (where ever_cancelled)::int  as cancelled
+    from reached
+  `;
+
+  const cancellations = await sql<{ reason: string; orders: number; value_mad: string }[]>`
+    select
+      coalesce(cancellation_reason, 'غير محدَّد') as reason,
+      count(*)::int as orders,
+      coalesce(sum(items_subtotal), 0)::text as value_mad
+    from public.orders
+    where created_at >= ${range.from} and created_at < ${range.to}
+      and status = 'cancelled'
+    group by 1
+    order by orders desc
+  `;
+
+  const raw: { key: string; label: string; count: number }[] = [
+    { key: "lpv", label: "وصلوا الموقع", count: behaviour?.lpv ?? 0 },
+    { key: "atc", label: "زادوا في السلة", count: behaviour?.atc ?? 0 },
+    { key: "checkout", label: "بدأوا إتمام الطلب", count: behaviour?.checkout ?? 0 },
+    { key: "submitted", label: "أرسلوا الطلب", count: behaviour?.submitted ?? 0 },
+    { key: "confirm_wa", label: "ضغطوا تأكيد واتساب", count: behaviour?.confirm_wa ?? 0 },
+    { key: "contacted", label: "تواصلنا معهم", count: commercial?.contacted ?? 0 },
+    { key: "confirmed", label: "أكّدوا الطلب", count: commercial?.confirmed ?? 0 },
+    { key: "shipped", label: "أُرسلت", count: commercial?.shipped ?? 0 },
+    { key: "delivered", label: "سُلّمت", count: commercial?.delivered ?? 0 },
+  ];
+
+  const top = raw[0]?.count ?? 0;
+  const stages: FunnelStage[] = raw.map((stage, index) => {
+    const previous = index === 0 ? null : raw[index - 1].count;
+    return {
+      ...stage,
+      // صفر في المرحلة السابقة لا يعني 0% ولا 100% — لا نسبة له أصلاً.
+      fromPreviousPct:
+        previous === null || previous === 0 ? null : (stage.count / previous) * 100,
+      fromTopPct: top === 0 ? null : (stage.count / top) * 100,
+    };
+  });
+
+  return {
+    stages,
+    cancellations: cancellations.map((row) => ({
+      reason: row.reason,
+      orders: row.orders,
+      valueMad: row.value_mad,
+    })),
+    cancelledTotal: commercial?.cancelled ?? 0,
+  };
+}

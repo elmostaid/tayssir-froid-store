@@ -19,7 +19,7 @@ import {
   orderReferenceFromKey,
 } from "@/lib/orders/orderMessage";
 import type { CheckoutState } from "@/app/(storefront)/checkout/actions";
-import { trackInitiateCheckout, trackPurchase } from "@/lib/pixel/fbq";
+import { trackInitiateCheckout, trackConfirmOnWhatsApp } from "@/lib/pixel/fbq";
 import { trackAnalyticsEvent } from "@/lib/analytics/track";
 import { trackGaBeginCheckout, trackGaPurchase, type GaItem } from "@/lib/ga/ecommerce";
 import type { CartItem } from "@/lib/cart/types";
@@ -107,6 +107,17 @@ export function CheckoutClient({
   // الطلبات موقوفاً. كان يستعمل السرد الكامل، فيبلغ عشرات الكيلوبايتات في
   // السلات الكبيرة — وهو نفس الرابط الذي كان يفشل فتحه.
   const [sentHref, setSentHref] = useState<string | null>(null);
+  const [confirmedOrder, setConfirmedOrder] = useState<{
+    orderNumber: string;
+    publicReference: string;
+    needsReview: boolean;
+  } | null>(null);
+  // السلة تُفرَّغ بعد الإرسال، فلقطة منها تُحفظ لتُعرَض في صفحة النجاح.
+  const [sentSnapshot, setSentSnapshot] = useState<{
+    items: typeof items;
+    subtotal: number;
+    city: string;
+  } | null>(null);
   const whatsappHref = useMemo(() => {
     if (items.length === 0) return null;
     return buildWhatsAppLink(
@@ -145,27 +156,93 @@ export function CheckoutClient({
   }
 
   if (sent) {
+    const reference = confirmedOrder?.orderNumber ?? orderReferenceFromKey(idempotencyKey);
+    const snapshotItems = sentSnapshot?.items ?? [];
+    const snapshotSubtotal = sentSnapshot?.subtotal ?? 0;
+    const waHref = sentHref ?? whatsappHref ?? null;
+
     return (
-      <div className="mx-auto max-w-xl px-4 py-16 text-center">
-        <h1 className="text-lg font-bold text-neutral-800">
-          تم فتح واتساب لإرسال طلبك
-        </h1>
-        <p className="mt-2 text-sm text-neutral-600">
-          إذا لم يفتح واتساب تلقائياً، اضغط على الزر أدناه لإرسال الطلب. سنتواصل
-          معكم لتأكيد الطلب.
-          {` ${DELIVERY_AVAILABILITY}، و${DELIVERY_COST_TIMING}.`}
-        </p>
-        {(sentHref ?? whatsappHref) && (
+      <div className="mx-auto max-w-xl px-4 py-10">
+        <div className="rounded-xl border border-brand-turquoise/40 bg-brand-turquoise-tint/40 p-4 text-center">
+          <h1 className="text-lg font-bold text-neutral-800">تم تسجيل طلبك ✅</h1>
+          <p className="mt-1 text-sm text-neutral-700">
+            رقم طلبك: <strong className="font-mono">{reference}</strong>
+          </p>
+          <p className="mt-2 text-sm leading-relaxed text-neutral-600">
+            بقيت خطوة واحدة: أكّد طلبك على واتساب لنبدأ التجهيز.
+          </p>
+        </div>
+
+        {/* الطلب كاملاً أمام الزبون قبل أن يغادر — وهو ما يجعل محادثة واتساب
+            تأكيداً لا استفساراً عن الأثمنة. */}
+        {snapshotItems.length > 0 && (
+          <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-4">
+            <h2 className="text-sm font-semibold text-neutral-800">تفاصيل طلبك</h2>
+            <ul className="mt-2 divide-y divide-neutral-100">
+              {snapshotItems.map((item) => (
+                <li key={item.sku} className="flex items-start justify-between gap-3 py-2 text-sm">
+                  <span className="flex-1 text-neutral-700">{item.name}</span>
+                  <span className="shrink-0 text-neutral-500">×{item.quantity}</span>
+                  <span className="shrink-0 font-semibold text-neutral-800">
+                    {(item.unitPrice * item.quantity).toFixed(2)} د.م.
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-2 flex items-center justify-between border-t border-neutral-200 pt-2 text-sm">
+              <span className="font-semibold text-neutral-700">مجموع المنتجات</span>
+              <span className="font-bold text-neutral-900">
+                {snapshotSubtotal.toFixed(2)} د.م.
+              </span>
+            </div>
+            {sentSnapshot?.city && (
+              <p className="mt-2 text-xs text-neutral-500">
+                التوصيل إلى: {sentSnapshot.city}
+              </p>
+            )}
+            <p className="mt-1 text-xs leading-relaxed text-neutral-500">
+              {`${DELIVERY_AVAILABILITY}، و${DELIVERY_COST_TIMING}.`}
+            </p>
+          </div>
+        )}
+
+        {waHref && (
           <a
-            href={sentHref ?? whatsappHref ?? undefined}
+            href={waHref}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-4 inline-block rounded-full bg-brand-orange px-5 py-2.5 text-sm font-semibold text-white"
+            onClick={() => {
+              // القياس يُطلَق هنا لا عند الحفظ: الطلب موجود أصلاً في
+              // القاعدة، وهذه الضغطة هي نية الإغلاق. ومعرّف الحدث مشتقّ من
+              // المرجع، فضغطتان (الزبون يعود من واتساب) حدثٌ واحد عند Meta.
+              try {
+                trackConfirmOnWhatsApp({
+                  items: snapshotItems.map((item) => ({
+                    sku: item.sku,
+                    quantity: item.quantity,
+                    price: item.unitPrice,
+                  })),
+                  value: snapshotSubtotal,
+                  orderReference: reference,
+                });
+              } catch (err) {
+                console.error("trackConfirmOnWhatsApp فشل — لا يؤثّر على الطلب", err);
+              }
+              void trackAnalyticsEvent("confirm_on_whatsapp", {
+                orderValue: snapshotSubtotal,
+              });
+            }}
+            className="mt-4 flex min-h-12 w-full items-center justify-center rounded-full bg-brand-orange px-5 text-base font-bold text-white"
           >
-            فتح واتساب الآن
+            أكّد طلبي على واتساب
           </a>
         )}
-        <div className="mt-4">
+
+        <p className="mt-3 text-center text-xs leading-relaxed text-neutral-500">
+          طلبك محفوظ عندنا برقمه، وسنتواصل معكم حتى لو لم يفتح واتساب.
+        </p>
+
+        <div className="mt-4 text-center">
           <Link href="/" className="text-sm font-semibold text-brand-turquoise-dark underline">
             العودة إلى الرئيسية
           </Link>
@@ -266,35 +343,27 @@ export function CheckoutClient({
           })
         );
 
-        // Purchase: على طلب محفوظ فعلاً فقط، لا على مجرد ضغطة زر — نفس
-        // القاعدة السابقة بلا تغيير. event_id يبقى idempotencyKey لأجل
-        // deduplication مع Conversions API.
-        // طلب فيه سطر ينتظر مراجعة مخزون ليس بيعاً مكتملاً.
+        // الطلب محفوظ، ومرجعه ورقمه معروفان — تُعرَض كلها في صفحة النجاح.
+        setConfirmedOrder({
+          orderNumber: confirmed.orderNumber,
+          publicReference: confirmed.publicReference,
+          needsReview: confirmed.needsReview === true,
+        });
+
+        // `Purchase` لم يبقَ يُطلَق من المتصفح إطلاقاً.
+        //
+        // طلب الموقع ليس بيعة: الزبون يؤكّد في واتساب بعد هذا، وما لا
+        // يُؤكَّد يُلغى. فصار الشراء يُرسَل من الخادم عند التأكيد التجاري
+        // وحده (lib/pixel/sendDeferredPurchase.ts)، و`OrderSubmitted` هو ما
+        // يُرسَل هنا — من الخادم كذلك، فور حفظ الطلب (createOrder.ts).
+        //
+        // وما يبقى للمتصفح هو GA4 وحدها، كما كانت.
         if (!hasTrackedPurchase.current && confirmed.needsReview !== true) {
           hasTrackedPurchase.current = true;
-          try {
-            trackPurchase({
-              items: items.map((item) => ({
-                sku: item.sku,
-                quantity: item.quantity,
-                price: item.unitPrice,
-              })),
-              value: subtotal,
-              eventId: idempotencyKey,
-            });
-          } catch (err) {
-            console.error("trackPurchase فشل — لا يؤثّر على الطلب", err);
-          }
-          // القياس الداخلي لم يعد يُرسَل من هنا: الخادم يكتبه بنفسه فور
-          // حفظ الطلب. الطلب الذي يُحفظ أبطأ من مهلة التأكيد لا يصل إلى
-          // هذه الكتلة أصلاً، فكان يضيع حدثه — وهو ما وقع لطلب
-          // TF-2026-0081. إبقاء الإرسال هنا كذلك كان سيعني حدثين لطلب واحد.
-
           // GA4: يُرسَل من المتصفح فقط إن لم يُرسله الخادم. GA4 لا تُلغي
           // التكرار حسب transaction_id، فإرسال الطرفين يُضاعف كل طلب وكل
-          // درهم في التقارير. حين يكون Measurement Protocol مضبوطاً يتولّاه
-          // الخادم وحده (فلا يعود مرتبطاً ببقاء هذه الصفحة)، وحين لا يكون
-          // يبقى هذا المسار كما كان قبل التغيير تماماً.
+          // درهم في التقارير. (ما زالت GA4 تُسجّل "purchase" عند الإرسال لا
+          // عند التأكيد — خارج نطاق هذا التغيير، فلا تُقارَن بأرقام Meta.)
           if (!confirmed.gaPurchaseHandledServerSide) {
             try {
               trackGaPurchase({
@@ -318,10 +387,18 @@ export function CheckoutClient({
       console.error("خطأ غير متوقّع أثناء إرسال الطلب — نخرج بنسخة الإنقاذ", err);
     }
 
+    // لا انتقال تلقائي إلى واتساب.
+    //
+    // كان `window.location.href = link` يُخرج الزبون فوراً، فلا يرى ما
+    // أرسله ولا مرجعه، ولا يملك دليلاً أن شيئاً حُفظ إن فشل فتح واتساب.
+    // وأي حدث قياس يُطلَق في تلك اللحظة يتسابق مع مغادرة الصفحة.
+    //
+    // الآن: صفحة نجاح تعرض الطلب كاملاً، وزرٌّ صريح يفتح واتساب — فالحدث
+    // يُطلَق من صفحة مستقرة، والطلب محفوظ في القاعدة بأي حال.
     setSentHref(link);
+    setSentSnapshot({ items, subtotal, city: customer.city });
     clearCart();
     setSent(true);
-    window.location.href = link;
   }
 
   return (

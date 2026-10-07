@@ -12,8 +12,13 @@ import type { AnalyticsSessionContext } from "@/lib/analytics/events";
  * يصير طلباً حقيقياً بلا أي حدث شراء. وقع فعلاً لطلب TF-2026-0081.
  *
  * ما تختبره هذه الحالات هو الضمانة الجديدة: الطلب المحفوظ في القاعدة هو
- * مصدر الحقيقة، والخادم هو من يُسجّل الشراء — فلا فرق بين متصفح بقي مفتوحاً
+ * مصدر الحقيقة، والخادم هو من يُسجّل الحدث — فلا فرق بين متصفح بقي مفتوحاً
  * وآخر أُغلق فوراً، لأن المتصفح لم يعد طرفاً في المعادلة أصلاً.
+ *
+ * واسم الحدث صار `order_submitted` لا `purchase`: طلب الموقع ليس بيعة بعد
+ * (الزبون يؤكّد في واتساب، وما لا يُؤكَّد يُلغى)، والبيعة تُسجَّل عند
+ * التأكيد التجاري. الضمانة المختبَرة هنا لم تتغيّر — صفٌّ واحد لكل طلب،
+ * بمعزل عن بقاء الصفحة.
  */
 
 const sendCapiEventMock = vi.hoisted(() => vi.fn());
@@ -76,7 +81,7 @@ function baseInput(overrides: Partial<Parameters<typeof createOrder>[0]> = {}) {
 let inStockProductId = 0;
 let outOfStockProductId = 0;
 
-async function purchaseRowsFor(orderRef: string) {
+async function submittedRowsFor(orderRef: string) {
   return sql<
     {
       order_id: number;
@@ -89,7 +94,7 @@ async function purchaseRowsFor(orderRef: string) {
     select e.order_id, e.order_value, e.quantity, e.utm_source, e.session_id
     from public.analytics_events e
     join public.orders o on o.id = e.order_id
-    where o.public_reference = ${orderRef} and e.event_name = 'purchase'
+    where o.public_reference = ${orderRef} and e.event_name = 'order_submitted'
   `;
 }
 
@@ -142,9 +147,14 @@ describe("الشراء يُسجَّل من الخادم، لا من المتصف
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
+    // Meta تسمع "أُرسل طلب" لا "وقعت بيعة": الشراء انتقل إلى لحظة التأكيد
+    // التجاري، فلا يُرسَل من هذا المسار لأي طلب أصلاً.
+    expect(sendCapiEventMock).toHaveBeenCalledTimes(1);
+    expect(sendCapiEventMock.mock.calls[0][0].eventName).toBe("OrderSubmitted");
+
     // الحدث موجود بمجرد عودة createOrder — أي أن إغلاق الصفحة أو التحويل
     // إلى واتساب بعد هذه اللحظة لا يمكن أن يمنعه، لأنه كُتب أصلاً.
-    const rows = await purchaseRowsFor(result.publicReference);
+    const rows = await submittedRowsFor(result.publicReference);
     expect(rows).toHaveLength(1);
     expect(Number(rows[0].order_value)).toBe(120);
     expect(rows[0].quantity).toBe(3);
@@ -163,7 +173,7 @@ describe("الشراء يُسجَّل من الخادم، لا من المتصف
 
     // لا نستدعي أي كود متصفح إطلاقاً بعد هذه النقطة — وهي محاكاة أمينة
     // لصفحة اختفت. الحدث يجب أن يكون موجوداً رغم ذلك.
-    const rows = await purchaseRowsFor(result.publicReference);
+    const rows = await submittedRowsFor(result.publicReference);
     expect(rows).toHaveLength(1);
     expect(sendGaPurchaseEventMock).toHaveBeenCalledTimes(1);
     expect(sendCapiEventMock).toHaveBeenCalledTimes(1);
@@ -182,7 +192,7 @@ describe("الشراء يُسجَّل من الخادم، لا من المتصف
     if (!first.ok || !second.ok) return;
     expect(second.publicReference).toBe(first.publicReference);
 
-    const rows = await purchaseRowsFor(first.publicReference);
+    const rows = await submittedRowsFor(first.publicReference);
     expect(rows).toHaveLength(1);
     // ولا إرسال ثانٍ إلى GA4 ولا إلى Meta.
     expect(sendGaPurchaseEventMock).toHaveBeenCalledTimes(1);
@@ -192,7 +202,14 @@ describe("الشراء يُسجَّل من الخادم، لا من المتصف
     expect(second.gaPurchaseHandledServerSide).toBe(true);
   });
 
-  test("طلب ينتظر مراجعة مخزون: لا شراء إطلاقاً", async () => {
+  test("طلب ينتظر مراجعة مخزون: يُسجَّل ويُبلَّغ عنه — ولا شراء له", async () => {
+    // العقد تغيّر هنا عن قصد. كان الشرط `!needsReview` يُسقِط القياس
+    // والإشعار معاً، فطلبٌ فيه سطر ينتظر مراجعة يصير طلباً حقيقياً لا يعرف
+    // به أحد ولا يظهر في أي تقرير. وهو طلب **وصل**: يُسجَّل ويُبلَّغ عنه،
+    // وحالته تُقرأ من `orders.status` لمن يحتاجها.
+    //
+    // وما يبقى ممنوعاً هو البيعة: `Purchase` لم يعد يُرسَل من هنا لأي طلب
+    // أصلاً — ينتظر التأكيد التجاري (sendDeferredPurchase).
     const input = baseInput();
     input.items = [
       { productId: inStockProductId, variantId: null, quantity: 1 },
@@ -204,13 +221,19 @@ describe("الشراء يُسجَّل من الخادم، لا من المتصف
     if (!result.ok) return;
     expect(result.needsReview).toBe(true);
 
-    const rows = await purchaseRowsFor(result.publicReference);
-    expect(rows).toHaveLength(0);
+    // القياس الداخلي يُسجّل الطلب.
+    const rows = await submittedRowsFor(result.publicReference);
+    expect(rows).toHaveLength(1);
+
+    // Meta تسمع "أُرسل طلب" لا "وقعت بيعة".
+    expect(sendCapiEventMock).toHaveBeenCalledTimes(1);
+    expect(sendCapiEventMock.mock.calls[0][0].eventName).toBe("OrderSubmitted");
+
+    // GA4 تبقى كما كانت: محجوبة على الطلب الذي ينتظر مراجعة.
     expect(sendGaPurchaseEventMock).not.toHaveBeenCalled();
-    expect(sendCapiEventMock).not.toHaveBeenCalled();
-    // والمتصفح كذلك يُمنَع: الحارس عنده هو needsReview نفسه.
     expect(result.gaPurchaseHandledServerSide).toBe(false);
   });
+
 
   test("فشل شبكة نحو GA4: الطلب والحدث الداخلي سليمان — لا شيء يُسقطهما", async () => {
     sendGaPurchaseEventMock.mockImplementation(async () => {
@@ -226,7 +249,7 @@ describe("الشراء يُسجَّل من الخادم، لا من المتصف
 
     // انهيار GA4 لا يُسقط الطلب ولا الحدث الداخلي — وهو المرجع الذي تُكشف
     // به أي فجوة في GA4 لاحقاً بالمقارنة.
-    const rows = await purchaseRowsFor(result.publicReference);
+    const rows = await submittedRowsFor(result.publicReference);
     expect(rows).toHaveLength(1);
     expect(Number(rows[0].order_value)).toBe(40);
   });
@@ -258,7 +281,7 @@ describe("الشراء يُسجَّل من الخادم، لا من المتصف
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    const rows = await purchaseRowsFor(result.publicReference);
+    const rows = await submittedRowsFor(result.publicReference);
     expect(rows).toHaveLength(0);
     // ومع ذلك يصل GA4 وMeta — لا يعتمدان على كوكي القياس الداخلي.
     expect(sendGaPurchaseEventMock).toHaveBeenCalledTimes(1);
@@ -275,18 +298,18 @@ describe("القاعدة نفسها ترفض الشراء المكرّر", () =>
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    const [row] = await purchaseRowsFor(result.publicReference);
+    const [row] = await submittedRowsFor(result.publicReference);
     expect(row).toBeDefined();
 
     // نُحاكي عودة المسار القديم من المتصفح: نفس الطلب، حدث شراء ثانٍ.
     await expect(
       sql`
         insert into public.analytics_events (session_id, event_name, order_id, order_value)
-        values (${randomUUID()}, 'purchase', ${row.order_id}, 100)
+        values (${randomUUID()}, 'order_submitted', ${row.order_id}, 100)
       `
-    ).rejects.toThrow(/analytics_events_one_purchase_per_order_idx|duplicate key/i);
+    ).rejects.toThrow(/analytics_events_one_submit_per_order_idx|duplicate key/i);
 
-    const after = await purchaseRowsFor(result.publicReference);
+    const after = await submittedRowsFor(result.publicReference);
     expect(after).toHaveLength(1);
   });
 });

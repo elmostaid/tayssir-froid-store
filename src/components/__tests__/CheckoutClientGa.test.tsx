@@ -7,7 +7,7 @@ import type { CartItem } from "@/lib/cart/types";
 // وتعطيلهما يُثبت أيضاً أن GA4 لا يعتمد على أيٍّ منهما.
 vi.mock("@/lib/pixel/fbq", () => ({
   trackInitiateCheckout: vi.fn(),
-  trackPurchase: vi.fn(),
+  trackConfirmOnWhatsApp: vi.fn(),
 }));
 vi.mock("@/lib/analytics/track", () => ({ trackAnalyticsEvent: vi.fn() }));
 
@@ -175,7 +175,7 @@ describe("GA4 purchase — على طلب محفوظ حقيقي فقط، مرة �
     await fillRequiredFields();
     fireEvent.submit(screen.getByRole("button", { name: /إرسال الطلب/ }).closest("form")!);
 
-    await screen.findByText("تم فتح واتساب لإرسال طلبك", undefined, { timeout: 10000 });
+    await screen.findByText("تم تسجيل طلبك ✅", undefined, { timeout: 10000 });
     // المتصفح صامت هنا لأنه لا يعرف مرجع الطلب أصلاً. هذا كان يعني ضياع
     // الشراء نهائياً؛ صار يعني فقط أن الخادم هو صاحب التسجيل — وهو ما
     // يختبره durablePurchase.test.ts على قاعدة حقيقية.

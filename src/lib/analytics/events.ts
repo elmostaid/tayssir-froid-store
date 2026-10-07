@@ -8,7 +8,7 @@
 export const ANALYTICS_ENDPOINT = "/api/analytics";
 
 /**
- * الأحداث الثمانية، بنفس ترتيب مسار الزائر. القائمة مغلقة في ثلاثة مواضع
+ * أحداث مسار الزائر، بنفس ترتيبه. القائمة مغلقة في ثلاثة مواضع
  * متطابقة عمداً: هنا، وفي التحقّق داخل /api/analytics، وفي قيد CHECK داخل
  * قاعدة البيانات — فحتى لو أُرسل اسم مخترع من متصفح معدَّل، لا يدخل الجدول.
  *
@@ -25,6 +25,8 @@ export const ANALYTICS_EVENT_NAMES = [
   "cart_view",
   "begin_checkout",
   "whatsapp_from_cart",
+  "order_submitted",
+  "confirm_on_whatsapp",
   "purchase",
 ] as const;
 

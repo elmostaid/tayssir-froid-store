@@ -4,10 +4,12 @@ import { CartProvider } from "@/components/CartProvider";
 import type { CartItem } from "@/lib/cart/types";
 
 const trackInitiateCheckoutMock = vi.fn();
-const trackPurchaseMock = vi.fn();
+// `trackPurchase` لم يبقَ يُستورَد في هذا المكوّن إطلاقاً: الشراء يُرسَل من
+// الخادم عند التأكيد التجاري وحده. وما يبقى للمتصفح هو حدث ضغط زرّ التأكيد.
+const trackConfirmOnWhatsAppMock = vi.fn();
 vi.mock("@/lib/pixel/fbq", () => ({
   trackInitiateCheckout: (...args: unknown[]) => trackInitiateCheckoutMock(...args),
-  trackPurchase: (...args: unknown[]) => trackPurchaseMock(...args),
+  trackConfirmOnWhatsApp: (...args: unknown[]) => trackConfirmOnWhatsAppMock(...args),
 }));
 
 // الحفظ صار يمرّ عبر fetch("/api/orders") بـkeepalive بدل Server Action،
@@ -72,7 +74,7 @@ afterEach(() => {
   cleanup();
   window.localStorage.clear();
   trackInitiateCheckoutMock.mockReset();
-  trackPurchaseMock.mockReset();
+  trackConfirmOnWhatsAppMock.mockReset();
   submitOrderMock.mockReset();
 });
 
@@ -93,23 +95,46 @@ describe("CheckoutClient — Meta Pixel: InitiateCheckout مرة واحدة، Pu
     await waitFor(() => expect(trackInitiateCheckoutMock).toHaveBeenCalledTimes(1));
   });
 
-  test("Purchase لا يُطلَق بمجرد الضغط على 'إرسال الطلب' — فقط بعد نجاح createOrder فعلياً (ok:true)", async () => {
-    submitOrderMock.mockResolvedValue({ ok: true, publicReference: "TF-2026-0001" });
+  test("الإرسال لا يُطلق أي شراء — ويُظهر صفحة نجاح فيها زرّ التأكيد", async () => {
+    // العقد الجديد: المتصفح لا يُطلق `Purchase` أبداً. الطلب المُرسَل ليس
+    // بيعة — الزبون يؤكّد في واتساب، والبيعة تُرسَل من الخادم عند التأكيد
+    // التجاري وحده. وما يظهر هنا هو خطوة الإغلاق لا حدثها.
+    submitOrderMock.mockResolvedValue({
+      ok: true, publicReference: "TF-REF-A", orderNumber: "TF-2026-0001",
+    });
     renderCheckout();
     await waitFor(() => expect(trackInitiateCheckoutMock).toHaveBeenCalledTimes(1));
 
     await fillRequiredFields();
     fireEvent.click(screen.getByRole("button", { name: /إرسال الطلب/ }));
 
-    await waitFor(() => expect(trackPurchaseMock).toHaveBeenCalledTimes(1));
-    expect(trackPurchaseMock).toHaveBeenCalledWith({
+    await screen.findByText("تم تسجيل طلبك ✅", undefined, { timeout: 10000 });
+    // الحدث لا يُطلَق بمجرد وصول الصفحة: هو على الضغطة.
+    expect(trackConfirmOnWhatsAppMock).not.toHaveBeenCalled();
+  });
+
+  test("ضغط «أكّد طلبي على واتساب»: ConfirmOnWhatsApp مرة واحدة بمرجع الطلب", async () => {
+    submitOrderMock.mockResolvedValue({
+      ok: true, publicReference: "TF-REF-B", orderNumber: "TF-2026-0002",
+    });
+    renderCheckout();
+    await waitFor(() => expect(trackInitiateCheckoutMock).toHaveBeenCalledTimes(1));
+    await fillRequiredFields();
+    fireEvent.click(screen.getByRole("button", { name: /إرسال الطلب/ }));
+    await screen.findByText("تم تسجيل طلبك ✅", undefined, { timeout: 10000 });
+
+    fireEvent.click(screen.getByRole("link", { name: "أكّد طلبي على واتساب" }));
+
+    expect(trackConfirmOnWhatsAppMock).toHaveBeenCalledTimes(1);
+    expect(trackConfirmOnWhatsAppMock).toHaveBeenCalledWith({
       items: [{ sku: "TF-TEST-001", quantity: 2, price: 100 }],
       value: 200,
-      eventId: expect.any(String),
+      // المعرّف يُشتقّ من هذا المرجع، فضغطتان حدثٌ واحد عند Meta.
+      orderReference: "TF-2026-0002",
     });
   });
 
-  test("فشل createOrder (ok:false): Purchase لا يُطلَق إطلاقاً، رغم إتمام مسار واتساب كالمعتاد", async () => {
+  test("فشل createOrder (ok:false): لا حدث تأكيد، رغم إتمام مسار واتساب كالمعتاد", async () => {
     submitOrderMock.mockResolvedValue({
       ok: false,
       errors: [{ field: "phone", message: "خطأ تجريبي غير عام" }],
@@ -121,28 +146,31 @@ describe("CheckoutClient — Meta Pixel: InitiateCheckout مرة واحدة، Pu
     fireEvent.click(screen.getByRole("button", { name: /إرسال الطلب/ }));
 
     await waitFor(() => expect(submitOrderMock).toHaveBeenCalledTimes(1));
-    // ننتظر قليلاً للتأكد أن Purchase لن يُطلَق لاحقاً أيضاً (وليس فقط أنه
-    // لم يُطلَق بعد فهذه اللحظة بالذات).
+    // ننتظر قليلاً للتأكد أنه لن يُطلَق لاحقاً أيضاً (وليس فقط أنه لم
+    // يُطلَق بعد فهذه اللحظة بالذات).
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(trackPurchaseMock).not.toHaveBeenCalled();
+    expect(trackConfirmOnWhatsAppMock).not.toHaveBeenCalled();
   });
 
-  test("event_id ديال Purchase يبقى نفس idempotencyKey حتى لو استُدعي submitOrder أكثر من مرة (لا يتكرر Purchase أبداً)", async () => {
-    submitOrderMock.mockResolvedValue({ ok: true, publicReference: "TF-2026-0002" });
+  test("ضغطتان على زرّ التأكيد: حدثان بنفس المعرّف — لا شراء مضاعف عند Meta", async () => {
+    submitOrderMock.mockResolvedValue({
+      ok: true, publicReference: "TF-REF-C", orderNumber: "TF-2026-0003",
+    });
     renderCheckout();
     await waitFor(() => expect(trackInitiateCheckoutMock).toHaveBeenCalledTimes(1));
-
     await fillRequiredFields();
-    const submitBtn = screen.getByRole("button", { name: /إرسال الطلب/ });
-    fireEvent.click(submitBtn);
+    fireEvent.click(screen.getByRole("button", { name: /إرسال الطلب/ }));
+    await screen.findByText("تم تسجيل طلبك ✅", undefined, { timeout: 10000 });
 
-    await waitFor(() => expect(trackPurchaseMock).toHaveBeenCalledTimes(1));
+    const cta = screen.getByRole("link", { name: "أكّد طلبي على واتساب" });
+    fireEvent.click(cta);
+    fireEvent.click(cta);
 
-    // زر الإرسال يختفي بعد "sent"، فلا مجال لنقرة ثانية حقيقية من الواجهة —
-    // نتحقق فقط أن الاستدعاء الوحيد سليم القيمة (خط الدفاع الحقيقي ضد
-    // التكرار هو hasTrackedPurchase.current، مُختبَر بشكل غير مباشر هنا عبر
-    // استقرار العدد عند 1 رغم عدة إعادات رندر لاحقة).
-    expect(trackPurchaseMock).toHaveBeenCalledTimes(1);
+    // الزبون قد يعود من واتساب ويضغط ثانيةً — والمرجع نفسه في المرّتين،
+    // فـMeta تعتبرهما حدثاً واحداً بحكم event_id المشتقّ منه.
+    expect(trackConfirmOnWhatsAppMock).toHaveBeenCalledTimes(2);
+    const refs = trackConfirmOnWhatsAppMock.mock.calls.map((call) => call[0].orderReference);
+    expect(refs).toEqual(["TF-2026-0003", "TF-2026-0003"]);
   });
 });
 
@@ -156,7 +184,7 @@ describe("CheckoutClient — الخروج إلى واتساب لا يرتهن ب
   // URLSearchParams يرمّز الفراغ "+" لا "%20"، فنُرجعه قبل أي مقارنة نصّية.
   const hrefOf = () =>
     decodeURIComponent(
-      (screen.getByRole("link", { name: "فتح واتساب الآن" }) as HTMLAnchorElement).href
+      (screen.getByRole("link", { name: "أكّد طلبي على واتساب" }) as HTMLAnchorElement).href
     ).replace(/\+/g, " ");
 
   async function submitAndWait() {
@@ -164,7 +192,7 @@ describe("CheckoutClient — الخروج إلى واتساب لا يرتهن ب
     await screen.findByLabelText(/الاسم الكامل/);
     await fillRequiredFields();
     fireEvent.submit(screen.getByRole("button", { name: /إرسال الطلب/ }).closest("form")!);
-    await screen.findByText("تم فتح واتساب لإرسال طلبك", undefined, { timeout: 10000 });
+    await screen.findByText("تم تسجيل طلبك ✅", undefined, { timeout: 10000 });
   }
 
   test("حفظ سريع مؤكَّد: رسالة مختصرة برقم الطلب، وPurchase مرة واحدة", async () => {
@@ -177,7 +205,8 @@ describe("CheckoutClient — الخروج إلى واتساب لا يرتهن ب
     expect(href).toContain("TF-2026-0044");
     // البون مقروء بالاسم في الحالتين، لا أكواد وحدها.
     expect(href).toContain("منتج اختبار");
-    expect(trackPurchaseMock).toHaveBeenCalledTimes(1);
+    // ولا حدث تأكيد قبل الضغط.
+    expect(trackConfirmOnWhatsAppMock).not.toHaveBeenCalled();
   });
 
   test("قاعدة بطيئة جداً: الزبون يخرج بنسخة إنقاذ فيها الطلبية، ولا Purchase", async () => {
@@ -191,8 +220,8 @@ describe("CheckoutClient — الخروج إلى واتساب لا يرتهن ب
     expect(href).toContain("منتج اختبار");
     expect(href).toMatch(/منتج اختبار.*× 2/);
     expect(href).toContain("لم يُؤكَّد الحفظ");
-    // لا Purchase على طلب لم يُؤكَّد حفظه — لا شراء وهمي بمجرد ضغطة زر.
-    expect(trackPurchaseMock).not.toHaveBeenCalled();
+    // ولا حدث تأكيد: الزبون لم يضغط بعد.
+    expect(trackConfirmOnWhatsAppMock).not.toHaveBeenCalled();
   }, 20000);
 
   test("فشل الحفظ نهائياً: لا صفحة خطأ، ولا تضيع الطلبية، ولا Purchase", async () => {
@@ -205,7 +234,7 @@ describe("CheckoutClient — الخروج إلى واتساب لا يرتهن ب
     expect(href).toContain("منتج اختبار");
     expect(href).toMatch(/منتج اختبار.*× 2/);
     expect(href).toContain("أحمد");
-    expect(trackPurchaseMock).not.toHaveBeenCalled();
+    expect(trackConfirmOnWhatsAppMock).not.toHaveBeenCalled();
     expect(screen.queryByText(/تعذّر|خطأ/)).toBeNull();
   });
 

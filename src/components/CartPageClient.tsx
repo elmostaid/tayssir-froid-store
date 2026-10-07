@@ -196,12 +196,14 @@ export function CartPageClient({
           ساليت الاختيار؟ كمّل معلوماتك ورسل الطلب لواتساب، وحنا نتكلفو بالباقي ✅
         </p>
 
-        {/* طريقان لا واحد، والأول يبقى الأول.
-            «إتمام الطلب» يحتفظ بلونه ووزنه لأنه وحده ما يُنشئ طلباً حقيقياً
-            برقم وحجز مخزون وبون تحضير. وتحته مخرجٌ لمن لن يملأ نموذجاً:
-            القياس على تسعة أيام يقول إن متصفّح فيسبوك الداخلي (أكبر مصدر
-            زبنائنا) يُنهي 20% مما يبدأه، مقابل 60% من متصفّح إنستغرام —
-            والفارق الوحيد بينهما هو من يُكمل ثلاثة حقول داخل تطبيق. */}
+        {/* مسارٌ واحد للشراء، ومخرجٌ صغير للسؤال.
+            كان الزرّان متساويين في الوزن تقريباً، فصار زرّ واتساب مسار
+            الطلب الفعلي: 17 سلّة ذهبت إليه، **واحدة** منها رُبطت بطلب
+            حقيقي، و14 بقيت "pending" بقيمة 17,427 درهماً. والرسالة تصل بلا
+            اسم ولا هاتف ولا مدينة، فتبدأ المحادثة من "بشحال؟" لا من تأكيد.
+            وهو كذلك ما يُغرق واتساب برسائل عامة لا تُغلَق.
+            «إتمام الطلب» وحده يُنشئ طلباً برقم وحجز مخزون وبون تحضير —
+            فيبقى هو CTA، ويُقاس عنده InitiateCheckout ثم OrderSubmitted. */}
         <div className="mt-3 flex flex-col gap-2">
           <Link
             href="/checkout"
@@ -210,14 +212,19 @@ export function CartPageClient({
             إتمام الطلب
           </Link>
 
-          <CartWhatsAppButton
-            whatsappNumber={whatsappNumber}
-            storeName={storeName}
-          />
-
           <p className="text-center text-xs text-neutral-500">
-            نبعثو ليك الطلبية جاهزة فواتساب، ونكملو معاك الاسم والمدينة تما.
+            تعمّر معلوماتك فخطوة واحدة، وتأكد الطلب على واتساب من بعد.
           </p>
+
+          {/* مفصول بخطّ عن مسار الطلب عمداً: هذا للسؤال، لا للشراء. */}
+          <div className="mt-2 border-t border-neutral-200 pt-3 text-center">
+            <CartWhatsAppButton
+              whatsappNumber={whatsappNumber}
+              storeName={storeName}
+              label="عندك سؤال على هاد المنتجات؟ راسلنا على واتساب"
+              className="inline-flex min-h-11 items-center justify-center gap-2 text-sm font-semibold text-whatsapp-dark underline decoration-whatsapp/40 underline-offset-4 transition-colors hover:text-whatsapp"
+            />
+          </div>
 
           <Link
             href="/"

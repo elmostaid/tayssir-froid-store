@@ -1,0 +1,145 @@
+import { describe, expect, test } from "vitest";
+import { buildFbc, resolveFbc, subdomainIndexFromHost } from "@/lib/pixel/fbc";
+
+/**
+ * `fbc` هو مفتاح الإسناد الوحيد الذي يربط حدثاً بنقرة إعلانية — وكان يُقرأ
+ * من كوكي `_fbc` فقط، وهي كوكي **تكتبها Meta Pixel نفسها** لا هذا المشروع.
+ * فإذا حُجبت الـPixel وصل الحدث إلى Meta بلا إسناد لأي إعلان ولم يظهر في
+ * تقارير الحملة أبداً. القياس في حملة واحدة: 20 سلّة عند Meta مقابل 46
+ * جلسة سلّة في قياسنا.
+ *
+ * وما يختبره هذا الملف هو البديل: بناء القيمة من `fbclid` المحفوظ عندنا
+ * أصلاً. والحرص كله على ألّا نُلفّق قيمة — `fbc` خاطئ يكسر الإسناد ولا
+ * يُعلن عن نفسه، فالرفض (null) أسلم من التقريب دائماً.
+ */
+
+const VALID_FBCLID = "IwZXh0bgNhZW0BMABwZG9mBWFkaWQBqzg8MyFoVnNydGMG";
+// 2026-09-29 18:52 بالمللي — من نطاق الطلبات الحقيقية.
+const AT = 1_790_700_720_000;
+
+describe("subdomainIndexFromHost", () => {
+  test("النطاق المُسجَّل: 1", () => {
+    expect(subdomainIndexFromHost("tayssirfroid.com")).toBe(1);
+  });
+
+  test("نطاق فرعي واحد: 2", () => {
+    expect(subdomainIndexFromHost("www.tayssirfroid.com")).toBe(2);
+  });
+
+  test("يتجاهل المنفذ والحالة والمسار", () => {
+    expect(subdomainIndexFromHost("WWW.TayssirFroid.com:3000")).toBe(2);
+    expect(subdomainIndexFromHost("tayssirfroid.com/checkout")).toBe(1);
+  });
+
+  test("يقبل رابطاً كاملاً لا مضيفاً فقط", () => {
+    // `capi_identity.eventSourceUrl` رابط كامل، و`request.headers.get("host")`
+    // مضيف مجرَّد — المُنادون يُمرّرون الاثنين، فكلاهما يجب أن يُفهَم.
+    expect(subdomainIndexFromHost("https://www.tayssirfroid.com/checkout")).toBe(2);
+    expect(subdomainIndexFromHost("https://tayssirfroid.com/")).toBe(1);
+    expect(subdomainIndexFromHost("http://tayssirfroid.com:3000/cart")).toBe(1);
+  });
+
+  test("localhost وعنوان IP ونطاق غائب: 1 — لا نخترع مقاطع", () => {
+    expect(subdomainIndexFromHost("localhost")).toBe(1);
+    expect(subdomainIndexFromHost("127.0.0.1")).toBe(1);
+    expect(subdomainIndexFromHost(null)).toBe(1);
+    expect(subdomainIndexFromHost(undefined)).toBe(1);
+    expect(subdomainIndexFromHost("")).toBe(1);
+  });
+});
+
+describe("buildFbc — يبني الصيغة الصحيحة", () => {
+  test("الصيغة fb.<subdomainIndex>.<ms>.<fbclid> بالضبط", () => {
+    expect(
+      buildFbc({ fbclid: VALID_FBCLID, fbclidAt: AT, host: "tayssirfroid.com" })
+    ).toBe(`fb.1.${AT}.${VALID_FBCLID}`);
+  });
+
+  test("النطاق الفرعي يرفع subdomainIndex", () => {
+    expect(
+      buildFbc({ fbclid: VALID_FBCLID, fbclidAt: AT, host: "www.tayssirfroid.com" })
+    ).toBe(`fb.2.${AT}.${VALID_FBCLID}`);
+  });
+
+  test("يستعمل لحظة أول ظهور الـfbclid، لا الآن", () => {
+    const built = buildFbc({ fbclid: VALID_FBCLID, fbclidAt: AT });
+    // لو استُعمل Date.now() لاختلف الرقم في كل تشغيل، ولانحرفت نافذة
+    // الإسناد عن اللحظة التي وقعت فيها النقرة فعلاً.
+    expect(built).toContain(`.${AT}.`);
+    expect(built).not.toContain(`.${Date.now()}.`);
+  });
+
+  test("المللي الكسرية تُقصّ إلى عدد صحيح", () => {
+    expect(buildFbc({ fbclid: VALID_FBCLID, fbclidAt: AT + 0.7 })).toBe(
+      `fb.1.${AT}.${VALID_FBCLID}`
+    );
+  });
+});
+
+describe("buildFbc — يرفض بدل أن يُلفّق", () => {
+  test("بلا fbclid: null", () => {
+    expect(buildFbc({ fbclid: null, fbclidAt: AT })).toBeNull();
+    expect(buildFbc({ fbclid: undefined, fbclidAt: AT })).toBeNull();
+    expect(buildFbc({ fbclid: "   ", fbclidAt: AT })).toBeNull();
+  });
+
+  test("fbclid فيه محارف غير مسموحة: null", () => {
+    // قيمة ملوَّثة (محاولة حقن، أو رابط مُشوَّه) لا تُمرَّر إلى Meta.
+    expect(buildFbc({ fbclid: "abc.def", fbclidAt: AT })).toBeNull();
+    expect(buildFbc({ fbclid: "abc def", fbclidAt: AT })).toBeNull();
+    expect(buildFbc({ fbclid: "abc&x=1", fbclidAt: AT })).toBeNull();
+  });
+
+  test("fbclid أطول من الحد: null", () => {
+    expect(buildFbc({ fbclid: "a".repeat(513), fbclidAt: AT })).toBeNull();
+  });
+
+  test("وقت غائب أو صفر أو بالثواني بدل المللي: null", () => {
+    expect(buildFbc({ fbclid: VALID_FBCLID, fbclidAt: null })).toBeNull();
+    expect(buildFbc({ fbclid: VALID_FBCLID, fbclidAt: 0 })).toBeNull();
+    // 1790700720 ثانية — خطأ شائع، ولو قُبل لصار الإسناد في 1970.
+    expect(buildFbc({ fbclid: VALID_FBCLID, fbclidAt: 1_790_700_720 })).toBeNull();
+  });
+
+  test("وقت من المستقبل: null", () => {
+    expect(
+      buildFbc({ fbclid: VALID_FBCLID, fbclidAt: Date.now() + 86_400_000 })
+    ).toBeNull();
+  });
+
+  test("وقت ليس رقماً: null", () => {
+    expect(buildFbc({ fbclid: VALID_FBCLID, fbclidAt: Number.NaN })).toBeNull();
+    expect(
+      buildFbc({ fbclid: VALID_FBCLID, fbclidAt: Number.POSITIVE_INFINITY })
+    ).toBeNull();
+  });
+});
+
+describe("resolveFbc — الكوكي أولاً دائماً", () => {
+  test("كوكي موجودة: تُعاد كما هي ولا يُبنى شيء", () => {
+    const cookie = "fb.1.1700000000000.FROM_COOKIE";
+    expect(
+      resolveFbc({ cookieFbc: cookie, fbclid: VALID_FBCLID, fbclidAt: AT })
+    ).toBe(cookie);
+  });
+
+  test("كوكي غائبة: يُبنى من fbclid", () => {
+    expect(
+      resolveFbc({ cookieFbc: undefined, fbclid: VALID_FBCLID, fbclidAt: AT })
+    ).toBe(`fb.1.${AT}.${VALID_FBCLID}`);
+  });
+
+  test("كوكي فارغة أو فراغات: تُعامَل كغائبة", () => {
+    expect(resolveFbc({ cookieFbc: "", fbclid: VALID_FBCLID, fbclidAt: AT })).toBe(
+      `fb.1.${AT}.${VALID_FBCLID}`
+    );
+    expect(resolveFbc({ cookieFbc: "  ", fbclid: VALID_FBCLID, fbclidAt: AT })).toBe(
+      `fb.1.${AT}.${VALID_FBCLID}`
+    );
+  });
+
+  test("لا كوكي ولا fbclid: null — وهذا صحيح لا ناقص", () => {
+    // زبون جاء مباشرةً أو من بحث عضوي: لا إسناد إعلاني لأن لا إعلان.
+    expect(resolveFbc({ cookieFbc: null, fbclid: null, fbclidAt: null })).toBeNull();
+  });
+});

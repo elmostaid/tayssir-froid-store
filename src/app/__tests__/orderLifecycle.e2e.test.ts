@@ -185,6 +185,8 @@ describe("دورة الطلب الكاملة — من submitOrder (الزبون)
       fd.set("orderId", String(orderId));
       fd.set("status", status);
       fd.set("note", "");
+      // الإلغاء/الإرجاع صارا يُلزمان بسبب مُصرَّح — كما تحمله الواجهة.
+      fd.set("cancellationReason", "not_confirmed");
       const result = await updateOrderStatus({ error: null }, fd);
       expect(result.error).toBeNull();
     }
@@ -267,6 +269,7 @@ describe("الإلغاء بعد طلب حقيقي كامل — استرجاع م
         const fd = new FormData();
         fd.set("orderId", String(order.id));
         fd.set("note", "");
+        fd.set("cancellationReason", "not_confirmed");
         return fd;
       })()
     );
@@ -289,6 +292,7 @@ describe("الإلغاء بعد طلب حقيقي كامل — استرجاع م
         const fd = new FormData();
         fd.set("orderId", String(order.id));
         fd.set("note", "");
+        fd.set("cancellationReason", "not_confirmed");
         return fd;
       })()
     );

@@ -6,6 +6,7 @@ import {
   getDeliveredOrdersProfitBreakdown,
   getBestSellingProducts,
   getEarliestOrderDay,
+  getFunnelReport,
 } from "@/lib/queries/adminReports";
 import { getDashboardOrderStats } from "@/lib/queries/adminOrders";
 import { getExpensesTotal } from "@/lib/queries/adminExpenses";
@@ -14,6 +15,10 @@ import { formatMad } from "@/lib/format";
 import { deliveryMargin } from "@/lib/orders/deliveryCost";
 import Link from "next/link";
 import { inBatches, loadSection } from "@/lib/admin/sectionData";
+import {
+  CANCELLATION_REASON_LABELS,
+  type CancellationReason,
+} from "@/lib/orders/orderStatus";
 import { SectionUnavailable } from "@/components/admin/SectionUnavailable";
 import {
   RANGE_LABELS,
@@ -80,6 +85,7 @@ export default async function AdminReportsPage({
     recentDeliveredResult,
     bestByQuantityResult,
     bestByValueResult,
+    funnelAdResult,
   ] = await inBatches([
     () => loadSection(() => getDashboardOrderStats(), "reports.salesStats"),
     () => loadSection(() => getSalesBySource(range, source), "reports.bySource"),
@@ -88,6 +94,7 @@ export default async function AdminReportsPage({
     () => loadSection(() => getDeliveredOrdersProfitBreakdown(10), "reports.recentDelivered"),
     () => loadSection(() => getBestSellingProducts("quantity", 5), "reports.bestByQuantity"),
     () => loadSection(() => getBestSellingProducts("value", 5), "reports.bestByValue"),
+    () => loadSection(() => getFunnelReport(range, true), "reports.funnelAd"),
   ] as const);
 
   const salesStats = salesStatsResult.ok ? salesStatsResult.value : null;
@@ -97,6 +104,7 @@ export default async function AdminReportsPage({
   const recentDelivered = recentDeliveredResult.ok ? recentDeliveredResult.value : null;
   const bestByQuantity = bestByQuantityResult.ok ? bestByQuantityResult.value : null;
   const bestByValue = bestByValueResult.ok ? bestByValueResult.value : null;
+  const funnelAd = funnelAdResult.ok ? funnelAdResult.value : null;
 
   // أول يوم فيه طلب — للعرض وحده، وفي «منذ البداية» وحدها فلا تحمل بقية
   // الاختيارات استعلاماً لا تستعمله. خارج الدفعات لأنه لا يُطلَق معها أصلاً
@@ -546,6 +554,87 @@ export default async function AdminReportsPage({
               </>
             )}
           </p>
+        </>
+      )}
+
+      <h2 className="mt-6 border-r-4 border-brand-turquoise pr-3 text-base font-bold text-neutral-800">
+        قُمع الزائر — ترافيك الإعلان وحده
+      </h2>
+      <p className="mt-1 text-xs leading-relaxed text-neutral-500">
+        الجلسات المميّزة لا الأحداث: من يضيف خمس قطع يُسجّل خمسة أحداث سلّة،
+        وعدّها خمسة يُفقد &quot;نسبة التحويل&quot; معناها. المراحل حتى
+        &quot;أرسلوا الطلب&quot; من قياسنا الداخلي، وما بعدها من جدول الطلبات
+        — ومقصورة على الجلسات التي تحمل مُعرّف نقرة إعلانية.
+      </p>
+      {funnelAd === null ? (
+        <SectionUnavailable label="قُمع الزائر من الإعلان إلى الطلب المُسلَّم" />
+      ) : (
+        <>
+          <div className="mt-3 overflow-x-auto rounded-xl border border-neutral-200 bg-white">
+            <table className="w-full min-w-[32rem] text-sm">
+              <thead className="bg-neutral-50 text-xs text-neutral-600">
+                <tr>
+                  <th className="px-3 py-2 text-right font-semibold">المرحلة</th>
+                  <th className="px-3 py-2 text-right font-semibold">العدد</th>
+                  <th className="px-3 py-2 text-right font-semibold">من السابقة</th>
+                  <th className="px-3 py-2 text-right font-semibold">من البداية</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100">
+                {funnelAd!.stages.map((stage) => (
+                  <tr key={stage.key}>
+                    <td className="px-3 py-2 text-neutral-700">{stage.label}</td>
+                    <td className="px-3 py-2 font-semibold text-neutral-900">{stage.count}</td>
+                    <td className="px-3 py-2 text-neutral-600">
+                      {stage.fromPreviousPct === null
+                        ? "—"
+                        : `${stage.fromPreviousPct.toFixed(1)}%`}
+                    </td>
+                    <td className="px-3 py-2 text-neutral-600">
+                      {stage.fromTopPct === null ? "—" : `${stage.fromTopPct.toFixed(1)}%`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <h2 className="mt-6 border-r-4 border-red-400 pr-3 text-base font-bold text-neutral-800">
+            لماذا نخسر الطلبات ({funnelAd!.cancelledTotal} ملغى)
+          </h2>
+          <p className="mt-1 text-xs leading-relaxed text-neutral-500">
+            كل الطلبات الملغاة في المدة، بسببها المُصرَّح. الطلب الملغى يبقى
+            كاملاً في القاعدة بسطوره وتاريخه وإسناده — ولا يُرسَل عنه شراء إلى
+            Meta أصلاً، فالشراء يُرسَل عند التأكيد وحده.
+          </p>
+          {funnelAd!.cancellations.length === 0 ? (
+            <p className="mt-3 rounded-xl border border-neutral-200 bg-white p-4 text-sm text-neutral-500">
+              لا طلبات ملغاة في هذه المدة.
+            </p>
+          ) : (
+            <div className="mt-3 overflow-x-auto rounded-xl border border-neutral-200 bg-white">
+              <table className="w-full min-w-[24rem] text-sm">
+                <thead className="bg-neutral-50 text-xs text-neutral-600">
+                  <tr>
+                    <th className="px-3 py-2 text-right font-semibold">السبب</th>
+                    <th className="px-3 py-2 text-right font-semibold">عدد</th>
+                    <th className="px-3 py-2 text-right font-semibold">القيمة</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-100">
+                  {funnelAd!.cancellations.map((row) => (
+                    <tr key={row.reason}>
+                      <td className="px-3 py-2 text-neutral-700">
+                        {CANCELLATION_REASON_LABELS[row.reason as CancellationReason] ?? row.reason}
+                      </td>
+                      <td className="px-3 py-2 font-semibold text-neutral-900">{row.orders}</td>
+                      <td className="px-3 py-2 text-neutral-600">{formatMad(row.valueMad)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </>
       )}
 

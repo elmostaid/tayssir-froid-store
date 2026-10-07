@@ -204,6 +204,7 @@ export async function getDashboardOrderStats(): Promise<DashboardOrderStats> {
       sales_month: string;
       count_new: number;
       count_needs_review: number;
+      count_contacted: number;
       count_confirmed: number;
       count_preparing: number;
       count_shipped: number;
@@ -224,6 +225,8 @@ export async function getDashboardOrderStats(): Promise<DashboardOrderStats> {
         where created_at >= date_trunc('month', current_date) and status not in ('cancelled', 'returned')
       ), 0) as sales_month,
       count(*) filter (where status = 'new')::int as count_new,
+      count(*) filter (where status = 'needs_review')::int as count_needs_review,
+      count(*) filter (where status = 'contacted')::int as count_contacted,
       count(*) filter (where status = 'confirmed')::int as count_confirmed,
       count(*) filter (where status = 'preparing')::int as count_preparing,
       count(*) filter (where status = 'shipped')::int as count_shipped,
@@ -241,6 +244,7 @@ export async function getDashboardOrderStats(): Promise<DashboardOrderStats> {
     countsByStatus: {
       new: row?.count_new ?? 0,
       needs_review: row?.count_needs_review ?? 0,
+      contacted: row?.count_contacted ?? 0,
       confirmed: row?.count_confirmed ?? 0,
       preparing: row?.count_preparing ?? 0,
       shipped: row?.count_shipped ?? 0,
