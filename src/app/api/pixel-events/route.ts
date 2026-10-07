@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { sendCapiEvent } from "@/lib/pixel/capi";
+import { resolveFbc } from "@/lib/pixel/fbc";
 
 // رابط خاص داخلي: fbq.ts (طبقة Pixel من المتصفح) يستدعيه مباشرة بعد كل
 // PageView/ViewContent/AddToCart/InitiateCheckout — يُعيد إرسال نفس الحدث
@@ -9,12 +10,26 @@ import { sendCapiEvent } from "@/lib/pixel/capi";
 export const runtime = "nodejs";
 
 // قائمة مغلقة صراحة — أي اسم حدث آخر يُرفَض قبل أي محاولة إرسال لـMeta.
-const ALLOWED_EVENT_NAMES = new Set(["PageView", "ViewContent", "AddToCart", "InitiateCheckout"]);
+// `ConfirmOnWhatsApp` حدث مخصَّص يُقاس عند ضغط "أكّد طلبي على واتساب" من
+// صفحة نجاح الطلب — أي **بعد** وجود طلب حقيقي، فهو خطوة في القُمع لا بيعة.
+// و`Purchase` ليس هنا ولن يكون: يُرسَل من الخادم وحده عند التأكيد التجاري
+// (lib/pixel/sendDeferredPurchase.ts)، فلا يملك المتصفح إطلاقه أبداً.
+const ALLOWED_EVENT_NAMES = new Set([
+  "PageView",
+  "ViewContent",
+  "AddToCart",
+  "InitiateCheckout",
+  "ConfirmOnWhatsApp",
+]);
 
 type RelayBody = {
   eventName?: unknown;
   eventId?: unknown;
   eventSourceUrl?: unknown;
+  /** مُعرّف النقرة الإعلانية كما حفظه الإسناد في المتصفح. */
+  fbclid?: unknown;
+  /** لحظة أول ظهوره (ms) — `AttributionTouch.at`. */
+  fbclidAt?: unknown;
   customData?: {
     content_ids?: unknown;
     value?: unknown;
@@ -88,8 +103,24 @@ export async function POST(request: NextRequest) {
   const clientIpAddress = forwardedFor?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || undefined;
   const clientUserAgent = request.headers.get("user-agent") || undefined;
   const fbp = request.cookies.get("_fbp")?.value;
-  const fbc = request.cookies.get("_fbc")?.value;
   const eventSourceUrl = typeof body.eventSourceUrl === "string" ? body.eventSourceUrl : undefined;
+
+  // `fbc` هو مفتاح الإسناد الوحيد الذي يربط الحدث بنقرة إعلانية — وكان
+  // يُقرأ من كوكي `_fbc` فقط، وهي كوكي **تكتبها Meta Pixel نفسها** لا هذا
+  // المشروع. فإذا حُجبت الـPixel أو تأخّرت، يصل الحدث بلا إسناد ولا يظهر
+  // في تقارير الحملة أبداً — أي أن CAPI لم يكن مساراً مستقلاً، بل يرث نقطة
+  // الفشل الوحيدة نفسها.
+  //
+  // والـfbclid محفوظ عندنا أصلاً (lib/attribution/capture.ts)، فالمتصفح
+  // يُمرّره هنا ونبني منه `fbc` عند غياب الكوكي. الكوكي تبقى الأولى حين
+  // توجد: كتبتها Meta فهي المرجع.
+  const fbc =
+    resolveFbc({
+      cookieFbc: request.cookies.get("_fbc")?.value,
+      fbclid: typeof body.fbclid === "string" ? body.fbclid : undefined,
+      fbclidAt: typeof body.fbclidAt === "number" ? body.fbclidAt : undefined,
+      host: request.headers.get("host"),
+    }) ?? undefined;
 
   // fire-and-forget فعلياً من جهة الاستدعاء (fbq.ts لا ينتظر هذا الطلب) —
   // sendCapiEvent نفسها لا ترمي أبداً، فننتظرها هنا فقط لضمان محاولة
