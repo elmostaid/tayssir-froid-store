@@ -12,7 +12,8 @@ import {
 import { resolveOrderLines, WEBSITE_LINE_RULES } from "@/lib/orders/resolveLines";
 import { notifyNewOrder } from "@/lib/notifications/notifyNewOrder";
 import { sendCapiEvent } from "@/lib/pixel/capi";
-import { writeServerPurchaseEvent } from "@/lib/analytics/serverPurchase";
+import { writeServerOrderSubmittedEvent } from "@/lib/analytics/serverPurchase";
+import { resolveFbc } from "@/lib/pixel/fbc";
 import {
   sendGaPurchaseEvent,
   isGaMeasurementProtocolConfigured,
@@ -188,19 +189,46 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     const deliveryFee = null;
     const finalTotal = null;
 
+    // لقطة هوية جلسة **الزبون** لـConversions API.
+    //
+    // تُحفظ الآن لأن حدث `Purchase` يُرسَل لاحقاً — عند التأكيد التجاري،
+    // من فعل المدير. ولو قُرئت الهوية وقتها لأخذنا IP المدير وUser-Agent
+    // متصفحه وكوكي `_fbp` الخاصة به، فتبدو كل التحويلات من شخص واحد. وهذا
+    // أسوأ من ألّا نُرسل شيئاً: إسنادٌ خاطئ لا يُعلن عن نفسه.
+    //
+    // و`fbc` تُبنى هنا لا هناك: الكوكي حاضرة الآن إن كانت، و`fbclid` مع
+    // لحظته محفوظان في الإسناد — فنُثبّت القيمة الصحيحة في وقتها بدل
+    // محاولة استرجاعها بعد ساعات.
+    const lastTouch = attribution?.last ?? attribution?.first ?? null;
+    const capiIdentity = sql.json({
+      fbp: input.requestContext?.fbp ?? null,
+      fbc:
+        resolveFbc({
+          cookieFbc: input.requestContext?.fbc,
+          fbclid: lastTouch?.fbclid,
+          fbclidAt: lastTouch?.at,
+          host: input.requestContext?.eventSourceUrl,
+        }) ?? null,
+      fbclid: lastTouch?.fbclid ?? null,
+      fbclidAt: lastTouch?.at ?? null,
+      clientIpAddress: input.requestContext?.clientIpAddress ?? null,
+      clientUserAgent: input.requestContext?.clientUserAgent ?? null,
+      eventSourceUrl: input.requestContext?.eventSourceUrl ?? null,
+    });
+
     const result = await sql.begin(async (trx) => {
       const inserted = await trx<{ id: number; public_reference: string; order_number: string }[]>`
         insert into public.orders (
           customer_name, customer_phone, customer_city, customer_address,
           customer_notes, items_subtotal, delivery_fee, final_total,
           status, source, idempotency_key,
-          attribution_first, attribution_last
+          attribution_first, attribution_last, capi_identity
         ) values (
           ${input.customer.fullName.trim()}, ${normalizedPhone}, ${input.customer.city.trim()},
           ${customerAddressOrNull(input.customer.address)}, ${input.customer.notes?.trim() || null},
           ${subtotal}, ${deliveryFee}, ${finalTotal},
           'new', 'website', ${input.idempotencyKey},
-          ${attributionFirst}, ${attributionLast}
+          ${attributionFirst}, ${attributionLast}, ${capiIdentity}
         )
         on conflict (idempotency_key) do nothing
         returning id, public_reference, order_number
@@ -301,39 +329,26 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     const gaPurchaseHandledServerSide =
       !needsReview && isGaMeasurementProtocolConfigured() && Boolean(gaClientId);
 
-    if (result.isNew && !needsReview) {
+    // الطلب وصل وحُفظ. ما يُرسَل هنا هو **إرسال طلب**، لا بيعة: الزبون
+    // يؤكّد في واتساب بعد هذا، وما لا يُؤكَّد يُلغى. حدث `Purchase` انتقل
+    // إلى لحظة التأكيد التجاري (lib/pixel/sendDeferredPurchase.ts).
+    //
+    // ولا شرط `!needsReview` على القياس والإشعار: طلبٌ فيه سطر ينتظر مراجعة
+    // مخزون هو طلب حقيقي وصل، ويجب أن يُسجَّل ويُنبّه عليه أحد. حالته
+    // تُقرأ من `orders.status` عند الحاجة، فلا تضيع المعلومة.
+    if (result.isNew) {
       const itemsCount = lineItems.reduce((sum, line) => sum + line.quantity, 0);
 
       // القياس الداخلي: بعد تثبيت المعاملة عمداً — صفّ قياس داخلها يعني أن
       // خطأ في القياس يُلغي طلباً حقيقياً، وهذا مرفوض هنا كما في كل مسار
       // قياس آخر في المشروع.
-      await writeServerPurchaseEvent(sql, {
+      await writeServerOrderSubmittedEvent(sql, {
         orderId: result.id,
         orderValue: subtotal,
         quantity: itemsCount,
         sessionId: input.requestContext?.analyticsSessionId,
         context: input.requestContext?.analyticsContext,
       });
-
-      // الإرسال نفسه يقع بعد الجواب: لو انتظرناه لأضفنا حتى ثلاث ثوانٍ إلى
-      // زمن جواب يملك الزبون 2.5 ثانية فقط قبل أن يمضي إلى واتساب — أي أن
-      // إصلاح القياس كان سيُفسد رسالة الزبون.
-      if (gaPurchaseHandledServerSide) {
-        runAfterResponse(() =>
-          sendGaPurchaseEvent({
-            transactionId: result.publicReference,
-            value: subtotal,
-            items: lineItems.map((line) => ({
-              item_id: line.skuSnapshot,
-              item_name: line.nameSnapshot,
-              price: line.unitPrice,
-              quantity: line.quantity,
-            })),
-            clientId: gaClientId,
-            sessionId: input.requestContext?.gaSessionId,
-          })
-        );
-      }
 
       const siteUrl = getSiteUrl();
       const base = siteUrl ?? "";
@@ -351,30 +366,39 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
         pickingSlipUrl: `${base}/admin/orders/${result.id}/picking-slip.pdf`,
       });
 
-      // Meta Conversions API — Purchase: نفس "أفضل مجهود" بالضبط (fire-and-
-      // forget، لا يرمي أبداً، ولا يؤثِّر على نتيجة الطلب). result.isNew وحده
-      // (وليس مجرد نجاح createOrder) يضمن إرسالها مرة واحدة فقط للطلب
-      // الحقيقي — إعادة محاولة بنفس idempotencyKey (ضغط مزدوج على الزر
-      // مثلاً) ترجع نفس الطلب الموجود بلا إرسال ثانٍ هنا (وبلا حتى حاجة
-      // لذلك: event_id ثابت = idempotencyKey نفسه يضمن أن Meta نفسها تعتبر
-      // أي إرسال مكرر بنفس القيمة نفس الحدث، وليس Purchase ثانياً).
+      // Meta Conversions API — `OrderSubmitted` (حدث مخصَّص).
+      //
+      // ليس `Lead`: ذاك يُصنَّف عند Meta أعلى القُمع فتُحسِّن لكمية رخيصة،
+      // والزبون هنا عمّر النموذج كاملاً على سلّة لها ثمن. وليس `Purchase`:
+      // تلك هي الإشارة التي كانت مبكّرة وتسبّبت في كل التضخيم.
+      //
+      // `event_id` = idempotencyKey، ومعرّف الشراء المؤجَّل مختلف عنه
+      // (`purchase:<orderId>`) عمداً: معرّفٌ واحد لحدثين يعني أن Meta قد
+      // تعتبر أحدهما تكراراً للآخر فتُسقطه.
       void sendCapiEvent({
-        eventName: "Purchase",
+        eventName: "OrderSubmitted",
         eventId: input.idempotencyKey,
         eventSourceUrl: input.requestContext?.eventSourceUrl,
         userData: {
           phone: toInternationalDigits(normalizedPhone),
+          externalId: toInternationalDigits(normalizedPhone),
           clientIpAddress: input.requestContext?.clientIpAddress,
           clientUserAgent: input.requestContext?.clientUserAgent,
           fbp: input.requestContext?.fbp,
-          fbc: input.requestContext?.fbc,
+          fbc:
+            resolveFbc({
+              cookieFbc: input.requestContext?.fbc,
+              fbclid: lastTouch?.fbclid,
+              fbclidAt: lastTouch?.at,
+              host: input.requestContext?.eventSourceUrl,
+            }) ?? undefined,
         },
         customData: {
           content_ids: lineItems.map((line) => line.skuSnapshot),
           content_type: "product",
           currency: "MAD",
           value: subtotal,
-          num_items: lineItems.reduce((sum, line) => sum + line.quantity, 0),
+          num_items: itemsCount,
           contents: lineItems.map((line) => ({
             id: line.skuSnapshot,
             quantity: line.quantity,
@@ -382,6 +406,26 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
           })),
         },
       });
+
+      // GA4: يبقى كما كان (مشروطاً بـ!needsReview). خارج نطاق هذا التغيير
+      // عمداً — وهو ما زال يُرسل "purchase" عند الإرسال لا عند التأكيد، فلا
+      // تُقارَن أرقام GA4 بأرقام Meta بعد اليوم دون الانتباه لذلك.
+      if (gaPurchaseHandledServerSide) {
+        runAfterResponse(() =>
+          sendGaPurchaseEvent({
+            transactionId: result.publicReference,
+            value: subtotal,
+            items: lineItems.map((line) => ({
+              item_id: line.skuSnapshot,
+              item_name: line.nameSnapshot,
+              price: line.unitPrice,
+              quantity: line.quantity,
+            })),
+            clientId: gaClientId,
+            sessionId: input.requestContext?.gaSessionId,
+          })
+        );
+      }
     }
 
     return {

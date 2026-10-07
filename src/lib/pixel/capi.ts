@@ -45,8 +45,15 @@ export type CapiUserData = {
   clientUserAgent?: string;
   /** كوكي _fbp من متصفح الزبون، إن توفّرت. */
   fbp?: string;
-  /** كوكي _fbc من متصفح الزبون، إن توفّرت. */
+  /** كوكي _fbc من متصفح الزبون، أو مبنيّة من fbclid (lib/pixel/fbc.ts). */
   fbc?: string;
+  /**
+   * مُعرّف ثابت للزبون عند المتجر — يُجزَّأ هنا، لا يُمرَّر مُجزَّأً.
+   *
+   * يرفع جودة المطابقة حين لا توجد fbp/fbc (طلب مباشر، متصفح حاجب). الهاتف
+   * المطبَّع يصلح له: ثابت عبر الجلسات والأجهزة، وموجود في كل طلب.
+   */
+  externalId?: string;
 };
 
 // الشكل الشائع لأحداث المنتج (Purchase/AddToCart/ViewContent/InitiateCheckout)
@@ -65,6 +72,15 @@ export type CapiCustomData = {
 
 export type SendCapiEventParams = {
   eventName: string;
+  /**
+   * لحظة وقوع الحدث فعلاً (ms منذ epoch). افتراضها "الآن" صحيح للأحداث
+   * الفورية؛ أما الشراء المؤجَّل فيقع لحظة التأكيد التجاري لا لحظة
+   * الإرسال، فيمرّر `confirmed_at` صريحاً.
+   *
+   * Meta ترفض حدثاً أقدم من سبعة أيام. القياس في الإنتاج: التأكيد يقع
+   * بوسيط صفر ساعة وبحدٍّ أقصى 15.3 ساعة من الإرسال، فالحدّ ليس قريباً.
+   */
+  eventTimeMs?: number;
   /** نفس event_id المُستعمَل فحدث Pixel المطابق (من جهة المتصفح) — إلزامي لعمل deduplication بشكل صحيح. */
   eventId: string;
   eventSourceUrl?: string;
@@ -90,6 +106,9 @@ export async function sendCapiEvent(params: SendCapiEventParams): Promise<void> 
     if (params.userData?.clientUserAgent) userData.client_user_agent = params.userData.clientUserAgent;
     if (params.userData?.fbp) userData.fbp = params.userData.fbp;
     if (params.userData?.fbc) userData.fbc = params.userData.fbc;
+    if (params.userData?.externalId) {
+      userData.external_id = [hashForCapi(params.userData.externalId)];
+    }
 
     const testEventCode = getTestEventCode();
 
@@ -97,7 +116,11 @@ export async function sendCapiEvent(params: SendCapiEventParams): Promise<void> 
       data: [
         {
           event_name: params.eventName,
-          event_time: Math.floor(Date.now() / 1000),
+          event_time: Math.floor(
+            (typeof params.eventTimeMs === "number" && Number.isFinite(params.eventTimeMs)
+              ? params.eventTimeMs
+              : Date.now()) / 1000
+          ),
           event_id: params.eventId,
           action_source: "website",
           event_source_url: params.eventSourceUrl,

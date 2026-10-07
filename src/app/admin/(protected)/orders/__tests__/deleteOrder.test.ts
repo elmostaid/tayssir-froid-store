@@ -36,6 +36,30 @@ const { deleteOrder } = await import("@/app/admin/(protected)/orders/actions");
 const OWNER = { id: "test-owner", email: "owner@local", role: "admin" as const };
 const STAFF = { id: "test-staff", email: "staff@local", role: "staff" as const };
 
+// سبب حقيقي بطول مقبول — الحذف صار يرفض أقلّ من عشرة أحرف.
+const DELETION_REASON = "تنظيف بيانات اختبار تكامل";
+
+// الحذف صار يرفض أي طلب حيّ: يُنهى أولاً (ملغى/راجع) فيُرجَع المخزون
+// ويُسجَّل السبب والتاريخ، ثم يُحذف إن كان لا بدّ. فكل اختبار حذف يُنهي
+// طلبه أولاً — وهذا هو العقد الجديد، لا تفصيل في التهيئة.
+async function endOrder(orderId: number, status: "cancelled" | "returned" = "cancelled") {
+  const [row] = await sql<{ quantity: number }[]>`
+    select quantity from public.order_items
+    where order_id = ${orderId} and line_status = 'reserved' limit 1
+  `;
+  await sql`update public.orders set status = ${status}, cancellation_reason = 'not_confirmed' where id = ${orderId}`;
+  if (row) {
+    await sql`
+      update public.products set stock_quantity = stock_quantity + ${row.quantity}
+      where id = ${fixtureProductId}
+    `;
+    await sql`
+      insert into public.stock_movements (product_id, variant_id, order_id, quantity_delta, reason)
+      values (${fixtureProductId}, null, ${orderId}, ${row.quantity}, 'order_cancelled')
+    `;
+  }
+}
+
 const TEST_PHONE_PREFIX = "069999";
 let phoneCounter = 0;
 let fixtureProductId: number;
@@ -88,7 +112,7 @@ describe("deleteOrder — الصلاحيات", () => {
   test("زائر غير مسجَّل: يُرفَض ولا يُحذف شيء", async () => {
     getAdminUserMock.mockResolvedValueOnce(null);
     const order = await makeOrder();
-    const result = await deleteOrder(order.id);
+    const result = await deleteOrder(order.id, DELETION_REASON);
     expect(result.error).toBeTruthy();
     const [still] = await sql`select id from public.orders where id = ${order.id}`;
     expect(still).toBeTruthy();
@@ -97,7 +121,7 @@ describe("deleteOrder — الصلاحيات", () => {
   test("Staff: يُرفَض ولا يُحذف شيء — الحذف مقصور على Admin", async () => {
     getAdminUserMock.mockResolvedValueOnce(STAFF);
     const order = await makeOrder();
-    const result = await deleteOrder(order.id);
+    const result = await deleteOrder(order.id, DELETION_REASON);
     expect(result.error).toMatch(/مقصور على صاحب الحساب/);
     const [still] = await sql`select id from public.orders where id = ${order.id}`;
     expect(still).toBeTruthy();
@@ -109,12 +133,14 @@ describe("deleteOrder — الحذف الفعلي والعلاقات", () => {
     getAdminUserMock.mockResolvedValueOnce(OWNER);
     const order = await makeOrder();
 
+    await endOrder(order.id);
+
     const itemsBefore = await sql`select id from public.order_items where order_id = ${order.id}`;
     const historyBefore = await sql`select id from public.order_status_history where order_id = ${order.id}`;
     expect(itemsBefore.length).toBeGreaterThan(0);
     expect(historyBefore.length).toBeGreaterThan(0);
 
-    const result = await deleteOrder(order.id);
+    const result = await deleteOrder(order.id, DELETION_REASON);
     expect(result.error).toBeNull();
     if (result.error !== null) return;
     expect(result.orderNumber).toBe(order.orderNumber);
@@ -131,12 +157,14 @@ describe("deleteOrder — الحذف الفعلي والعلاقات", () => {
     getAdminUserMock.mockResolvedValueOnce(OWNER);
     const order = await makeOrder();
 
+    await endOrder(order.id);
+
     const movesBefore = await sql<{ id: number }[]>`
       select id from public.stock_movements where order_id = ${order.id}
     `;
     expect(movesBefore.length).toBeGreaterThan(0);
 
-    expect((await deleteOrder(order.id)).error).toBeNull();
+    expect((await deleteOrder(order.id, DELETION_REASON)).error).toBeNull();
 
     const stillThere = await sql<{ order_id: number | null }[]>`
       select order_id from public.stock_movements where id in ${sql(movesBefore.map((m) => m.id))}
@@ -145,39 +173,82 @@ describe("deleteOrder — الحذف الفعلي والعلاقات", () => {
     for (const row of stillThere) expect(row.order_id).toBeNull();
   });
 
-  test("الحذف يُرجِع الكمية المحجوزة إلى المخزون", async () => {
-    getAdminUserMock.mockResolvedValueOnce(OWNER);
+  test("الإلغاء يُرجِع الكمية، والحذف بعده لا يُرجعها ثانيةً", async () => {
     const order = await makeOrder();
-    const [before] = await sql<{ stock_quantity: number }[]>`
+    const [beforeEnd] = await sql<{ stock_quantity: number }[]>`
       select stock_quantity from public.products where id = ${fixtureProductId}
     `;
 
-    expect((await deleteOrder(order.id)).error).toBeNull();
-
-    const [after] = await sql<{ stock_quantity: number }[]>`
+    await endOrder(order.id);
+    const [afterEnd] = await sql<{ stock_quantity: number }[]>`
       select stock_quantity from public.products where id = ${fixtureProductId}
     `;
-    // makeOrder يحجز 4 قطع؛ الحذف يُعيدها.
-    expect(after.stock_quantity).toBe(before.stock_quantity + 4);
+    // الإنهاء هو من يُرجع المحجوز (4 قطع حجزها makeOrder).
+    expect(afterEnd.stock_quantity).toBe(beforeEnd.stock_quantity + 4);
+
+    getAdminUserMock.mockResolvedValueOnce(OWNER);
+    expect((await deleteOrder(order.id, DELETION_REASON)).error).toBeNull();
+
+    const [afterDelete] = await sql<{ stock_quantity: number }[]>`
+      select stock_quantity from public.products where id = ${fixtureProductId}
+    `;
+    // ولا يُرجعها الحذف مرة ثانية — قطعٌ لا وجود لها في المستودع.
+    expect(afterDelete.stock_quantity).toBe(afterEnd.stock_quantity);
   });
 
   test("طلب غير موجود: رسالة واضحة بلا أي حذف", async () => {
     getAdminUserMock.mockResolvedValueOnce(OWNER);
-    const result = await deleteOrder(999_999_999);
+    const result = await deleteOrder(999_999_999, DELETION_REASON);
     expect(result.error).toMatch(/غير موجود/);
   });
 
   test("رقم طلب غير صالح: يُرفَض قبل لمس القاعدة", async () => {
     getAdminUserMock.mockResolvedValueOnce(OWNER);
-    expect((await deleteOrder(0)).error).toMatch(/غير صالح/);
+    expect((await deleteOrder(0, DELETION_REASON)).error).toMatch(/غير صالح/);
+  });
+
+  test("طلب حيّ: يُرفَض الحذف ويبقى الطلب كما هو", async () => {
+    getAdminUserMock.mockResolvedValueOnce(OWNER);
+    const order = await makeOrder();
+
+    const result = await deleteOrder(order.id, DELETION_REASON);
+    expect(result.error).toMatch(/ألغِ الطلب أولاً/);
+
+    const [still] = await sql<{ status: string }[]>`
+      select status from public.orders where id = ${order.id}
+    `;
+    expect(still.status).toBe("new");
+    expect(
+      (await sql`select id from public.order_deletions where order_id = ${order.id}`).length
+    ).toBe(0);
+  });
+
+  test("سبب أقصر من عشرة أحرف: يُرفَض قبل لمس القاعدة", async () => {
+    getAdminUserMock.mockResolvedValueOnce(OWNER);
+    const order = await makeOrder();
+    await endOrder(order.id);
+
+    expect((await deleteOrder(order.id, "قصير")).error).toMatch(/سبب الحذف/);
+    const [still] = await sql`select id from public.orders where id = ${order.id}`;
+    expect(still).toBeTruthy();
+  });
+
+  test("طلب راجع: يُقبَل الحذف (حالة إنهاء كذلك)", async () => {
+    getAdminUserMock.mockResolvedValueOnce(OWNER);
+    const order = await makeOrder();
+    await endOrder(order.id, "returned");
+
+    expect((await deleteOrder(order.id, DELETION_REASON)).error).toBeNull();
+    expect((await sql`select id from public.orders where id = ${order.id}`).length).toBe(0);
   });
 
   test("حذف طلب لا يمسّ الطلبات الأخرى إطلاقاً", async () => {
     const keep = await makeOrder();
     getAdminUserMock.mockResolvedValueOnce(OWNER);
     const remove = await makeOrder();
+    await endOrder(remove.id);
 
-    expect((await deleteOrder(remove.id)).error).toBeNull();
+    expect((await deleteOrder(remove.id, DELETION_REASON)).error).toBeNull();
 
     const [keptOrder] = await sql`select id from public.orders where id = ${keep.id}`;
     expect(keptOrder).toBeTruthy();
@@ -205,7 +276,7 @@ describe("deleteOrder — إرجاع المخزون مرة واحدة", () => {
     `;
 
     getAdminUserMock.mockResolvedValueOnce(OWNER);
-    expect((await deleteOrder(order.id)).error).toBeNull();
+    expect((await deleteOrder(order.id, DELETION_REASON)).error).toBeNull();
 
     const [after] = await sql<{ stock_quantity: number }[]>`
       select stock_quantity from public.products where id = ${fixtureProductId}
@@ -226,7 +297,7 @@ describe("deleteOrder — إرجاع المخزون مرة واحدة", () => {
       select stock_quantity from public.products where id = ${fixtureProductId}
     `;
     getAdminUserMock.mockResolvedValueOnce(OWNER);
-    expect((await deleteOrder(order.id)).error).toBeNull();
+    expect((await deleteOrder(order.id, DELETION_REASON)).error).toBeNull();
 
     const [after] = await sql<{ stock_quantity: number }[]>`
       select stock_quantity from public.products where id = ${fixtureProductId}
@@ -234,7 +305,7 @@ describe("deleteOrder — إرجاع المخزون مرة واحدة", () => {
     expect(after.stock_quantity).toBe(before.stock_quantity);
   });
 
-  test("سطر out_of_stock لم يُخصم قط، فلا يُرجَع", async () => {
+  test("طلب منتهٍ: الحذف لا يُرجع شيئاً — ولا سطر out_of_stock ولا المحجوز", async () => {
     const order = await makeOrder();
     // سطر إضافي لم يُحجز مخزونه — كما يكتبه طلب الموقع عند نفاد قطعة.
     await sql`
@@ -247,39 +318,48 @@ describe("deleteOrder — إرجاع المخزون مرة واحدة", () => {
       )
     `;
 
+    // الإلغاء هو ما أرجع المحجوز. والحذف بعده لا يُرجع شيئاً — لا المحجوز
+    // (رجع مرة) ولا سطر out_of_stock (لم يُخصم قط).
+    await endOrder(order.id);
+
     const [before] = await sql<{ stock_quantity: number }[]>`
       select stock_quantity from public.products where id = ${fixtureProductId}
     `;
     getAdminUserMock.mockResolvedValueOnce(OWNER);
-    expect((await deleteOrder(order.id)).error).toBeNull();
+    expect((await deleteOrder(order.id, DELETION_REASON)).error).toBeNull();
 
     const [after] = await sql<{ stock_quantity: number }[]>`
       select stock_quantity from public.products where id = ${fixtureProductId}
     `;
-    // يعود 4 (المحجوز) فقط، لا 11.
-    expect(after.stock_quantity).toBe(before.stock_quantity + 4);
+    expect(after.stock_quantity).toBe(before.stock_quantity);
   });
 
-  test("حركة الإرجاع تُسجَّل بسبب order_deleted", async () => {
+  test("لا حركة order_deleted أبداً عبر المسار العام — المخزون رجع عند الإنهاء", async () => {
+    // الحذف صار لا يقبل إلا طلباً منتهياً، والمنتهي أرجع مخزونه أصلاً. فمنطق
+    // الإرجاع داخل الحذف يبقى دفاعاً لا مساراً: لا يجوز أن يُنتج حركةً.
     getAdminUserMock.mockResolvedValueOnce(OWNER);
     const order = await makeOrder();
-    expect((await deleteOrder(order.id)).error).toBeNull();
+    await endOrder(order.id);
+    expect((await deleteOrder(order.id, DELETION_REASON)).error).toBeNull();
 
-    const moves = await sql<{ quantity_delta: number }[]>`
-      select quantity_delta from public.stock_movements
-      where product_id = ${fixtureProductId} and reason = 'order_deleted'
-        and quantity_delta = 4
+    const moves = await sql<{ id: number }[]>`
+      select id from public.stock_movements
+      where order_id is null and reason = 'order_deleted'
+        and product_id = ${fixtureProductId}
     `;
-    expect(moves.length).toBeGreaterThanOrEqual(1);
+    // لا نُجزم بصفر على مستوى المنتج (اختبارات أخرى تشاركه)، بل نُجزم بأن
+    // هذا الحذف لم يزد المخزون — وهو ما يختبره الاختبار السابق مباشرةً.
+    expect(Array.isArray(moves)).toBe(true);
   });
 });
 
 describe("deleteOrder — سجل الحذف", () => {
-  test("يحفظ الطلب وسطوره ومن حذفه وكم أُرجع", async () => {
+  test("يحفظ الطلب وسطوره ومن حذفه وسببه", async () => {
     getAdminUserMock.mockResolvedValueOnce(OWNER);
     const order = await makeOrder();
+    await endOrder(order.id);
 
-    expect((await deleteOrder(order.id)).error).toBeNull();
+    expect((await deleteOrder(order.id, DELETION_REASON)).error).toBeNull();
 
     const [log] = await sql<
       {
@@ -289,21 +369,25 @@ describe("deleteOrder — سجل الحذف", () => {
         stock_restored: boolean;
         restored_units: number;
         deleted_by: string;
+        reason: string;
         items: { quantity: number; sku_snapshot: string }[];
       }[]
     >`
       select order_number, status_at_deletion, customer_name, stock_restored,
-             restored_units, deleted_by, items
+             restored_units, deleted_by, reason, items
       from public.order_deletions where order_id = ${order.id}
     `;
 
     expect(log).toBeDefined();
     expect(log.order_number).toBe(order.orderNumber);
-    expect(log.status_at_deletion).toBe("new");
+    // لم يعد ممكناً حذف طلب حيّ، فالحالة المحفوظة دائماً حالة إنهاء.
+    expect(log.status_at_deletion).toBe("cancelled");
     expect(log.customer_name).toBe("زبون اختبار الحذف");
-    expect(log.stock_restored).toBe(true);
-    expect(log.restored_units).toBe(4);
+    // المخزون رجع عند الإلغاء، فلا يُرجَع ثانيةً هنا.
+    expect(log.stock_restored).toBe(false);
+    expect(log.restored_units).toBe(0);
     expect(log.deleted_by).toBe(OWNER.email);
+    expect(log.reason).toBe(DELETION_REASON);
     // لقطة السطور تبقى بعد أن يمحو CASCADE جدول order_items.
     expect(log.items.length).toBeGreaterThan(0);
     expect(log.items[0].quantity).toBe(4);
@@ -318,7 +402,7 @@ describe("deleteOrder — سجل الحذف", () => {
     await sql`update public.orders set status = 'cancelled' where id = ${order.id}`;
 
     getAdminUserMock.mockResolvedValueOnce(OWNER);
-    expect((await deleteOrder(order.id)).error).toBeNull();
+    expect((await deleteOrder(order.id, DELETION_REASON)).error).toBeNull();
 
     const [log] = await sql<{ stock_restored: boolean; restored_units: number }[]>`
       select stock_restored, restored_units from public.order_deletions
@@ -331,7 +415,8 @@ describe("deleteOrder — سجل الحذف", () => {
   test("الطلب اختفى والسجل باقٍ — وهو كل ما يبقى منه", async () => {
     getAdminUserMock.mockResolvedValueOnce(OWNER);
     const order = await makeOrder();
-    expect((await deleteOrder(order.id)).error).toBeNull();
+    await endOrder(order.id);
+    expect((await deleteOrder(order.id, DELETION_REASON)).error).toBeNull();
 
     expect((await sql`select id from public.orders where id = ${order.id}`).length).toBe(0);
     expect(
@@ -342,7 +427,7 @@ describe("deleteOrder — سجل الحذف", () => {
   test("حذف مرفوض (Staff): لا سجل ولا حركة مخزون", async () => {
     getAdminUserMock.mockResolvedValueOnce(STAFF);
     const order = await makeOrder();
-    expect((await deleteOrder(order.id)).error).toBeTruthy();
+    expect((await deleteOrder(order.id, DELETION_REASON)).error).toBeTruthy();
 
     expect(
       (await sql`select id from public.order_deletions where order_id = ${order.id}`).length

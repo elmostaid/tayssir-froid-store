@@ -2,7 +2,16 @@ import type { Sql } from "postgres";
 import type { AnalyticsSessionContext } from "@/lib/analytics/events";
 
 /**
- * كتابة حدث الشراء الداخلي من الخادم، فور نجاح حفظ الطلب.
+ * كتابة حدث **إرسال الطلب** الداخلي من الخادم، فور نجاح حفظ الطلب.
+ *
+ * كان اسم الحدث `purchase`، وهو ما كان يُقال عن طلبٍ لم يُؤكَّد بعد. طلب
+ * الموقع ليس بيعة: الزبون يؤكّد في واتساب لاحقاً، وما لا يُؤكَّد يُلغى.
+ * فصار الحدث `order_submitted` — والبيعة تُقرأ من `orders.confirmed_at`،
+ * وهو العمود الذي يُرسَل عنده `Purchase` إلى Meta كذلك.
+ *
+ * ولا راية `needs_review` منفصلة هنا عمداً: الصفّ يحمل `order_id`، وحالة
+ * الطلب تُقرأ من `orders.status` بضمّةٍ واحدة. عمودٌ جديد يُكرّر حقيقةً
+ * موجودة ويُخاطر بانحرافها.
  *
  * لماذا هنا وليس في المتصفح كما كان: المتصفح كان يُطلق الشراء فقط إذا وصله
  * تأكيد الحفظ خلال 2.5 ثانية، ثم ينتقل فوراً إلى واتساب. أي طلب يُحفظ
@@ -18,10 +27,10 @@ import type { AnalyticsSessionContext } from "@/lib/analytics/events";
  * إلا حين `result.isNew`، أي المعاملة التي أدخلت الطلب فعلاً — وإدخال
  * الطلب محروس بـ`on conflict (idempotency_key) do nothing`، فإعادة الإرسال
  * بنفس المفتاح لا تصل إلى هنا. والفهرس الفريد الجزئي
- * (`analytics_events_one_purchase_per_order_idx`) هو الضمانة الأخيرة في
+ * (`analytics_events_one_submit_per_order_idx`) هو الضمانة الأخيرة في
  * القاعدة نفسها.
  */
-export type ServerPurchaseInput = {
+export type ServerOrderSubmittedInput = {
   orderId: number;
   orderValue: number;
   quantity: number;
@@ -47,9 +56,9 @@ function text(value: string | null | undefined, max = MAX_TEXT): string | null {
  * يتطلّب `session_id` صالحاً لأن العمود `uuid not null`: بلا كوكي جلسة
  * (زائر منع الكوكيّات مثلاً) لا نخترع مُعرّفاً — نتخطّى الصف ونُبلّغ.
  */
-export async function writeServerPurchaseEvent(
+export async function writeServerOrderSubmittedEvent(
   db: Sql,
-  input: ServerPurchaseInput
+  input: ServerOrderSubmittedInput
 ): Promise<boolean> {
   const sessionId = input.sessionId?.trim();
   if (!sessionId || !UUID_RE.test(sessionId)) return false;
@@ -63,7 +72,7 @@ export async function writeServerPurchaseEvent(
         utm_source, utm_medium, utm_campaign, utm_content, utm_term,
         has_click_id, order_id, order_value, cart_value, quantity
       ) values (
-        ${sessionId}, 'purchase', '/checkout', ${text(ctx?.landingPath)},
+        ${sessionId}, 'order_submitted', '/checkout', ${text(ctx?.landingPath)},
         ${text(ctx?.referrerHost, 255)},
         ${text(ctx?.utmSource, 128)}, ${text(ctx?.utmMedium, 128)},
         ${text(ctx?.utmCampaign, 191)}, ${text(ctx?.utmContent, 191)},
@@ -75,7 +84,7 @@ export async function writeServerPurchaseEvent(
     `;
     return true;
   } catch (error) {
-    console.error("writeServerPurchaseEvent: تعذّر تسجيل حدث الشراء الداخلي", error);
+    console.error("writeServerOrderSubmittedEvent: تعذّر تسجيل حدث إرسال الطلب الداخلي", error);
     return false;
   }
 }

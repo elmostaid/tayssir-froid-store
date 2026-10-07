@@ -329,16 +329,19 @@ export default async function AdminOrderDetailPage({ params }: Props) {
         </div>
       </div>
 
-      {/* حذف نهائي — مقصور على Owner/Admin، ومفصول في قسم خاص بإطار أحمر
-          حتى لا يُضغط بالخطأ بجوار الإجراءات العادية. الصلاحية تُفحص من
-          جديد داخل deleteOrder نفسه. */}
-      {isOwnerAdmin(admin) && (
+      {/* حذف نهائي — إجراء استثنائي، لا طريقة الإلغاء اليومية.
+          لا يظهر إلا على طلب منتهٍ (ملغى أو راجع): الإلغاء هو ما يُرجع المخزون
+          ويُسجّل السبب ويحفظ السطور والتاريخ والإسناد. وبلا هذا الشرط كان
+          الحذف صار مسار الإلغاء الفعلي — 38 طلباً محذوفاً مقابل طلب واحد
+          أُلغي بالطريقة الصحيحة. الشرطان (Owner + ملغى) يُفحصان من جديد
+          داخل deleteOrder نفسه. */}
+      {isOwnerAdmin(admin) && (order.status === "cancelled" || order.status === "returned") && (
         <div className="mt-4 rounded-xl border border-red-200 bg-white p-4">
-          <h2 className="text-sm font-semibold text-red-700">حذف الطلب</h2>
-          <p className="mt-1 text-xs text-neutral-600">
-            يحذف الطلب وكل سطوره وسجل حالاته نهائياً. لا يمكن التراجع. حركات
-            المخزون تبقى محفوظة في السجل، لكن الحذف لا يُرجع الكمية إلى
-            المخزون — إن أردت إرجاعها، ألغِ الطلب أولاً ثم احذفه.
+          <h2 className="text-sm font-semibold text-red-700">حذف الطلب نهائياً</h2>
+          <p className="mt-1 text-xs leading-relaxed text-neutral-600">
+            يمحو الطلب وسطوره وسجل حالاته نهائياً، ولا يمكن التراجع. المخزون
+            رُجِّع عند الإلغاء فلا يُرجَّع مرتين. تبقى لقطة الطلب وسبب الحذف
+            في سجل الحذف وحده — فلا تحذف إلا ما لا تحتاج الإجابة عنه لاحقاً.
           </p>
           <div className="mt-3">
             <DeleteOrderButton orderId={order.id} orderNumber={order.orderNumber} />
