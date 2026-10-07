@@ -1,10 +1,15 @@
-import "server-only";
-
 import { sql } from "@/lib/db";
 import { sendCapiEvent } from "@/lib/pixel/capi";
 import { resolveFbc } from "@/lib/pixel/fbc";
 import { toInternationalDigits } from "@/lib/phone";
 import { SALE_CONFIRMED_STATUSES, type OrderStatus } from "@/lib/orders/orderStatus";
+
+// عمداً بلا `import "server-only"` — نفس قرار lib/pixel/capi.ts وللسبب
+// نفسه: actions.ts تستورد هذا الملف، وعشرات الاختبارات تستورد actions.ts في
+// بيئة jsdom، و`server-only` يرمي هناك دائماً (شرط "react-server" لا يُفعَّل
+// تحت Vitest) فيُسقِط اختبارات قائمة لا علاقة لها بالقياس. والحماية الفعلية
+// قائمة أصلاً: التوكن بلا بادئة NEXT_PUBLIC_ فلا يُضمَّن في حزمة المتصفح
+// أبداً — فقط لا تستورد هذا الملف من أي مكوّن "use client".
 
 /**
  * حدث `Purchase` إلى Meta في لحظة التأكيد التجاري — لا في لحظة الإرسال.

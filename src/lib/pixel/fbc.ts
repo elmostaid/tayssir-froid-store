@@ -42,8 +42,11 @@ const FBCLID_PATTERN = /^[A-Za-z0-9_-]+$/;
  */
 export function subdomainIndexFromHost(host: string | null | undefined): number {
   if (!host) return 1;
-  // إسقاط المنفذ وأي مسار، وتطبيع الحالة.
-  const clean = host.trim().toLowerCase().split("/")[0]?.split(":")[0] ?? "";
+  // يقبل مضيفاً أو رابطاً كاملاً: المُنادون يُمرّرون الاثنين —
+  // `request.headers.get("host")` مضيفٌ مجرَّد، و`capi_identity.eventSourceUrl`
+  // رابطٌ كامل. فنُقشّر البادئة أولاً، ثم المسار، ثم المنفذ.
+  const withoutScheme = host.trim().toLowerCase().replace(/^[a-z][a-z0-9+.-]*:\/\//, "");
+  const clean = withoutScheme.split("/")[0]?.split("@").pop()?.split(":")[0] ?? "";
   if (!clean || clean === "localhost") return 1;
   // عنوان IP: لا مقاطع نطاق أصلاً.
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(clean)) return 1;
