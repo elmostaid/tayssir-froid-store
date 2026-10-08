@@ -28,8 +28,11 @@ async function orderRow(orderId: number) {
       delivery_fee: string | null;
       final_total: string | null;
       order_number: string;
+      confirmed_at: Date | null;
+      meta_purchase_sent_at: Date | null;
     }[]
-  >`select status, source, items_subtotal, delivery_fee, final_total, order_number
+  >`select status, source, items_subtotal, delivery_fee, final_total, order_number,
+          confirmed_at, meta_purchase_sent_at
     from public.orders where id = ${orderId}`;
   return row;
 }
@@ -114,6 +117,33 @@ describe("الطلب اليدوي — بيع وقع خارج الموقع", () =
   });
 
   test("لا يُرسل Purchase إلى Meta إطلاقاً", async () => {
+    expect(sendCapiEventMock).not.toHaveBeenCalled();
+  });
+
+  test("confirmed_at يُكتب لحظة الإنشاء — الطلب اليدوي يُنشَأ مؤكَّداً", async () => {
+    // الطلب 177 في الإنتاج كُتب له `confirmed_at` فارغاً وبقي كذلك حتى
+    // أعاد المدير حفظ الحالة بعد 23 ثانية. والبائع كلّم الزبون **قبل** أن
+    // يُسجّل الطلب، فلحظة التأكيد هي لحظة الإنشاء لا أول لمسةٍ لاحقة.
+    const p = await product("MAN-FIX-001");
+    const before = Date.now();
+    const result = await createManualOrder({
+      customer: customer(),
+      source: "phone",
+      deliveryFee: 0,
+      createdByEmail: "admin@test.local",
+      items: [{ productId: p.id, variantId: null, quantity: 1 }],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const order = await orderRow(result.orderId);
+    expect(order.confirmed_at).not.toBeNull();
+    const at = new Date(order.confirmed_at!).getTime();
+    expect(at).toBeGreaterThanOrEqual(before - 1000);
+    expect(at).toBeLessThanOrEqual(Date.now() + 1000);
+
+    // ومع ذلك لا بيعة تُرسَل: مبيعات الموقع وحدها تذهب إلى Meta.
+    expect(order.meta_purchase_sent_at).toBeNull();
     expect(sendCapiEventMock).not.toHaveBeenCalled();
   });
 

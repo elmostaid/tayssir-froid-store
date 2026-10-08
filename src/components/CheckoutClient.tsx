@@ -21,7 +21,7 @@ import {
 import type { CheckoutState } from "@/app/(storefront)/checkout/actions";
 import { trackInitiateCheckout, trackConfirmOnWhatsApp } from "@/lib/pixel/fbq";
 import { trackAnalyticsEvent } from "@/lib/analytics/track";
-import { trackGaBeginCheckout, trackGaPurchase, type GaItem } from "@/lib/ga/ecommerce";
+import { trackGaBeginCheckout, type GaItem } from "@/lib/ga/ecommerce";
 import type { CartItem } from "@/lib/cart/types";
 import { getOrderAttribution } from "@/lib/attribution/capture";
 
@@ -81,7 +81,6 @@ export function CheckoutClient({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [idempotencyKey] = useState(() => crypto.randomUUID());
   const hasTrackedInitiateCheckout = useRef(false);
-  const hasTrackedPurchase = useRef(false);
 
   // InitiateCheckout: مرة واحدة فقط عند بدء Checkout فعلياً (السلة محمَّلة
   // من localStorage وغير فارغة) — الـref يمنع أي تكرار حتى لو أُعيد رندر
@@ -357,25 +356,10 @@ export function CheckoutClient({
         // وحده (lib/pixel/sendDeferredPurchase.ts)، و`OrderSubmitted` هو ما
         // يُرسَل هنا — من الخادم كذلك، فور حفظ الطلب (createOrder.ts).
         //
-        // وما يبقى للمتصفح هو GA4 وحدها، كما كانت.
-        if (!hasTrackedPurchase.current && confirmed.needsReview !== true) {
-          hasTrackedPurchase.current = true;
-          // GA4: يُرسَل من المتصفح فقط إن لم يُرسله الخادم. GA4 لا تُلغي
-          // التكرار حسب transaction_id، فإرسال الطرفين يُضاعف كل طلب وكل
-          // درهم في التقارير. (ما زالت GA4 تُسجّل "purchase" عند الإرسال لا
-          // عند التأكيد — خارج نطاق هذا التغيير، فلا تُقارَن بأرقام Meta.)
-          if (!confirmed.gaPurchaseHandledServerSide) {
-            try {
-              trackGaPurchase({
-                transactionId: confirmed.publicReference,
-                items: items.map(toGaItem),
-                value: subtotal,
-              });
-            } catch (err) {
-              console.error("GA4 purchase فشل — لا يؤثّر على الطلب", err);
-            }
-          }
-        }
+        // ولا GA4 كذلك. كانت تبقى للمتصفح وحدها، فتقول "بيعة" عن طلبٍ لم
+        // يؤكّده أحد — نفس خطأ Meta الذي أصلحناه، في نظام آخر. صار شراء
+        // GA4 يُرسَل من الخادم عند التأكيد التجاري بحرسه الخاص، فلم يبقَ
+        // للمتصفح شراءٌ يُطلقه في أي منصّة.
       } else {
         console.error(
           `الطلب ${reference}: لم يتأكّد الحفظ قبل الخروج إلى واتساب — ` +

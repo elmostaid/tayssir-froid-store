@@ -21,6 +21,7 @@ import { DeliveryFeeForm } from "@/components/admin/DeliveryFeeForm";
 import { ActualDeliveryCostForm } from "@/components/admin/ActualDeliveryCostForm";
 import { CopyBonButton } from "@/components/admin/CopyBonButton";
 import { DeleteOrderButton } from "@/components/admin/DeleteOrderButton";
+import { RetryPurchaseButton } from "@/components/admin/RetryPurchaseButton";
 import { CopyDeliveryInfoButton } from "@/components/admin/CopyDeliveryInfoButton";
 import { buildCustomerWhatsAppLink } from "@/lib/whatsapp";
 import { toInternationalDigits } from "@/lib/phone";
@@ -187,6 +188,31 @@ export default async function AdminOrderDetailPage({ params }: Props) {
           </dl>
         </div>
       )}
+
+      {/* تسليم البيعة إلى Meta — يظهر لطلبات الموقع وحدها، لأنها وحدها
+          تُرسِل Purchase. فشل التسليم صامت بطبعه: لا الزبون يراه ولا
+          المدير، ولا يظهر إلا كنقص في تقارير الحملة بعد أيام. */}
+      {order.source === "website" &&
+        (order.metaPurchaseAcceptedAt || order.metaPurchaseError) && (
+          <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-4">
+            <h2 className="text-sm font-semibold text-neutral-800">تسليم البيعة إلى Meta</h2>
+            {order.metaPurchaseAcceptedAt ? (
+              <p className="mt-2 text-sm text-green-700">
+                ✅ أقرّت Meta بالاستلام — {new Date(order.metaPurchaseAcceptedAt).toLocaleString("ar-MA")}
+              </p>
+            ) : (
+              <>
+                <p className="mt-2 text-sm font-semibold text-red-700">
+                  ⚠ لم تُقِرّ Meta بالاستلام بعد ({order.metaPurchaseAttempts} محاولة)
+                </p>
+                <p className="mt-1 break-words text-xs text-neutral-600" dir="ltr">
+                  {order.metaPurchaseError}
+                </p>
+                {isOwnerAdmin(admin) && <RetryPurchaseButton orderId={order.id} />}
+              </>
+            )}
+          </div>
+        )}
 
       <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-4">
         <h2 className="text-sm font-semibold text-neutral-800">المنتجات</h2>

@@ -17,24 +17,49 @@ const VALID_FBCLID = "IwZXh0bgNhZW0BMABwZG9mBWFkaWQBqzg8MyFoVnNydGMG";
 // 2026-09-29 18:52 بالمللي — من نطاق الطلبات الحقيقية.
 const AT = 1_790_700_720_000;
 
-describe("subdomainIndexFromHost", () => {
+/**
+ * كوكي `_fbc` حقيقية كتبتها Meta Pixel بنفسها، من الطلب 176 في الإنتاج
+ * (طلب موقع من 2026-10-07 على `www.tayssirfroid.com`). هي المرجع الذي
+ * يحكم على حسابنا: فهرسها **1** رغم أن الصفحة على `www`، لأن الـPixel تضع
+ * الكوكي على النطاق المُسجَّل. وكان حسابنا يُنتج 2.
+ */
+const REAL_PIXEL_COOKIE =
+  "fb.1.1791393058083.IwZXh0bgNhZW0CMTAAcGRvZgVmZGlkFlD9bj62LUcnAnpdSXzuzoZQ";
+
+describe("subdomainIndexFromHost — يطابق ما تكتبه Meta على نطاقنا", () => {
   test("النطاق المُسجَّل: 1", () => {
     expect(subdomainIndexFromHost("tayssirfroid.com")).toBe(1);
   });
 
-  test("نطاق فرعي واحد: 2", () => {
-    expect(subdomainIndexFromHost("www.tayssirfroid.com")).toBe(2);
+  test("www لا يرفع الفهرس: الكوكي على النطاق المُسجَّل لا على www", () => {
+    expect(subdomainIndexFromHost("www.tayssirfroid.com")).toBe(1);
+  });
+
+  test("فهرسنا المحسوب = فهرس الكوكي الحقيقية من الإنتاج", () => {
+    const fromRealCookie = Number(REAL_PIXEL_COOKIE.split(".")[1]);
+    expect(subdomainIndexFromHost("https://www.tayssirfroid.com/checkout")).toBe(fromRealCookie);
+  });
+
+  test("أي نطاق فرعي آخر كذلك: الكوكي ليست عليه", () => {
+    expect(subdomainIndexFromHost("shop.tayssirfroid.com")).toBe(1);
+    expect(subdomainIndexFromHost("a.b.tayssirfroid.com")).toBe(1);
+  });
+
+  test("لاحقة مستوى ثانٍ تحتاج ثلاثة مقاطع ليكتمل النطاق المُسجَّل", () => {
+    expect(subdomainIndexFromHost("example.co.uk")).toBe(2);
+    expect(subdomainIndexFromHost("www.example.co.uk")).toBe(2);
+    expect(subdomainIndexFromHost("shop.example.com.br")).toBe(2);
   });
 
   test("يتجاهل المنفذ والحالة والمسار", () => {
-    expect(subdomainIndexFromHost("WWW.TayssirFroid.com:3000")).toBe(2);
+    expect(subdomainIndexFromHost("WWW.TayssirFroid.com:3000")).toBe(1);
     expect(subdomainIndexFromHost("tayssirfroid.com/checkout")).toBe(1);
   });
 
   test("يقبل رابطاً كاملاً لا مضيفاً فقط", () => {
     // `capi_identity.eventSourceUrl` رابط كامل، و`request.headers.get("host")`
     // مضيف مجرَّد — المُنادون يُمرّرون الاثنين، فكلاهما يجب أن يُفهَم.
-    expect(subdomainIndexFromHost("https://www.tayssirfroid.com/checkout")).toBe(2);
+    expect(subdomainIndexFromHost("https://www.tayssirfroid.com/checkout")).toBe(1);
     expect(subdomainIndexFromHost("https://tayssirfroid.com/")).toBe(1);
     expect(subdomainIndexFromHost("http://tayssirfroid.com:3000/cart")).toBe(1);
   });
@@ -55,10 +80,29 @@ describe("buildFbc — يبني الصيغة الصحيحة", () => {
     ).toBe(`fb.1.${AT}.${VALID_FBCLID}`);
   });
 
-  test("النطاق الفرعي يرفع subdomainIndex", () => {
+  test("نفس الصيغة من www — لا فهرس مختلف لنفس الموقع", () => {
+    // الإسناد يكسره اختلافٌ لا يُعلن عن نفسه: `fbc` نبنيه بفهرس 2 بينما
+    // تكتب Meta 1 لنفس المتجر يعني قيمتين لنفس النقرة.
     expect(
       buildFbc({ fbclid: VALID_FBCLID, fbclidAt: AT, host: "www.tayssirfroid.com" })
-    ).toBe(`fb.2.${AT}.${VALID_FBCLID}`);
+    ).toBe(`fb.1.${AT}.${VALID_FBCLID}`);
+    expect(
+      buildFbc({ fbclid: VALID_FBCLID, fbclidAt: AT, host: "https://www.tayssirfroid.com/checkout" })
+    ).toBe(
+      buildFbc({ fbclid: VALID_FBCLID, fbclidAt: AT, host: "tayssirfroid.com" })
+    );
+  });
+
+  test("الكوكي الأصلية تبقى الأولى، بلا أي إعادة بناء", () => {
+    // حين توجد كوكي كتبتها Meta فهي المرجع — تُمرَّر كما هي حرفياً.
+    expect(
+      resolveFbc({
+        cookieFbc: REAL_PIXEL_COOKIE,
+        fbclid: VALID_FBCLID,
+        fbclidAt: AT,
+        host: "https://www.tayssirfroid.com/checkout",
+      })
+    ).toBe(REAL_PIXEL_COOKIE);
   });
 
   test("يستعمل لحظة أول ظهور الـfbclid، لا الآن", () => {

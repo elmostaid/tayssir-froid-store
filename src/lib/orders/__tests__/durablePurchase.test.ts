@@ -175,8 +175,9 @@ describe("الشراء يُسجَّل من الخادم، لا من المتصف
     // لصفحة اختفت. الحدث يجب أن يكون موجوداً رغم ذلك.
     const rows = await submittedRowsFor(result.publicReference);
     expect(rows).toHaveLength(1);
-    expect(sendGaPurchaseEventMock).toHaveBeenCalledTimes(1);
     expect(sendCapiEventMock).toHaveBeenCalledTimes(1);
+    // ولا GA4: شراؤها انتقل إلى التأكيد التجاري، فلا طرف هنا ينتظره أحد.
+    expect(sendGaPurchaseEventMock).not.toHaveBeenCalled();
   });
 
   test("إعادة الإرسال بنفس idempotencyKey: طلب واحد وحدث واحد", async () => {
@@ -194,12 +195,10 @@ describe("الشراء يُسجَّل من الخادم، لا من المتصف
 
     const rows = await submittedRowsFor(first.publicReference);
     expect(rows).toHaveLength(1);
-    // ولا إرسال ثانٍ إلى GA4 ولا إلى Meta.
-    expect(sendGaPurchaseEventMock).toHaveBeenCalledTimes(1);
+    // ولا إرسال ثانٍ إلى Meta. وGA4 لا تُرسَل من هنا إطلاقاً بعد اليوم:
+    // شراؤها انتقل إلى لحظة التأكيد التجاري بحرسه الخاص.
+    expect(sendGaPurchaseEventMock).not.toHaveBeenCalled();
     expect(sendCapiEventMock).toHaveBeenCalledTimes(1);
-    // والأهم: جواب المحاولة الثانية لا يُوقظ المتصفح ليُرسل نسخة ثانية.
-    // لو قرأت الراية `isNew` لقالت هنا "أرسِلْ أنت" عن طلب أرسله الخادم.
-    expect(second.gaPurchaseHandledServerSide).toBe(true);
   });
 
   test("طلب ينتظر مراجعة مخزون: يُسجَّل ويُبلَّغ عنه — ولا شراء له", async () => {
@@ -229,13 +228,14 @@ describe("الشراء يُسجَّل من الخادم، لا من المتصف
     expect(sendCapiEventMock).toHaveBeenCalledTimes(1);
     expect(sendCapiEventMock.mock.calls[0][0].eventName).toBe("OrderSubmitted");
 
-    // GA4 تبقى كما كانت: محجوبة على الطلب الذي ينتظر مراجعة.
+    // ولا GA4 كذلك: لم يبقَ لها شراء عند الإرسال، لأي طلب.
     expect(sendGaPurchaseEventMock).not.toHaveBeenCalled();
-    expect(result.gaPurchaseHandledServerSide).toBe(false);
   });
 
 
-  test("فشل شبكة نحو GA4: الطلب والحدث الداخلي سليمان — لا شيء يُسقطهما", async () => {
+  test("انهيار GA4 لا يُسقط الطلب ولا الحدث الداخلي", async () => {
+    // بقي الاختبار رغم أن الشراء لم يُرسَل من هنا: المُرسِل مُستورَد في
+    // هذا الملف، وانهياره يجب أن يبقى بلا أثر على مسار إنشاء الطلب.
     sendGaPurchaseEventMock.mockImplementation(async () => {
       throw new Error("شبكة مقطوعة");
     });
@@ -254,19 +254,24 @@ describe("الشراء يُسجَّل من الخادم، لا من المتصف
     expect(Number(rows[0].order_value)).toBe(40);
   });
 
-  test("نجاح GA4 من الخادم يُسكِت المتصفح — فلا شراء مضاعف في التقارير", async () => {
+  test("لا شراء GA4 عند الإرسال — بل لقطة هوية تنتظر التأكيد", async () => {
+    // هذا هو الإصلاح نفسه: كان GA4 يسمع "purchase" من هذا الموضع بالضبط،
+    // أي لحظة وصول الطلب قبل أن يؤكّده أحد. فصار ما يُحفظ هنا هو هوية
+    // الزبون في GA4 (client_id/session_id من كوكيّيه) لتُستعمل عند التأكيد،
+    // لأنها كوكيّان في متصفحه لا في متصفح المدير.
     const input = baseInput();
     input.items = [{ productId: inStockProductId, variantId: null, quantity: 1 }];
 
     const result = await createOrder(input);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.gaPurchaseHandledServerSide).toBe(true);
 
-    expect(sendGaPurchaseEventMock).toHaveBeenCalledTimes(1);
-    expect(sendGaPurchaseEventMock.mock.calls[0]?.[0]).toMatchObject({
-      transactionId: result.publicReference,
-      value: 40,
+    expect(sendGaPurchaseEventMock).not.toHaveBeenCalled();
+
+    const [row] = await sql<{ ga_identity: Record<string, unknown> | null }[]>`
+      select ga_identity from public.orders where public_reference = ${result.publicReference}
+    `;
+    expect(row.ga_identity).toEqual({
       clientId: "1234567890.1700000000",
       sessionId: "1756000000",
     });
@@ -283,8 +288,7 @@ describe("الشراء يُسجَّل من الخادم، لا من المتصف
 
     const rows = await submittedRowsFor(result.publicReference);
     expect(rows).toHaveLength(0);
-    // ومع ذلك يصل GA4 وMeta — لا يعتمدان على كوكي القياس الداخلي.
-    expect(sendGaPurchaseEventMock).toHaveBeenCalledTimes(1);
+    // ومع ذلك يصل Meta — لا يعتمد على كوكي القياس الداخلي.
     expect(sendCapiEventMock).toHaveBeenCalledTimes(1);
   });
 });

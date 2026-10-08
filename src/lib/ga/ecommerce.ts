@@ -154,24 +154,15 @@ export function trackGaBeginCheckout(params: { items: GaItem[]; value?: number }
   });
 }
 
-/**
- * شراء. transaction_id هو المرجع العام للطلب المحفوظ فعلاً — قيمة واحدة
- * لكل طلب حقيقي، وهي نفسها التي تظهر في لوحة الإدارة. GA4 يستبعد أي
- * purchase يتكرّر بنفس transaction_id، فهذا خط الدفاع الثاني بعد الحارس
- * الموجود في موضع الاستدعاء.
- */
-export function trackGaPurchase(params: {
-  transactionId: string;
-  items: GaItem[];
-  value?: number;
-}): void {
-  sendGaEvent("purchase", {
-    transaction_id: params.transactionId,
-    currency: CURRENCY,
-    value: params.value ?? sumValue(params.items),
-    items: toGaItems(params.items),
-  });
-}
+// ولا `trackGaPurchase` هنا بعد اليوم — حُذفت، لا عُطِّلت.
+//
+// كانت تُطلق "purchase" من المتصفح لحظة إرسال الطلب، وكان تعليقها يقول إن
+// GA4 تستبعد التكرار حسب `transaction_id`. وهذا غير صحيح: ذلك سلوك
+// Universal Analytics القديم، أما GA4 فتحتسب كل purchase يصلها (انظر
+// lib/ga/measurementProtocol.ts). فكانت الدالة تجمع خطأين: بيعةٌ تُعلَن قبل
+// التأكيد، وحرسٌ موهوم. والشراء صار يُرسَل من الخادم عند التأكيد التجاري
+// بحرس `ga_purchase_sent_at`، فلا يبقى لها موضع — وإبقاؤها متاحةً دعوةٌ
+// لإعادة الخطأ من حيث لا نعلم.
 
 /** للاختبارات فقط — تفريغ الطابور والمؤقّت بين الحالات. */
 export function __resetGaQueueForTests(): void {

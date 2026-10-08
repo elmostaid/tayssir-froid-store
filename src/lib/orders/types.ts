@@ -71,14 +71,9 @@ export type CreateOrderResult =
       /** فيه سطر أو أكثر لم يُحجز مخزونه — طلب مسجَّل لا بيع مكتمل. */
       needsReview: boolean;
       rejectedLines: RejectedLineSummary[];
-      /**
-       * هل أرسل الخادم شراء GA4 بنفسه (Measurement Protocol).
-       *
-       * `true` تعني على المتصفح ألّا يُرسله: GA4 لا تُلغي التكرار حسب
-       * `transaction_id`، فإرسال الطرفين معاً يُضاعف كل طلب وكل درهم في
-       * التقارير. `false` تعني أن الخادم لم يُرسل (لا سرّ مضبوط، أو لا
-       * `client_id`) فيبقى المتصفح مسؤولاً كما كان قبل هذا التغيير.
-       */
-      gaPurchaseHandledServerSide: boolean;
+      // لا راية `gaPurchaseHandledServerSide` بعد اليوم: لم يبقَ للمتصفح
+      // شراءٌ يُرسله أصلاً. شراء GA4 صار يُرسَل من الخادم عند **التأكيد
+      // التجاري** (lib/pixel/sendDeferredPurchase.ts) لا عند وصول الطلب،
+      // فلا طرفَ ثانٍ تُقسَّم عليه المسؤولية ولا احتمال احتساب مزدوج.
     }
   | { ok: false; errors: CreateOrderFieldError[] };

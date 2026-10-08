@@ -18,9 +18,10 @@
  *
  *   fb.<subdomainIndex>.<creationTime>.<fbclid>
  *
- * - `subdomainIndex`: عدد مقاطع النطاق فوق اللاحقة العامة. النطاق
- *   `tayssirfroid.com` ⇒ 1، و`www.tayssirfroid.com` ⇒ 2. يُشتقّ من المضيف
- *   الفعلي لا يُفترَض، لأن المشروع يُقدَّم من الاثنين.
+ * - `subdomainIndex`: عدد مقاطع **النطاق الذي كُتبت عليه الكوكي**، لا مقاطع
+ *   المضيف الذي وقع فيه الحدث. وMeta Pixel تكتب `_fbc` على النطاق المُسجَّل
+ *   دائماً، فـ`tayssirfroid.com` و`www.tayssirfroid.com` كلاهما ⇒ **1**.
+ *   (الدليل في `subdomainIndexFromHost` أدناه — قياسٌ من كوكي حقيقية.)
  * - `creationTime`: لحظة **أول** ظهور الـfbclid بالمللي ثانية — لا
  *   `Date.now()`. وقتٌ خاطئ هنا يعني نافذة إسناد خاطئة، وMeta تتعامل مع
  *   القيمة كما وصلت.
@@ -34,11 +35,30 @@ const MAX_FBCLID_LENGTH = 512;
 const FBCLID_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 /**
- * عدد مقاطع النطاق فوق اللاحقة العامة.
+ * لواحق المستوى الثاني التي تحتاج ثلاثة مقاطع ليكتمل نطاقٌ مُسجَّل
+ * (`co.uk`, `com.br`, `co.ma`). قائمة قصيرة مقصودة بدل جدول اللواحق
+ * العامة كاملاً: المتجر على `.com`، وهذه تكفي لئلا يُحسَب `example.co.uk`
+ * كأنّ `co.uk` نطاقٌ مُسجَّل.
+ */
+const SECOND_LEVEL_SUFFIXES = new Set(["co", "com", "net", "org", "gov", "edu", "ac"]);
+
+/**
+ * فهرس النطاق الذي **تكتب Meta الكوكي عليه** — لا فهرس مضيف الصفحة.
  *
- * حساب بسيط مقصود: اللاحقة المعتبرة مقطع واحد (`.com`, `.ma`). المشروع
- * يُقدَّم من `tayssirfroid.com` وحده، فلا داعٍ لجدول اللواحق العامة كاملاً
- * من أجل حالة لا تقع. وعند الشك نرجع 1 — وهو الأصحّ لنطاق مُسجَّل.
+ * ## لماذا تغيّر هذا الحساب
+ *
+ * كان يُرجع 2 لـ`www.tayssirfroid.com` (عدد المقاطع ناقص واحد)، اتباعاً
+ * لمثال Meta في التوثيق: `com`=0، `facebook.com`=1، `www.facebook.com`=2.
+ * والمثال صحيح، لكنه يصف **النطاق الذي عُرِّفت عليه الكوكي**، لا الصفحة.
+ *
+ * والقياس حسم الفرق: كوكي `_fbc` الحقيقية في الطلب 176 (طلب موقع من
+ * 2026-10-07 على `www.tayssirfroid.com`)، وقد كتبتها Meta Pixel بنفسها،
+ * تبدأ بـ`fb.1.` — لأن الـPixel تضع الكوكي على النطاق المُسجَّل
+ * (`tayssirfroid.com`) حتى حين تكون الصفحة على `www`.
+ *
+ * فلو بقينا نبني `fb.2.…` لكان كل `fbc` نبنيه من `fbclid` مخالفاً في صيغته
+ * لكل `fbc` تكتبه Meta لنفس الموقع — وهو بالضبط المسار الذي أُنشئ هذا
+ * الملف لإنقاذه حين تغيب الكوكي.
  */
 export function subdomainIndexFromHost(host: string | null | undefined): number {
   if (!host) return 1;
@@ -52,7 +72,10 @@ export function subdomainIndexFromHost(host: string | null | undefined): number 
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(clean)) return 1;
   const parts = clean.split(".").filter(Boolean);
   if (parts.length <= 2) return 1;
-  return parts.length - 1;
+  // النطاق المُسجَّل = مقطعان، أو ثلاثة تحت لاحقة مستوى ثانٍ. وأي نطاقات
+  // فرعية فوقه لا تُحتسب: الكوكي ليست عليها.
+  const registrableLabels = SECOND_LEVEL_SUFFIXES.has(parts[parts.length - 2]) ? 3 : 2;
+  return registrableLabels - 1;
 }
 
 /**
