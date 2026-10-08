@@ -22,9 +22,32 @@ import { sql } from "@/lib/db";
  * الزبون — فتبدو كل التحويلات من شخص واحد. وهذا أسوأ من ألّا نرسل شيئاً.
  *
  * **3. لا شراء لما لم يُبَع.** الطلب الملغى قبل التأكيد لا يُرسَل عنه شيء.
+ *
+ * **4. مبيعات الموقع وحدها.** الطلب اليدوي لا يُرسل شيئاً — أول بيعة مرّت
+ * على هذا المسار في الإنتاج كانت طلباً يدوياً فأرسلت Purchase بلا أي هوية
+ * Meta: بيعةٌ لا تُنسَب لإعلان، لكنها تُضخّم العدّاد وتُفسد كل ROAS بعدها.
+ *
+ * **5. الفشل لا يُهلك البيعة.** الحجز يُؤخَذ قبل النداء (وإلّا احتُسبت
+ * مرتين)، فصار فشل التسليم يُحرّره ويُسجّل سببه لتُعاد المحاولة — وهو آمن
+ * لأن `event_id` حتمي فتُسقِط Meta أي تكرار.
  */
 
-const sendCapiEventMock = vi.hoisted(() => vi.fn());
+// الـmock يُرجع إقراراً صريحاً: `sendCapiEvent` صارت تُرجع نتيجةً، و"نجاح"
+// يعني أن Meta أقرّت بالاستلام (`events_received ≥ 1`) لا أننا نادينا.
+const sendCapiEventMock = vi.hoisted(() =>
+  vi.fn(
+    async (payload: unknown): Promise<{
+      ok: boolean;
+      eventsReceived?: number;
+      status?: number;
+      error?: string;
+      retryable?: boolean;
+    }> => {
+      void payload;
+      return { ok: true, eventsReceived: 1, status: 200 };
+    }
+  )
+);
 vi.mock("@/lib/pixel/capi", () => ({
   sendCapiEvent: sendCapiEventMock,
   isCapiConfigured: () => true,
@@ -46,7 +69,7 @@ vi.mock("next/cache", () => ({
 
 const { createOrder } = await import("@/lib/orders/createOrder");
 const { updateOrderStatus } = await import("@/app/admin/(protected)/orders/actions");
-const { sendDeferredPurchase, purchaseEventId } = await import(
+const { sendDeferredPurchase, purchaseEventId, MAX_PURCHASE_ATTEMPTS } = await import(
   "@/lib/pixel/sendDeferredPurchase"
 );
 
@@ -146,11 +169,22 @@ beforeEach(() => {
   sendCapiEventMock.mockClear();
 });
 
+/** شكل ما يُمرَّر إلى `sendCapiEvent` — يكفي لما تفحصه الاختبارات. */
+type CapiPayload = {
+  eventName: string;
+  eventId: string;
+  eventTimeMs?: number;
+  userData: Record<string, string | undefined>;
+  customData: Record<string, unknown>;
+};
+
+function capiPayloads(): CapiPayload[] {
+  return sendCapiEventMock.mock.calls.map((call) => call[0] as CapiPayload);
+}
+
 /** مكالمات Meta من نوع Purchase وحدها (createOrder يُرسل OrderSubmitted). */
-function purchaseCalls() {
-  return sendCapiEventMock.mock.calls
-    .map((call) => call[0])
-    .filter((payload) => payload.eventName === "Purchase");
+function purchaseCalls(): CapiPayload[] {
+  return capiPayloads().filter((payload) => payload.eventName === "Purchase");
 }
 
 /**
@@ -171,7 +205,7 @@ describe("لا شراء قبل التأكيد التجاري", () => {
   test("إرسال الطلب وحده: Meta تسمع OrderSubmitted فقط", async () => {
     await makeOrder({ withAd: true });
 
-    const names = sendCapiEventMock.mock.calls.map((call) => call[0].eventName);
+    const names = capiPayloads().map((payload) => payload.eventName);
     expect(names).toEqual(["OrderSubmitted"]);
     expect(purchaseCalls()).toHaveLength(0);
   });
@@ -409,5 +443,168 @@ describe("الإلغاء يحفظ ولا يمحو", () => {
       select status from public.orders where id = ${orderId}
     `;
     expect(row.status).toBe("new");
+  });
+});
+
+describe("مبيعات الموقع وحدها", () => {
+  test("طلب يدوي (source ≠ website): لا شراء إطلاقاً", async () => {
+    // الطلب 177 في الإنتاج: طلب واتساب يدوي أرسل Purchase بلا fbp ولا fbc
+    // ولا IP ولا User-Agent. بيعةٌ حقيقية، لكن لا تُنسَب لإعلان ولا تُعلّم
+    // Meta شيئاً — وتُضخّم عدّاد التحويلات فتُفسد كل ROAS نحسبه بعدها.
+    const orderId = await makeOrder({ withAd: true });
+    await sql`update public.orders set source = 'whatsapp' where id = ${orderId}`;
+    sendCapiEventMock.mockClear();
+
+    expect((await updateOrderStatus({ error: null }, statusForm(orderId, "confirmed"))).error).toBeNull();
+    expect(await sendDeferredPurchase(orderId)).toEqual({ sent: false, reason: "not_website" });
+    expect(purchaseCalls()).toHaveLength(0);
+
+    // ولا يُستهلك الحرس: الطلب لم يُرسَل عنه شيء، فلا شيء "أُرسل".
+    const [row] = await sql<{ meta_purchase_sent_at: Date | null }[]>`
+      select meta_purchase_sent_at from public.orders where id = ${orderId}
+    `;
+    expect(row.meta_purchase_sent_at).toBeNull();
+  });
+
+  test("طلب بدأ في الموقع وأُغلق في واتساب يبقى مبيعاً للموقع", async () => {
+    // `source` يُكتب 'website' لحظة الإنشاء في الموقع ولا يتغيّر بعدها
+    // أبداً — فالإغلاق على واتساب (وهو المسار المقصود في القُمع الجديد) لا
+    // يُخرج البيعة من مبيعات الموقع.
+    const orderId = await makeOrder({ withAd: true });
+    sendCapiEventMock.mockClear();
+
+    await updateOrderStatus({ error: null }, statusForm(orderId, "contacted"));
+    expect(purchaseCalls()).toHaveLength(0);
+    await updateOrderStatus({ error: null }, statusForm(orderId, "confirmed"));
+
+    const calls = await waitForPurchase();
+    expect(calls[0].eventId).toBe(purchaseEventId(orderId));
+    const [row] = await sql<{ source: string }[]>`
+      select source from public.orders where id = ${orderId}
+    `;
+    expect(row.source).toBe("website");
+  });
+});
+
+describe("النجاح إقرارٌ من Meta، والفشل لا يُهلك البيعة", () => {
+  test("القبول يُسجَّل في meta_purchase_accepted_at لا في لحظة النداء", async () => {
+    const orderId = await makeOrder({ withAd: true });
+    sendCapiEventMock.mockClear();
+
+    await updateOrderStatus({ error: null }, statusForm(orderId, "confirmed"));
+    await waitForPurchase();
+
+    await vi.waitFor(async () => {
+      const [row] = await sql<
+        { accepted: Date | null; error: string | null; attempts: number }[]
+      >`
+        select meta_purchase_accepted_at as accepted, meta_purchase_error as error,
+               meta_purchase_attempts as attempts
+        from public.orders where id = ${orderId}
+      `;
+      expect(row.accepted).not.toBeNull();
+      expect(row.error).toBeNull();
+      expect(row.attempts).toBe(1);
+    }, { timeout: 2000, interval: 10 });
+  });
+
+  test("رفض Meta: الحجز يُحرَّر والسبب يُسجَّل، ثم تنجح المحاولة الثانية", async () => {
+    const orderId = await makeOrder({ withAd: true });
+    sendCapiEventMock.mockClear();
+    sendCapiEventMock.mockResolvedValueOnce({
+      ok: false,
+      error: "HTTP 503 — upstream down",
+      retryable: true,
+      status: 503,
+    });
+
+    expect(await sendDeferredPurchase(orderId)).toEqual({ sent: false, reason: "not_a_sale" });
+    await updateOrderStatus({ error: null }, statusForm(orderId, "confirmed"));
+    await waitForPurchase();
+
+    // بعد الفشل: لا "أُرسل"، ولا "قُبل"، بل سببٌ مكتوب ومحاولة محسوبة.
+    await vi.waitFor(async () => {
+      const [row] = await sql<
+        { sent: Date | null; accepted: Date | null; error: string | null; attempts: number }[]
+      >`
+        select meta_purchase_sent_at as sent, meta_purchase_accepted_at as accepted,
+               meta_purchase_error as error, meta_purchase_attempts as attempts
+        from public.orders where id = ${orderId}
+      `;
+      expect(row.sent).toBeNull();
+      expect(row.accepted).toBeNull();
+      expect(row.error).toContain("503");
+      expect(row.attempts).toBe(1);
+    }, { timeout: 2000, interval: 10 });
+
+    // المحاولة الثانية (أي تغيير حالة لاحق) تنجح — وبنفس event_id الحتمي،
+    // فلو كان الأول قد وصل فعلاً لأسقطته Meta بالـdedup.
+    const second = await sendDeferredPurchase(orderId);
+    expect(second.sent).toBe(true);
+    expect(purchaseCalls()).toHaveLength(2);
+    expect(purchaseCalls()[0].eventId).toBe(purchaseCalls()[1].eventId);
+
+    const [row] = await sql<{ accepted: Date | null; error: string | null; attempts: number }[]>`
+      select meta_purchase_accepted_at as accepted, meta_purchase_error as error,
+             meta_purchase_attempts as attempts
+      from public.orders where id = ${orderId}
+    `;
+    expect(row.accepted).not.toBeNull();
+    expect(row.error).toBeNull();
+    expect(row.attempts).toBe(2);
+  });
+
+  test("سقف المحاولات يوقف المطاردة ويُبقي السبب شاهداً", async () => {
+    const orderId = await makeOrder({ withAd: true });
+    await sql`update public.orders set status = 'confirmed', confirmed_at = now() where id = ${orderId}`;
+    sendCapiEventMock.mockClear();
+    sendCapiEventMock.mockResolvedValue({ ok: false, error: "فشل دائم", retryable: true });
+
+    for (let i = 0; i < MAX_PURCHASE_ATTEMPTS; i += 1) {
+      const outcome = await sendDeferredPurchase(orderId);
+      expect(outcome).toMatchObject({ sent: false, reason: "delivery_failed" });
+    }
+    expect(purchaseCalls()).toHaveLength(MAX_PURCHASE_ATTEMPTS);
+
+    // المحاولة التالية لا تُنادي Meta إطلاقاً.
+    expect(await sendDeferredPurchase(orderId)).toEqual({
+      sent: false,
+      reason: "attempts_exhausted",
+    });
+    expect(purchaseCalls()).toHaveLength(MAX_PURCHASE_ATTEMPTS);
+
+    const [row] = await sql<{ error: string | null; attempts: number }[]>`
+      select meta_purchase_error as error, meta_purchase_attempts as attempts
+      from public.orders where id = ${orderId}
+    `;
+    expect(row.attempts).toBe(MAX_PURCHASE_ATTEMPTS);
+    expect(row.error).toBe("فشل دائم");
+
+    sendCapiEventMock.mockResolvedValue({ ok: true, eventsReceived: 1, status: 200 });
+  });
+});
+
+describe("حرس GA4 منفصل — لأن GA4 لا تُلغي التكرار", () => {
+  test("لقطة ga_identity تُحفظ وقت الإرسال", async () => {
+    const orderId = await makeOrder({ withAd: true });
+    const [row] = await sql<{ ga_identity: Record<string, unknown> | null }[]>`
+      select ga_identity from public.orders where id = ${orderId}
+    `;
+    // هذه الجلسة بلا كوكي `_ga` — فالحقل موجود بقيمتين فارغتين لا غائب،
+    // وهو ما يجعل غياب `client_id` قراراً مقروءاً لا فجوة.
+    expect(row.ga_identity).toEqual({ clientId: null, sessionId: null });
+  });
+
+  test("بلا GA4 مُهيَّأة: لا شراء GA4 ولا استهلاك لحرسه", async () => {
+    const orderId = await makeOrder({ withAd: true });
+    await updateOrderStatus({ error: null }, statusForm(orderId, "confirmed"));
+    await waitForPurchase();
+
+    const [row] = await sql<{ ga_sent: Date | null; ga_attempts: number }[]>`
+      select ga_purchase_sent_at as ga_sent, ga_purchase_attempts as ga_attempts
+      from public.orders where id = ${orderId}
+    `;
+    expect(row.ga_sent).toBeNull();
+    expect(row.ga_attempts).toBe(0);
   });
 });

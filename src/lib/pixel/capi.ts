@@ -94,12 +94,44 @@ export type SendCapiEventParams = {
  * ولا يُؤثِّر أبداً على الصفحة/الطلب الذي استدعاه (نفس نمط notifyNewOrder
  * الموجود أصلاً فـcreateOrder.ts — "أفضل مجهود" لا يكسر أي مسار حقيقي).
  */
-export async function sendCapiEvent(params: SendCapiEventParams): Promise<void> {
+/**
+ * نتيجة الإرسال — `ok` تعني أن **Meta أكّدت الاستلام**، لا أننا نادينا.
+ *
+ * الفرق ليس لفظياً: الشراء المؤجَّل يستهلك حرس exactly-once قبل النداء،
+ * فلو اعتبرنا مجرّد النداء نجاحاً لضاعت البيعة صامتةً عند أي انقطاع. ومن
+ * هنا `eventsReceived`: Meta تردّ 200 مع `events_received`، والصفر فيه
+ * يعني أنها لم تستلم شيئاً رغم الرمز 200.
+ */
+export type CapiSendResult = {
+  ok: boolean;
+  /** عدد الأحداث التي أقرّت Meta باستلامها. */
+  eventsReceived?: number;
+  /** رمز HTTP إن وصل جواب أصلاً. */
+  status?: number;
+  /** وصف الفشل، جاهزاً للحفظ في `orders.meta_purchase_error`. */
+  error?: string;
+  /** هل يستحقّ الفشل محاولة لاحقة (شبكة/5xx) أم لا (4xx، تهيئة ناقصة). */
+  retryable?: boolean;
+};
+
+/** مهلة قصيرة: لا نُبقي دالة serverless معلّقة لأجل القياس. */
+const CAPI_TIMEOUT_MS = 4000;
+
+/** فاصل قصير قبل المحاولة الثانية داخل النداء — انقطاع عابر لا أكثر. */
+const CAPI_RETRY_DELAY_MS = 400;
+
+/** محاولتان داخل النداء؛ ما بعدهما يحتاج تشخيصاً لا تكراراً. */
+const CAPI_ATTEMPTS = 2;
+
+export async function sendCapiEvent(params: SendCapiEventParams): Promise<CapiSendResult> {
   const pixelId = getMetaPixelId();
   const accessToken = getAccessToken();
-  if (!pixelId || !accessToken) return;
+  // تهيئة ناقصة ليست انقطاعاً عابراً: إعادة المحاولة لن تُنشئ توكناً.
+  if (!pixelId || !accessToken) {
+    return { ok: false, error: "CAPI غير مُهيَّأ — pixel id أو access token ناقص", retryable: false };
+  }
 
-  try {
+  {
     const userData: Record<string, unknown> = {};
     if (params.userData?.phone) userData.ph = [hashForCapi(params.userData.phone)];
     if (params.userData?.clientIpAddress) userData.client_ip_address = params.userData.clientIpAddress;
@@ -134,23 +166,73 @@ export async function sendCapiEvent(params: SendCapiEventParams): Promise<void> 
       ...(testEventCode ? { test_event_code: testEventCode } : {}),
     };
 
-    const response = await fetch(
-      `https://graph.facebook.com/${GRAPH_API_VERSION}/${pixelId}/events?access_token=${encodeURIComponent(accessToken)}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      }
-    );
+    const url =
+      `https://graph.facebook.com/${GRAPH_API_VERSION}/${pixelId}/events` +
+      `?access_token=${encodeURIComponent(accessToken)}`;
 
-    if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      console.error(
-        `sendCapiEvent: رفضت Meta الحدث "${params.eventName}" (HTTP ${response.status})`,
-        text
-      );
+    let last: CapiSendResult = { ok: false, error: "لم تُجرَ أي محاولة", retryable: true };
+
+    for (let attempt = 1; attempt <= CAPI_ATTEMPTS; attempt += 1) {
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(CAPI_TIMEOUT_MS),
+        });
+
+        const text = await response.text().catch(() => "");
+
+        if (response.ok) {
+          // 200 وحده لا يكفي: Meta تردّ 200 مع `events_received: 0` حين
+          // تُسقِط الحدث. فالقبول هو أن تُقرّ باستلام حدث واحد على الأقل.
+          let received: number | undefined;
+          try {
+            const parsed = JSON.parse(text) as { events_received?: unknown };
+            if (typeof parsed.events_received === "number") received = parsed.events_received;
+          } catch {
+            // جسمٌ غير JSON مع 200: نعتبره قبولاً بلا عدد — لا نُسقِط بيعة
+            // لأن شكل الجواب تغيّر.
+          }
+
+          if (received === undefined || received >= 1) {
+            return { ok: true, status: response.status, eventsReceived: received };
+          }
+
+          console.error(
+            `sendCapiEvent: قبلت Meta الطلب ولم تستلم أي حدث "${params.eventName}" (events_received=0)`,
+            text
+          );
+          // `events_received: 0` عطبٌ في الحمولة لا في الشبكة.
+          return { ok: false, status: response.status, eventsReceived: 0, error: `events_received=0 — ${text.slice(0, 300)}`, retryable: false };
+        }
+
+        console.error(
+          `sendCapiEvent: رفضت Meta الحدث "${params.eventName}" (HTTP ${response.status}) — المحاولة ${attempt}`,
+          text
+        );
+        // 4xx حمولة أو توكن خاطئ؛ إعادة المحاولة لن تُغيّر شيئاً. و429/5xx
+        // ضغطٌ أو عطلٌ عابر يستحقّ محاولة ثانية.
+        const retryable = response.status >= 500 || response.status === 429;
+        last = { ok: false, status: response.status, error: `HTTP ${response.status} — ${text.slice(0, 300)}`, retryable };
+        if (!retryable) return last;
+      } catch (error) {
+        console.error(
+          `sendCapiEvent: تعذّر إرسال الحدث "${params.eventName}" إلى Meta CAPI — المحاولة ${attempt}`,
+          error
+        );
+        last = {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+          retryable: true,
+        };
+      }
+
+      if (attempt < CAPI_ATTEMPTS) {
+        await new Promise((resolve) => setTimeout(resolve, CAPI_RETRY_DELAY_MS));
+      }
     }
-  } catch (error) {
-    console.error(`sendCapiEvent: تعذّر إرسال الحدث "${params.eventName}" إلى Meta CAPI`, error);
+
+    return last;
   }
 }

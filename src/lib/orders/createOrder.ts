@@ -14,11 +14,6 @@ import { notifyNewOrder } from "@/lib/notifications/notifyNewOrder";
 import { sendCapiEvent } from "@/lib/pixel/capi";
 import { writeServerOrderSubmittedEvent } from "@/lib/analytics/serverPurchase";
 import { resolveFbc } from "@/lib/pixel/fbc";
-import {
-  sendGaPurchaseEvent,
-  isGaMeasurementProtocolConfigured,
-} from "@/lib/ga/measurementProtocol";
-import { runAfterResponse } from "@/lib/afterResponse";
 import { toInternationalDigits } from "@/lib/phone";
 import { getSiteUrl } from "@/lib/siteUrl";
 import { customerAddressOrNull } from "@/lib/orders/customerAddress";
@@ -216,19 +211,27 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       eventSourceUrl: input.requestContext?.eventSourceUrl ?? null,
     });
 
+    // ونفس العلّة في GA4: شراء GA4 انتقل هو أيضاً إلى لحظة التأكيد، فصار
+    // `client_id` و`session_id` يلزمان بعد ساعات من مغادرة الزبون. وهما
+    // كوكيّان في متصفحه لا في متصفح المدير — فيُلتقطان الآن أو لا يوجدان.
+    const gaIdentity = sql.json({
+      clientId: input.requestContext?.gaClientId ?? null,
+      sessionId: input.requestContext?.gaSessionId ?? null,
+    });
+
     const result = await sql.begin(async (trx) => {
       const inserted = await trx<{ id: number; public_reference: string; order_number: string }[]>`
         insert into public.orders (
           customer_name, customer_phone, customer_city, customer_address,
           customer_notes, items_subtotal, delivery_fee, final_total,
           status, source, idempotency_key,
-          attribution_first, attribution_last, capi_identity
+          attribution_first, attribution_last, capi_identity, ga_identity
         ) values (
           ${input.customer.fullName.trim()}, ${normalizedPhone}, ${input.customer.city.trim()},
           ${customerAddressOrNull(input.customer.address)}, ${input.customer.notes?.trim() || null},
           ${subtotal}, ${deliveryFee}, ${finalTotal},
           'new', 'website', ${input.idempotencyKey},
-          ${attributionFirst}, ${attributionLast}, ${capiIdentity}
+          ${attributionFirst}, ${attributionLast}, ${capiIdentity}, ${gaIdentity}
         )
         on conflict (idempotency_key) do nothing
         returning id, public_reference, order_number
@@ -321,14 +324,6 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     // do nothing`، فإعادة الإرسال بنفس المفتاح ترجع الطلب القائم بلا تسجيل
     // ثانٍ. وطلب ينتظر مراجعة مخزون ليس بيعاً مكتملاً فلا شراء له.
 
-    // أما مَن يملك إرسال شراء GA4 فيُحسم من التهيئة وحدها، لا من كون هذه
-    // المحاولة هي التي أنشأت الطلب: إعادة إرسال بنفس المفتاح ترجع
-    // `isNew:false`، ولو ربطنا الراية بذلك لقالت للمتصفح "أرسِلْ أنت" عن
-    // طلب أرسله الخادم أصلاً — أي شراء مضاعف من حيث أردنا منعه.
-    const gaClientId = input.requestContext?.gaClientId;
-    const gaPurchaseHandledServerSide =
-      !needsReview && isGaMeasurementProtocolConfigured() && Boolean(gaClientId);
-
     // الطلب وصل وحُفظ. ما يُرسَل هنا هو **إرسال طلب**، لا بيعة: الزبون
     // يؤكّد في واتساب بعد هذا، وما لا يُؤكَّد يُلغى. حدث `Purchase` انتقل
     // إلى لحظة التأكيد التجاري (lib/pixel/sendDeferredPurchase.ts).
@@ -407,25 +402,12 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
         },
       });
 
-      // GA4: يبقى كما كان (مشروطاً بـ!needsReview). خارج نطاق هذا التغيير
-      // عمداً — وهو ما زال يُرسل "purchase" عند الإرسال لا عند التأكيد، فلا
-      // تُقارَن أرقام GA4 بأرقام Meta بعد اليوم دون الانتباه لذلك.
-      if (gaPurchaseHandledServerSide) {
-        runAfterResponse(() =>
-          sendGaPurchaseEvent({
-            transactionId: result.publicReference,
-            value: subtotal,
-            items: lineItems.map((line) => ({
-              item_id: line.skuSnapshot,
-              item_name: line.nameSnapshot,
-              price: line.unitPrice,
-              quantity: line.quantity,
-            })),
-            clientId: gaClientId,
-            sessionId: input.requestContext?.gaSessionId,
-          })
-        );
-      }
+      // ولا شراء GA4 هنا بعد اليوم. كان يُرسَل من هذا الموضع بالضبط، أي
+      // لحظة وصول الطلب — فكانت GA4 تقول "بيعة" عن طلبٍ لم يؤكّده أحد،
+      // ويختلف رقمها عن رقم Meta بلا سبب مفهوم. صار شراء GA4 يُرسَل من
+      // lib/pixel/sendDeferredPurchase.ts عند التأكيد التجاري، بحرسه الخاص
+      // (`ga_purchase_sent_at`) لأن GA4 لا تُلغي التكرار حسب
+      // `transaction_id` — فحرسٌ عندنا أو إيرادٌ مضاعف، لا ثالث.
     }
 
     return {
@@ -441,7 +423,6 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       // رقم الطلب المقروء — تحتاجه رسالة واتساب لتُحيل الفريق إلى اللوحة
       // بدل سرد المنتجات، فلم يعد يكفي أن يبقى داخل المعاملة.
       orderNumber: result.orderNumber,
-      gaPurchaseHandledServerSide,
     };
   } catch (error) {
     console.error("createOrder: خطأ غير متوقع أثناء إنشاء الطلب", error);

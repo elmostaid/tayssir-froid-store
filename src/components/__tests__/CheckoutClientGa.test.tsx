@@ -15,6 +15,8 @@ const beginCheckoutMock = vi.fn();
 const purchaseMock = vi.fn();
 vi.mock("@/lib/ga/ecommerce", () => ({
   trackGaBeginCheckout: (...args: unknown[]) => beginCheckoutMock(...args),
+  // الدالة نفسها حُذفت من `lib/ga/ecommerce`؛ يبقى الـmock هنا شاهداً على
+  // أن لا شيء في مسار Checkout يُناديها بعد اليوم.
   trackGaPurchase: (...args: unknown[]) => purchaseMock(...args),
 }));
 
@@ -116,23 +118,18 @@ describe("GA4 begin_checkout — مرة واحدة، بكل سطور السلة 
   });
 });
 
-describe("GA4 purchase — على طلب محفوظ حقيقي فقط، مرة واحدة لكل طلب", () => {
-  test("نجاح الحفظ: purchase مرة واحدة، transaction_id هو مرجع الطلب الحقيقي", async () => {
+describe("GA4 purchase — عند التأكيد التجاري وحده، لا عند إرسال الطلب", () => {
+  test("نجاح الحفظ: لا purchase من المتصفح، بل صفحة نجاح ومرجع", async () => {
     renderCheckout();
     await waitFor(() => expect(beginCheckoutMock).toHaveBeenCalledTimes(1));
     await fillRequiredFields();
     fireEvent.click(screen.getByRole("button", { name: /إرسال الطلب/ }));
 
-    await waitFor(() => expect(purchaseMock).toHaveBeenCalledTimes(1));
-    expect(purchaseMock).toHaveBeenCalledWith({
-      transactionId: "TF-REF-9",
-      value: CART_TOTAL,
-      items: [
-        { sku: "TF-COMP-01", name: "ضاغط", price: 100, quantity: 2, variant: null },
-        { sku: "TF-JOINT-02", name: "جوان", price: 25, quantity: 4, variant: "كبير" },
-      ],
-    });
-  });
+    await screen.findByText("تم تسجيل طلبك ✅", undefined, { timeout: 10000 });
+    // الطلب وصل وحُفظ ومرجعه ظاهر — ومع ذلك لا بيعة في أي منصّة حتى
+    // يؤكّده الزبون في واتساب ويُثبّت المدير الحالة.
+    expect(purchaseMock).not.toHaveBeenCalled();
+  }, 20000);
 
   test("فشل الحفظ (ok:false): لا purchase إطلاقاً", async () => {
     submitOrderMock.mockReturnValue({
@@ -183,14 +180,16 @@ describe("GA4 purchase — على طلب محفوظ حقيقي فقط، مرة �
   }, 20000);
 });
 
-describe("لا شراء مضاعف: الخادم والمتصفح لا يُرسلان معاً أبداً", () => {
-  test("أرسل الخادم (gaPurchaseHandledServerSide) ⇒ المتصفح يسكت", async () => {
+describe("المتصفح لا يُرسل شراءً إلى أي منصّة", () => {
+  test("نجاح الحفظ لا يُطلق purchase في GA4 — البيعة لم تُؤكَّد بعد", async () => {
+    // كان المتصفح يُرسل شراء GA4 هنا متى سكت الخادم. وهو نفس خطأ Meta في
+    // نظام آخر: طلبٌ وصل ليس بيعةً، والزبون يؤكّد في واتساب بعد هذه
+    // اللحظة. فصار شراء GA4 يُرسَل من الخادم عند التأكيد التجاري وحده.
     submitOrderMock.mockReturnValue({
       ok: true,
       publicReference: "TF-REF-SERVER",
       orderNumber: "TF-2026-0101",
       needsReview: false,
-      gaPurchaseHandledServerSide: true,
     });
     renderCheckout();
     await waitFor(() => expect(beginCheckoutMock).toHaveBeenCalledTimes(1));
@@ -199,28 +198,22 @@ describe("لا شراء مضاعف: الخادم والمتصفح لا يُرس�
 
     await waitFor(() => expect(submitOrderMock).toHaveBeenCalledTimes(1));
     await new Promise((resolve) => setTimeout(resolve, 60));
-    // GA4 لا تُلغي التكرار حسب transaction_id — إرسال الطرفين يعني طلبين
-    // وإيراداً مضاعفاً في التقارير. لذلك الصمت هنا هو الصواب.
     expect(purchaseMock).not.toHaveBeenCalled();
   });
 
-  test("لم يُرسل الخادم ⇒ المتصفح يُرسل مرة واحدة، فلا يضيع الحدث", async () => {
+  test("ولا حتى على طلب مكتمل بلا مراجعة — لا شرط يُعيد الشراء للمتصفح", async () => {
     submitOrderMock.mockReturnValue({
       ok: true,
       publicReference: "TF-REF-CLIENT",
       orderNumber: "TF-2026-0102",
       needsReview: false,
-      gaPurchaseHandledServerSide: false,
     });
     renderCheckout();
     await waitFor(() => expect(beginCheckoutMock).toHaveBeenCalledTimes(1));
     await fillRequiredFields();
     fireEvent.click(screen.getByRole("button", { name: /إرسال الطلب/ }));
 
-    await waitFor(() => expect(purchaseMock).toHaveBeenCalledTimes(1));
-    expect(purchaseMock.mock.calls[0][0]).toMatchObject({
-      transactionId: "TF-REF-CLIENT",
-      value: CART_TOTAL,
-    });
-  });
+    await screen.findByText("تم تسجيل طلبك ✅", undefined, { timeout: 10000 });
+    expect(purchaseMock).not.toHaveBeenCalled();
+  }, 20000);
 });

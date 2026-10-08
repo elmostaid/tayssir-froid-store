@@ -38,6 +38,9 @@ const fixtureOrder: AdminOrderDetail = {
   finalTotal: null,
   source: "website",
   createdAt: new Date().toISOString(),
+  metaPurchaseAcceptedAt: null,
+  metaPurchaseError: null,
+  metaPurchaseAttempts: 0,
 };
 
 const fixtureItems: AdminOrderItem[] = [

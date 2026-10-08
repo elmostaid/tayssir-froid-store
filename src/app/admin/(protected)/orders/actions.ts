@@ -124,6 +124,49 @@ export async function updateOrderStatus(
   return { error: null };
 }
 
+/**
+ * إعادة إرسال بيعةٍ مؤكَّدة تعثّر تسليمها إلى Meta.
+ *
+ * موجود لأن الحرس يُستهلك قبل النداء: فشل الشبكة يُحرّر الحجز تلقائياً
+ * ليُعاد على أول تغيير حالة لاحق — لكن طلباً وصل `delivered` ولن يلمسه أحد
+ * بعدها كان سيبقى بلا بيعة إلى الأبد. هذا الزرّ هو المحاولة اليدوية.
+ *
+ * وهو آمن للتكرار: `event_id` حتمي (`purchase:<id>`) فأي وصول مزدوج
+ * تُسقطه Meta نفسها. ولذلك يُصفَّر عدّاد المحاولات هنا: من يضغط الزرّ قد
+ * أصلح العطب، فلا معنى لأن يمنعه سقفٌ كان يحمي من المطاردة الآلية.
+ */
+export async function retryDeferredPurchase(orderId: number): Promise<OrderActionState> {
+  const admin = await getAdminUser();
+  if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+  // إجراء قياس يمسّ ما تراه Meta — لصاحب الحساب، لا لكل من يُحدِّث الحالات.
+  if (!isOwnerAdmin(admin)) {
+    return { error: "إعادة إرسال البيعة مقصورة على صاحب الحساب (Admin)." };
+  }
+  if (!Number.isInteger(orderId) || orderId <= 0) return { error: "بيانات غير صالحة." };
+
+  await sql`
+    update public.orders
+    set meta_purchase_sent_at = null, meta_purchase_attempts = 0
+    where id = ${orderId} and meta_purchase_accepted_at is null
+  `;
+
+  const outcome = await sendDeferredPurchase(orderId);
+  revalidatePath(`/admin/orders/${orderId}`);
+
+  if (outcome.sent) return { error: null };
+  if (outcome.reason === "already_sent") return { error: null };
+
+  const why: Record<string, string> = {
+    not_website: "هذا طلب يدوي — مبيعات الموقع وحدها تُرسَل إلى Meta.",
+    not_a_sale: "الطلب ليس في حالة بيعة مؤكَّدة.",
+    nothing_to_send: "لا سطر محجوز في هذا الطلب.",
+    order_not_found: "الطلب غير موجود.",
+    attempts_exhausted: "استُنفدت المحاولات.",
+    delivery_failed: `لم تقبل Meta الحدث: ${outcome.error ?? "سبب غير معروف"}`,
+  };
+  return { error: why[outcome.reason] ?? "تعذّرت إعادة الإرسال." };
+}
+
 // مصاريف التوصيل قابلة للتعديل يدوياً من الإدارة (تُحدَّد بعد تجهيز الطلب
 // الفعلي)، والمجموع النهائي (المبلغ المطلوب عند الاستلام) يُعاد حسابه فوراً
 // = مجموع المنتجات + مصاريف التوصيل.

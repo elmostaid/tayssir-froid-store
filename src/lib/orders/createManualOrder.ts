@@ -131,16 +131,21 @@ export async function createManualOrder(input: ManualOrderInput): Promise<Manual
 
   try {
     const created = await sql.begin(async (trx) => {
+      // `confirmed_at` يُكتب هنا لا في أول تغيير حالة لاحق: الطلب اليدوي
+      // يُنشأ **مؤكَّداً أصلاً** (البائع كلّم الزبون قبل أن يُسجّله)، فلحظة
+      // التأكيد هي لحظة الإنشاء. وكان العمود يبقى فارغاً حتى يلمس أحدٌ
+      // الحالة من جديد — وهو ما كشفه الطلب 177: بيعةٌ مؤكَّدة بلا لحظة
+      // تأكيد، أي بلا `event_time` صحيح لو احتاجها أي قياس لاحق.
       const [order] = await trx<{ id: number; order_number: string; public_reference: string }[]>`
         insert into public.orders (
           customer_name, customer_phone, customer_city, customer_address,
           customer_notes, items_subtotal, delivery_fee, actual_delivery_cost,
-          final_total, status, source
+          final_total, status, source, confirmed_at
         ) values (
           ${input.customer.fullName.trim()}, ${normalizedPhone}, ${input.customer.city.trim()},
           ${input.customer.address.trim()}, ${input.customer.notes?.trim() || null},
           ${subtotal}, ${deliveryFee}, ${actualDeliveryCost},
-          ${subtotal + deliveryFee}, 'confirmed', ${input.source}
+          ${subtotal + deliveryFee}, 'confirmed', ${input.source}, now()
         )
         returning id, order_number, public_reference
       `;

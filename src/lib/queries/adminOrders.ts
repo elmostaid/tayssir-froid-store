@@ -41,6 +41,11 @@ export type AdminOrderDetail = AdminOrderListItem & {
    * null = **غير مسجَّلة**، وليس صفراً. انظر lib/orders/deliveryCost.ts.
    */
   actualDeliveryCost: string | null;
+  /** لحظة إقرار Meta باستلام حدث الشراء. null = لم تُقِرّ (أو ليست بيعة بعد). */
+  metaPurchaseAcceptedAt: string | null;
+  /** سبب آخر فشل في تسليم البيعة. غير فارغ = يحتاج إعادة محاولة. */
+  metaPurchaseError: string | null;
+  metaPurchaseAttempts: number;
 };
 
 export type AdminOrderItem = {
@@ -276,13 +281,17 @@ export async function getAdminOrderById(id: number): Promise<AdminOrderDetail | 
       source: string;
       attribution_first: unknown;
       attribution_last: unknown;
+      meta_purchase_accepted_at: string | null;
+      meta_purchase_error: string | null;
+      meta_purchase_attempts: number;
     }[]
   >`
     select id, order_number, public_reference, status, customer_name,
       customer_phone, customer_city, customer_address, customer_notes,
       items_subtotal, carton_count, delivery_fee, actual_delivery_cost,
       final_total, created_at, source,
-      attribution_first, attribution_last
+      attribution_first, attribution_last,
+      meta_purchase_accepted_at, meta_purchase_error, meta_purchase_attempts
     from public.orders where id = ${id} limit 1
   `;
   const row = rows[0];
@@ -309,6 +318,11 @@ export async function getAdminOrderById(id: number): Promise<AdminOrderDetail | 
     actualDeliveryCost: row.actual_delivery_cost,
     finalTotal: row.final_total,
     createdAt: row.created_at,
+    // حالة تسليم البيعة إلى Meta — تُعرَض لأن فشلها صامت بطبعه: لا الزبون
+    // يراه ولا المدير، ولا يظهر إلا كنقص في تقارير الحملة بعد أيام.
+    metaPurchaseAcceptedAt: row.meta_purchase_accepted_at,
+    metaPurchaseError: row.meta_purchase_error,
+    metaPurchaseAttempts: row.meta_purchase_attempts,
   };
 }
 

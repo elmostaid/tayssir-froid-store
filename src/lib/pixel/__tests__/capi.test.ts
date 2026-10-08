@@ -47,13 +47,15 @@ describe("capi.ts — Meta Conversions API (خادم فقط)", () => {
     vi.stubGlobal("fetch", fetchMock);
     const { sendCapiEvent } = await loadCapi();
 
+    // التهيئة الناقصة ليست انقطاعاً عابراً: `retryable: false` حتى لا
+    // يُطارد الشراء المؤجَّل توكناً غير موجود خمس مرات.
     await expect(
       sendCapiEvent({
         eventName: "Purchase",
         eventId: "order-1",
         customData: { content_ids: ["X"], content_type: "product", currency: "MAD", value: 10 },
       })
-    ).resolves.toBeUndefined();
+    ).resolves.toMatchObject({ ok: false, retryable: false });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -178,7 +180,7 @@ describe("capi.ts — Meta Conversions API (خادم فقط)", () => {
         eventId: "order-2",
         customData: { content_ids: ["X"], content_type: "product", currency: "MAD" },
       })
-    ).resolves.toBeUndefined();
+    ).resolves.toMatchObject({ ok: false, retryable: true });
   });
 
   test("sendCapiEvent: استجابة غير ناجحة من Meta (400/401) لا ترمي أبداً، فقط تُسجَّل", async () => {
@@ -196,6 +198,102 @@ describe("capi.ts — Meta Conversions API (خادم فقط)", () => {
         eventId: "order-3",
         customData: { content_ids: ["X"], content_type: "product", currency: "MAD" },
       })
-    ).resolves.toBeUndefined();
+    ).resolves.toMatchObject({ ok: false, status: 401, retryable: false });
+  });
+});
+
+/**
+ * النجاح = إقرار Meta، لا نداؤنا.
+ *
+ * الشراء المؤجَّل يستهلك حرس exactly-once **قبل** النداء. فلو اعتبرت هذه
+ * الدالة مجرّد وصول الجواب نجاحاً، لضاعت البيعة صامتةً عند كل انقطاع: لا
+ * إرسال، ولا إعادة محاولة، ولا سطر يقول إن شيئاً فُقد.
+ */
+describe("sendCapiEvent — التحقّق من جواب Meta وإعادة المحاولة", () => {
+  async function withConfig() {
+    vi.stubEnv("NEXT_PUBLIC_META_PIXEL_ID", "2565914390520172");
+    vi.stubEnv("META_CONVERSIONS_API_ACCESS_TOKEN", "secret-token-xyz");
+    return loadCapi();
+  }
+
+  const event = {
+    eventName: "Purchase",
+    eventId: "purchase:1",
+    customData: { content_ids: ["X"], content_type: "product", currency: "MAD", value: 10 },
+  };
+
+  test("events_received ≥ 1 ⇒ قبول، ومحاولة واحدة فقط", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({ ok: true, status: 200, text: async () => '{"events_received":1}' });
+    vi.stubGlobal("fetch", fetchMock);
+    const { sendCapiEvent } = await withConfig();
+
+    expect(await sendCapiEvent(event)).toMatchObject({ ok: true, eventsReceived: 1 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("events_received = 0 مع HTTP 200 ⇒ رفضٌ لا نجاح", async () => {
+    // هذا هو الفخّ: Meta تردّ 200 وتُسقِط الحدث. ولو قرأنا الرمز وحده
+    // لاحتسبنا بيعةً لم تصل، ولختمنا الحرس عليها إلى الأبد.
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => '{"events_received":0}',
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { sendCapiEvent } = await withConfig();
+
+    const result = await sendCapiEvent(event);
+    expect(result.ok).toBe(false);
+    expect(result.eventsReceived).toBe(0);
+    // عطبُ حمولة لا عطبُ شبكة: لا تُعاد المحاولة داخل النداء.
+    expect(result.retryable).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("جسم 200 غير JSON ⇒ قبول بلا عدد — لا نُسقِط بيعة لأن الشكل تغيّر", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => "OK" })
+    );
+    const { sendCapiEvent } = await withConfig();
+    expect(await sendCapiEvent(event)).toMatchObject({ ok: true });
+  });
+
+  test("5xx ⇒ محاولة ثانية، وتنجح", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 503, text: async () => "upstream" })
+      .mockResolvedValueOnce({ ok: true, status: 200, text: async () => '{"events_received":1}' });
+    vi.stubGlobal("fetch", fetchMock);
+    const { sendCapiEvent } = await withConfig();
+
+    expect(await sendCapiEvent(event)).toMatchObject({ ok: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  test("4xx ⇒ بلا محاولة ثانية: حمولة أو توكن خاطئ لا يُصلحه التكرار", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({ ok: false, status: 400, text: async () => "bad payload" });
+    vi.stubGlobal("fetch", fetchMock);
+    const { sendCapiEvent } = await withConfig();
+
+    const result = await sendCapiEvent(event);
+    expect(result).toMatchObject({ ok: false, status: 400, retryable: false });
+    expect(result.error).toContain("bad payload");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("انقطاع الشبكة مرتين ⇒ فشل قابل للإعادة، بعد محاولتين", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error("ECONNRESET"));
+    vi.stubGlobal("fetch", fetchMock);
+    const { sendCapiEvent } = await withConfig();
+
+    const result = await sendCapiEvent(event);
+    expect(result).toMatchObject({ ok: false, retryable: true });
+    expect(result.error).toContain("ECONNRESET");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
