@@ -203,7 +203,9 @@ export default async function AdminOrderDetailPage({ params }: Props) {
             ) : (
               <>
                 <p className="mt-2 text-sm font-semibold text-red-700">
-                  ⚠ لم تُقِرّ Meta بالاستلام بعد ({order.metaPurchaseAttempts} محاولة)
+                  {order.metaPurchaseAttempts > 0
+                    ? `⚠ لم تُقِرّ Meta بالاستلام بعد (${order.metaPurchaseAttempts} محاولة)`
+                    : "⚠ البيعة لم تُرسَل إلى Meta"}
                 </p>
                 <p className="mt-1 break-words text-xs text-neutral-600" dir="ltr">
                   {order.metaPurchaseError}
