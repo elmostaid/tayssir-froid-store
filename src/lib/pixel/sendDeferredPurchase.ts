@@ -162,8 +162,26 @@ export async function sendDeferredPurchase(orderId: number): Promise<DeferredPur
       from public.order_items
       where order_id = ${orderId} and line_status = 'reserved'
     `;
-    // طلب بلا سطر محجوز واحد ليس بيعةً نُبلّغ عنها.
-    if (items.length === 0) return { sent: false, reason: "nothing_to_send" };
+    // طلب بلا سطر محجوز واحد ليس بيعةً نُبلّغ عنها — لكن **لا صامتاً**.
+    //
+    // الطلب 176 في الإنتاج كشف الفرق: طلب موقع بـ350 درهم، سطره الوحيد
+    // `out_of_stock` (نفدت القطعة لحظة الطلب)، ثم أُكّد وشُحن فعلاً — أي
+    // بيعة حقيقية خرجت من المحل. وهذه الدالة خرجت صامتةً فلم تعرف Meta
+    // بها أبداً، ولا بقي أثرٌ يقول إن شيئاً فُقد: لا حدث، ولا خطأ، ولا
+    // سطر في أي تقرير. وذلك أسوأ من الفشل، لأن الفشل يُرى.
+    //
+    // فالآن يُكتب السبب على الطلب نفسه. وهذا وحده يجعله يظهر في صفحة
+    // الطلب مع زرّ الإعادة، فيُرى ويُصلَح بدل أن يُنسى.
+    if (items.length === 0) {
+      const why =
+        "لا سطر محجوز في هذا الطلب — البيعة لم تُرسَل إلى Meta. " +
+        "إن كان الطلب قد جُهِّز فعلاً، صحّح حالة سطوره ثم أعِد الإرسال.";
+      await sql`
+        update public.orders set meta_purchase_error = ${why}
+        where id = ${orderId} and meta_purchase_sent_at is null
+      `;
+      return { sent: false, reason: "nothing_to_send", error: why };
+    }
 
     const meta = await deliverMetaPurchase(order, items);
     // GA4 مستقلّة بحرسها: لو قُبلت Meta سابقاً وفشلت GA4، تُعاد هذه وحدها.

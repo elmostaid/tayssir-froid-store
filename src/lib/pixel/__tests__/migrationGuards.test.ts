@@ -148,7 +148,10 @@ describe("الترحيل: لا بيعة بأثر رجعي", () => {
 
     // وحتى لو أُكّد وسطره ما زال غير محجوز: لا بيعة بلا سطر محجوز واحد.
     await sql`update public.orders set status = 'confirmed' where id = ${orderId}`;
-    expect(await sendDeferredPurchase(orderId)).toEqual({ sent: false, reason: "nothing_to_send" });
+    expect(await sendDeferredPurchase(orderId)).toMatchObject({
+      sent: false,
+      reason: "nothing_to_send",
+    });
     expect(sendCapiEventMock).not.toHaveBeenCalled();
 
     // وبعد تسوية المخزون وتأكيده فعلاً: تُرسَل بيعته — مرة واحدة.
@@ -158,6 +161,45 @@ describe("الترحيل: لا بيعة بأثر رجعي", () => {
     expect(sendCapiEventMock).toHaveBeenCalledTimes(1);
     expect(await sendDeferredPurchase(orderId)).toEqual({ sent: false, reason: "already_sent" });
     expect(sendCapiEventMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("بيعة بلا سطر محجوز: تُرى، لا تُنسى", () => {
+  test("طلب موقع شُحن وسطوره out_of_stock: السبب يُكتب على الطلب", async () => {
+    // الطلب 176 في الإنتاج: 350 درهم، أُكّد وشُحن فعلاً، وسطره الوحيد
+    // `out_of_stock`. خرجت الدالة صامتةً فلم تعرف Meta بالبيعة ولا بقي
+    // أثرٌ يقول إن شيئاً فُقد — لا حدث ولا خطأ ولا سطر في أي تقرير.
+    const orderId = await seedOrder({
+      source: "website",
+      status: "shipped",
+      metaGuard: false,
+      gaGuard: false,
+      reserved: false,
+    });
+
+    const outcome = await sendDeferredPurchase(orderId);
+    expect(outcome).toMatchObject({ sent: false, reason: "nothing_to_send" });
+    expect(sendCapiEventMock).not.toHaveBeenCalled();
+
+    const [row] = await sql<{ err: string | null; sent: Date | null }[]>`
+      select meta_purchase_error as err, meta_purchase_sent_at as sent
+      from public.orders where id = ${orderId}
+    `;
+    // السبب مكتوب، فيظهر في صفحة الطلب مع زرّ الإعادة بدل أن يُنسى.
+    expect(row.err).toContain("لا سطر محجوز");
+    // ولا يُستهلك الحرس: لا شيء أُرسل، فالبيعة ما زالت قابلة للإرسال.
+    expect(row.sent).toBeNull();
+
+    // وبعد تصحيح حالة السطر: تُرسَل، ويُمحى السبب.
+    await sql`update public.order_items set line_status = 'reserved' where order_id = ${orderId}`;
+    const retry = await sendDeferredPurchase(orderId);
+    expect(retry.sent).toBe(true);
+    const [after] = await sql<{ err: string | null; accepted: Date | null }[]>`
+      select meta_purchase_error as err, meta_purchase_accepted_at as accepted
+      from public.orders where id = ${orderId}
+    `;
+    expect(after.err).toBeNull();
+    expect(after.accepted).not.toBeNull();
   });
 });
 
