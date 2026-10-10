@@ -69,9 +69,12 @@ vi.mock("next/cache", () => ({
 
 const { createOrder } = await import("@/lib/orders/createOrder");
 const { updateOrderStatus } = await import("@/app/admin/(protected)/orders/actions");
-const { sendDeferredPurchase, purchaseEventId, MAX_PURCHASE_ATTEMPTS } = await import(
-  "@/lib/pixel/sendDeferredPurchase"
-);
+const {
+  sendDeferredPurchase,
+  purchaseEventId,
+  purchaseValueFromLines,
+  MAX_PURCHASE_ATTEMPTS,
+} = await import("@/lib/pixel/sendDeferredPurchase");
 
 const TEST_PHONE_PREFIX = "067777";
 let phoneCounter = 0;
@@ -606,5 +609,148 @@ describe("حرس GA4 منفصل — لأن GA4 لا تُلغي التكرار", 
     `;
     expect(row.ga_sent).toBeNull();
     expect(row.ga_attempts).toBe(0);
+  });
+});
+
+describe("القيمة = مجموع ما يُرسَل في contents، لا مجموع الطلب", () => {
+  test("الدالة النقية: الحساب من الثمن × الكمية، بتدوير السنتيم", () => {
+    expect(purchaseValueFromLines([])).toBe(0);
+    expect(
+      purchaseValueFromLines([{ quantity: 2, unit_price_snapshot: "250.00" }])
+    ).toBe(500);
+    expect(
+      purchaseValueFromLines([
+        { quantity: 3, unit_price_snapshot: "0.10" },
+        { quantity: 1, unit_price_snapshot: "0.20" },
+      ])
+      // 0.1×3 + 0.2 = 0.5 بالحساب البشري، و0.5000000000000001 في JavaScript.
+      // قيمةٌ كهذه تصل Meta كما هي، فالتدوير ليس تجميلاً.
+    ).toBe(0.5);
+    // سطر بثمن غائب يُحسب صفراً — نفس ما يُرسَل في contents (item_price: 0).
+    expect(
+      purchaseValueFromLines([
+        { quantity: 2, unit_price_snapshot: "250.00" },
+        { quantity: 5, unit_price_snapshot: null },
+      ])
+    ).toBe(500);
+    // قيمة فاسدة لا تُسقِط الحساب ولا تُفسد المجموع.
+    expect(
+      purchaseValueFromLines([
+        { quantity: 2, unit_price_snapshot: "250.00" },
+        { quantity: Number.NaN, unit_price_snapshot: "10" },
+      ])
+    ).toBe(500);
+  });
+
+  test("كل السطور محجوزة: القيمة = مجموع الطلب — لا تغيير في السلوك", async () => {
+    // هذه حالة 106 من 107 طلبية في الإنتاج: المجموعان متساويان أصلاً،
+    // فالإصلاح لا يمسّها.
+    const orderId = await makeOrder({ withAd: true });
+    sendCapiEventMock.mockClear();
+
+    await updateOrderStatus({ error: null }, statusForm(orderId, "confirmed"));
+    const calls = await waitForPurchase();
+
+    const [row] = await sql<{ items_subtotal: string }[]>`
+      select items_subtotal from public.orders where id = ${orderId}
+    `;
+    expect(calls[0].customData.value).toBe(Number(row.items_subtotal));
+    expect(calls[0].customData.value).toBe(500);
+  });
+
+  test("حجز جزئي: القيمة تساوي مجموع contents وحده، لا مجموع الطلب", async () => {
+    // هذا هو العطب: الطلب 350 درهماً بسطرين، أحدهما لم يُحجز. القيمة
+    // القديمة كانت تُرسل مجموع الطلب كاملاً، أي إيراداً منسوباً للإعلان
+    // أكبر من البيعة الحقيقية.
+    const orderId = await makeOrder({ withAd: true });
+    // سطر ثانٍ غير محجوز، يُضاف كما يُضيفه مسار المراجعة.
+    await sql`
+      insert into public.order_items (
+        order_id, product_id, variant_id, product_name_snapshot, sku_snapshot,
+        unit_price_snapshot, quantity, line_total, line_status
+      ) values (
+        ${orderId}, ${fixtureProductId}, null, 'منتج اختبار الشراء المؤجَّل',
+        'TEST-FIXTURE-DEFERRED', 250.00, 4, 1000.00, 'out_of_stock'
+      )
+    `;
+    await sql`
+      update public.orders set items_subtotal = 1500.00 where id = ${orderId}
+    `;
+    sendCapiEventMock.mockClear();
+
+    await updateOrderStatus({ error: null }, statusForm(orderId, "confirmed"));
+    const calls = await waitForPurchase();
+
+    const payload = calls[0];
+    // 2 قطع × 250 = 500 (المحجوز وحده)، لا 1500 (مجموع الطلب).
+    expect(payload.customData.value).toBe(500);
+    expect(payload.customData.value).not.toBe(1500);
+
+    // والتطابق مع contents مُثبَت حسابياً لا بالثقة.
+    const contents = payload.customData.contents as {
+      quantity: number;
+      item_price: number;
+    }[];
+    const fromContents = contents.reduce((s, c) => s + c.item_price * c.quantity, 0);
+    expect(payload.customData.value).toBe(Math.round(fromContents * 100) / 100);
+    expect(contents).toHaveLength(1);
+    expect(payload.customData.num_items).toBe(2);
+    expect(payload.customData.currency).toBe("MAD");
+  });
+
+  test("بلا أي سطر محجوز: لا بيعة أصلاً — ولا قيمة تُرسَل", async () => {
+    const orderId = await makeOrder({ withAd: true });
+    await sql`
+      update public.order_items set line_status = 'out_of_stock' where order_id = ${orderId}
+    `;
+    sendCapiEventMock.mockClear();
+
+    await updateOrderStatus({ error: null }, statusForm(orderId, "confirmed"));
+    expect(await sendDeferredPurchase(orderId)).toMatchObject({
+      sent: false,
+      reason: "nothing_to_send",
+    });
+    expect(purchaseCalls()).toHaveLength(0);
+  });
+
+  test("الطلب الملغى: لا قيمة ولا حدث، حتى مع سطور محجوزة", async () => {
+    const orderId = await makeOrder({ withAd: true });
+    sendCapiEventMock.mockClear();
+
+    await updateOrderStatus(
+      { error: null },
+      statusForm(orderId, "cancelled", "not_confirmed")
+    );
+    expect(purchaseCalls()).toHaveLength(0);
+    expect(await sendDeferredPurchase(orderId)).toEqual({
+      sent: false,
+      reason: "not_a_sale",
+    });
+  });
+
+  test("الحجز الجزئي لا يكسر منع التكرار: قيمة واحدة مرة واحدة", async () => {
+    const orderId = await makeOrder({ withAd: true });
+    await sql`
+      insert into public.order_items (
+        order_id, product_id, variant_id, product_name_snapshot, sku_snapshot,
+        unit_price_snapshot, quantity, line_total, line_status
+      ) values (
+        ${orderId}, ${fixtureProductId}, null, 'منتج اختبار الشراء المؤجَّل',
+        'TEST-FIXTURE-DEFERRED', 250.00, 4, 1000.00, 'out_of_stock'
+      )
+    `;
+    sendCapiEventMock.mockClear();
+
+    await updateOrderStatus({ error: null }, statusForm(orderId, "confirmed"));
+    await waitForPurchase();
+    await updateOrderStatus({ error: null }, statusForm(orderId, "shipped"));
+    await updateOrderStatus({ error: null }, statusForm(orderId, "delivered"));
+    expect(await sendDeferredPurchase(orderId)).toEqual({
+      sent: false,
+      reason: "already_sent",
+    });
+
+    expect(purchaseCalls()).toHaveLength(1);
+    expect(purchaseCalls()[0].customData.value).toBe(500);
   });
 });

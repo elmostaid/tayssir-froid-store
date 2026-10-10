@@ -130,6 +130,37 @@ type ReservedLine = {
   unit_price_snapshot: string | null;
 };
 
+/**
+ * قيمة البيعة = مجموع السطور التي تُرسَل فعلاً في `contents`.
+ *
+ * ## العطب الذي أوجب هذه الدالة
+ *
+ * كانت القيمة تُقرأ من `orders.items_subtotal`، وهو مجموع **كل** سطور
+ * الطلب، بينما `contents` و`num_items` و`content_ids` تُبنى من السطور
+ * **المحجوزة وحدها**. فطلبٌ حُجز بعضه كان سيُرسل إلى Meta قيمةً أكبر من
+ * مجموع ما في `contents` — رقمان متناقضان في الحدث نفسه، وتضخيمٌ في
+ * الإيراد المنسوب للإعلان بمقدار ما لم يُحجز.
+ *
+ * والحساب من `item_price × quantity` لا من `line_total`: هذه بالضبط هي
+ * الأرقام التي تذهب إلى Meta في `contents`، فالتطابق صار **بالبناء** لا
+ * بالاتفاق. (وقياس الإنتاج يقول إنهما متساويان في 916 سطراً من 916، بفرق
+ * أقصاه 0.00 — فلا شيء يُخسر باختيار الأوثق.)
+ *
+ * والتدوير إلى سنتيمين مقصود: جمع الأعداد العشرية في JavaScript يُنتج
+ * غباراً (0.1 + 0.2 = 0.30000000000000004)، وقيمةٌ كهذه تصل Meta كما هي.
+ */
+export function purchaseValueFromLines(
+  lines: { quantity: number; unit_price_snapshot: string | null }[]
+): number {
+  const total = lines.reduce((sum, line) => {
+    const price = Number(line.unit_price_snapshot ?? 0);
+    const quantity = Number(line.quantity);
+    if (!Number.isFinite(price) || !Number.isFinite(quantity)) return sum;
+    return sum + price * quantity;
+  }, 0);
+  return Number.isFinite(total) ? Math.round(total * 100) / 100 : 0;
+}
+
 type MetaDelivery =
   | { kind: "sent"; eventId: string }
   | { kind: "skipped"; reason: DeferredPurchaseSkipReason; error?: string };
@@ -238,8 +269,19 @@ async function deliverMetaPurchase(
   });
 
   const phone = order.customer_phone ? toInternationalDigits(order.customer_phone) : undefined;
-  const value = Number(order.items_subtotal);
+  // القيمة من السطور المحجوزة نفسها، لا من مجموع الطلب كاملاً.
+  const value = purchaseValueFromLines(items);
   const eventId = purchaseEventId(order.id);
+
+  // حجزٌ جزئي: نُسجّله ولا نُسكته. الرقمان يختلفان بحقّ هنا (الطلب فيه
+  // سطر لم يُحجز)، والمُرسَل هو الأصحّ — لكن الفرق خبرٌ يستحق أن يُقرأ.
+  const orderSubtotal = Number(order.items_subtotal);
+  if (Number.isFinite(orderSubtotal) && Math.abs(orderSubtotal - value) > 0.005) {
+    console.warn(
+      `sendDeferredPurchase: الطلب ${order.id} محجوز جزئياً — ` +
+        `قيمة البيعة ${value} درهم من السطور المحجوزة، ومجموع الطلب ${orderSubtotal} درهم`
+    );
+  }
 
   const result = await sendCapiEvent({
     eventName: "Purchase",
@@ -263,7 +305,8 @@ async function deliverMetaPurchase(
       content_ids: items.map((i) => i.sku_snapshot ?? ""),
       content_type: "product",
       currency: "MAD",
-      value: Number.isFinite(value) ? value : 0,
+      // متطابقة بالبناء مع مجموع `contents` أدناه — انظر purchaseValueFromLines.
+      value,
       num_items: items.reduce((sum, i) => sum + i.quantity, 0),
       contents: items.map((i) => ({
         id: i.sku_snapshot ?? "",
@@ -329,7 +372,9 @@ async function deliverGaPurchase(order: OrderRow, items: ReservedLine[]): Promis
 
   const ok = await sendGaPurchaseEvent({
     transactionId: order.public_reference,
-    value: Number(order.items_subtotal),
+    // نفس قاعدة Meta بالضبط: القيمة من السطور المُرسَلة في `items` أدناه،
+    // لا من مجموع الطلب كاملاً. كان التناقض هنا أيضاً.
+    value: purchaseValueFromLines(items),
     items: items.map((i) => ({
       item_id: i.sku_snapshot ?? "",
       item_name: i.product_name_snapshot ?? (i.sku_snapshot ?? ""),
