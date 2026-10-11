@@ -27,25 +27,45 @@ export const dynamic = "force-dynamic";
 
 // أربع جمل قصيرة، كل واحدة سطر واحد على الهاتف.
 //
-// «الحد الأدنى للطلب: 1000 درهم» حُذف سابقاً مع حذف الحاجز نفسه. وما تبقّى
-// من شرحٍ للكمية الدنيا («تختلف حسب المنتوج») حُذف الآن كذلك: كان ذيلاً
-// يُطيل أول سطر حتى يلتفّ سطرين على الهاتف، ويشرح قيداً لا يصادفه الزائر
-// إلا داخل صفحة المنتج حيث هو مكتوب أصلاً. الهيرو ليس مكان الشروط، بل
-// مكان سبب البقاء.
+// أول نقطة هي الجديدة، وهي سبب هذا التعديل كلّه: المتجر كان يقدّم نفسه
+// بـ«البيع بالجملة فقط»، وهو وصفٌ **تكذّبه بياناتنا**. من 419 منتجاً
+// نشطاً، **240 كميته الدنيا قطعة واحدة** (57%)، و179 فقط تحتاج أكثر
+// (من 2 إلى 20). فالزائر الذي يحتاج قطعة واحدة كان يقرأ أنه ليس زبوناً
+// لنا، ويغادر قبل أن يرى ثمناً.
 //
 // ولا واحدة من الأربع تَعِد بما لا نفي به: لا «أي كمية»، ولا «بلا حد
-// أدنى» — الكمية الدنيا لكل منتج ما زالت قائمة وتظهر في مكانها.
+// أدنى» — الكمية الدنيا لكل منتج ما زالت قائمة وتظهر في مكانها، ويقولها
+// سطرٌ مستقلّ تحت هذه النقاط (MIN_QTY_NOTE).
 export function buildTrustPoints(): string[] {
   return [
+    "البيع بالقطعة والجملة حسب المنتوج",
     "أثمنة مناسبة للتجار والحرفيين",
+    // «بعد معاينة السلعة» أكّده صاحب المتجر: شركات التوصيل التي نعمل
+    // معها تسمح للزبون بمعاينة القطعة قبل الأداء. وهو أقوى ما في هذه
+    // القائمة لزبونٍ يشتري قطعة غيار لا يراها قبل وصولها، فيبقى.
     "الدفع عند الاستلام بعد معاينة السلعة",
-    // توفّرٌ لا ثمن: الهيرو يقول أين نصل، لا بكم. المصاريف تُحدَّد لكل
-    // طلب عند التأكيد، فلا يجوز أن يَعِد هذا السطر بمجانية ولا أن يعرض
-    // رقماً لم يُحسب بعد.
+    // توفّرٌ لا ثمن: الهيرو يقول أين نصل، لا بكم. والنصّ يأتي من
+    // lib/delivery.ts لا مكتوباً هنا، فسياسة التوصيل تبقى مصدراً واحداً.
     `🚚 ${DELIVERY_AVAILABILITY}`,
-    "تخفيضات خاصة للكميات الكبيرة",
   ];
 }
+
+/**
+ * الشرط الوحيد الذي يستحقّ مكاناً في الهيرو.
+ *
+ * كان شرح الكمية الدنيا هنا سابقاً **ذيلاً ملحقاً بأول نقطة**، فيُطيلها
+ * حتى تلتفّ سطرين على الهاتف — ولذلك حُذف. وعودته الآن ليست تراجعاً عن
+ * ذلك القرار: السبب الذي أوجبها تغيّر. فحين يقول الهيرو «بالقطعة
+ * والجملة»، يصير السكوت عن الكمية الدنيا وعداً ضمنياً بأن كل شيء يُباع
+ * بالقطعة — وهو غير صحيح لـ179 منتجاً. والشكل تغيّر أيضاً: سطرٌ مستقلّ
+ * صغير، لا ذيلٌ يكسر نقطةً قصيرة.
+ *
+ * والمعلومة مُتحقَّق منها لا مُفترضة: الكمية الدنيا تختلف فعلاً
+ * (1 لـ240 منتجاً، و2–20 لـ179)، وتُعرَض فعلاً في صفحة كل منتج
+ * («الكمية الدنيا للطلب» ضمن بطاقة التفاصيل).
+ */
+export const MIN_QTY_NOTE =
+  "الكمية الدنيا للشراء كتختلف حسب المنتوج، وكتبان فصفحة كل منتوج.";
 
 // حجم الدفعة الواحدة في شبكة "جميع المنتجات" بالصفحة الرئيسية.
 export const HOME_PAGE_SIZE = 16;
@@ -117,9 +137,12 @@ export default async function HomePage() {
   const hasMoreProducts = products.length > HOME_PAGE_SIZE;
   const firstPage = hasMoreProducts ? products.slice(0, HOME_PAGE_SIZE) : products;
 
+  // رسالة استفسار خالصة. كانت «أريد الاطلاع على منتجاتكم **بالجملة**» —
+  // وهي تُناقض ما صارت الصفحة تقوله، وتضع في فم زائرٍ يبحث عن قطعة واحدة
+  // كلمةً لا تعنيه. الرقم نفسه لم يتغيّر (من الإعدادات كما كان).
   const whatsappLink = buildWhatsAppLink(
     settings.whatsappNumber,
-    "مرحباً، أريد الاطلاع على منتجاتكم بالجملة."
+    "مرحباً، عندي استفسار بخصوص منتجاتكم."
   );
   const trustPoints = buildTrustPoints();
 
@@ -129,17 +152,19 @@ export default async function HomePage() {
           sm:)، لأن كل بكسل هنا يؤخّر أول منتج بثمنه عن عين الزائر — وهو ما
           يقيسه ارتداد الصفحة الرئيسية. لا لون تغيّر ولا زر ولا بنية: نفس
           البطاقة ونفس الأزرار، أقصر بنحو 80 بكسل على شاشة هاتف. */}
-      <section className="rounded-2xl bg-brand-turquoise-tint px-4 py-5 sm:px-5 sm:py-8">
+      <section className="rounded-2xl bg-brand-turquoise-tint px-4 py-4 sm:px-5 sm:py-8">
         <span className="inline-block rounded-full bg-brand-orange px-3 py-1 text-xs font-semibold text-white">
-          البيع بالجملة فقط
+          للتجار والحرفيين
         </span>
         {/* حجم العنوان كما هو (24px على الهاتف): التقصير جاء من المسافات
-            لا من الخطّ، فلا يصير النصّ أصعب قراءةً مما كان. */}
+            لا من الخطّ، فلا يصير النصّ أصعب قراءةً مما كان.
+            و«بالجملة» خرجت من العنوان لأنها كانت تصف المتجر وصفاً أضيق
+            مما هو: 57% من منتجاته تُباع بالقطعة الواحدة. */}
         <h1 className="mt-2 text-2xl font-bold text-neutral-900 sm:mt-3 sm:text-3xl">
-          قطع الغيار بالجملة
+          قطع غيار الأجهزة المنزلية
         </h1>
 
-        <ul className="mt-3 flex flex-col gap-1 text-sm text-neutral-700 sm:mt-4 sm:gap-1.5 sm:text-base">
+        <ul className="mt-2.5 flex flex-col gap-1 text-sm text-neutral-700 sm:mt-4 sm:gap-1.5 sm:text-base">
           {trustPoints.map((point) => (
             <li key={point} className="flex items-center gap-2">
               <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-brand-turquoise" />
@@ -148,20 +173,32 @@ export default async function HomePage() {
           ))}
         </ul>
 
-        <div className="mt-4 flex flex-col gap-2 sm:mt-5 sm:flex-row sm:gap-2.5">
+        {/* سطرٌ واحد صغير، لا ذيلٌ على نقطة — انظر MIN_QTY_NOTE أعلاه. */}
+        <p className="mt-1.5 text-xs leading-snug text-neutral-600 sm:mt-2.5 sm:text-sm sm:leading-relaxed">
+          {MIN_QTY_NOTE}
+        </p>
+
+        <div className="mt-3 flex flex-col gap-2 sm:mt-5 sm:flex-row sm:gap-2.5">
           <Link
             href="#categories"
             className="flex min-h-11 items-center justify-center rounded-full bg-brand-orange px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-orange-dark"
           >
             تصفح المنتجات
           </Link>
+          {/*
+            ثانويّ بوضوح: إطار أخضر على خلفية بيضاء، لا أخضر مملوء. كان
+            مملوءاً ومكتوباً فيه «**طلب** عبر واتساب»، فيقرأه الزائر كأنه
+            طريق الشراء — وهو يفتح محادثة عامة بلا سلة ولا بيانات زبون.
+            نفس القاعدة المطبَّقة في الترويسة: البرتقالي للشراء، والأخضر
+            الخفيف للسؤال.
+          */}
           <a
             href={whatsappLink}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex min-h-11 items-center justify-center gap-2 rounded-full bg-whatsapp px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-whatsapp-dark"
+            className="flex min-h-11 items-center justify-center gap-2 rounded-full border border-whatsapp bg-white px-5 py-2.5 text-sm font-semibold text-whatsapp-dark transition-colors hover:bg-whatsapp hover:text-white"
           >
-            محتاج مساعدة؟ طلب عبر واتساب
+            استفسار عبر واتساب
           </a>
         </div>
       </section>
