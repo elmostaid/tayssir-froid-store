@@ -90,6 +90,9 @@ export default async function WhatsappLeadsPage({ searchParams }: Props) {
             <Link
               key={lead.id}
               href={`/admin/orders/whatsapp/${lead.id}`}
+              /* نفس سبب لائحة الطلبات: صفٌّ من لائحة، لا يُفتح منها إلا
+                 القليل، وجلبها كلها مسبقاً يُكلّف نداء مصادقة لكل صفّ. */
+              prefetch={false}
               className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 bg-white p-4"
             >
               <div className="min-w-0">

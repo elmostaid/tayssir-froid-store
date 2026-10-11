@@ -130,6 +130,15 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
             <Link
               key={order.id}
               href={`/admin/orders/${order.id}`}
+              /*
+               * صفٌّ واحد من بين عشرات في هذه اللائحة. والجلب المسبق
+               * الافتراضي يُطلق طلب `.rsc` لكل صفٍّ يدخل الشاشة — ولا
+               * أحد يفتح إلا واحداً أو اثنين. القياس على نسخة حقيقية:
+               * فتح هذه اللائحة وحدها كان يُطلق 50 نداء مصادقة نحو
+               * Supabase. صفحة التفاصيل ليست ثقيلة ولا بطيئة، فالجلب
+               * المسبق هنا كلفةٌ بلا مقابل.
+               */
+              prefetch={false}
               className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 bg-white p-4"
             >
               <div className="min-w-0">
