@@ -56,6 +56,14 @@ export type AdminOrderItem = {
   /** reserved = حُجز مخزونه · out_of_stock · invalid */
   lineStatus: string;
   lineStatusReason: string | null;
+  /**
+   * ثمن الشراء وقت إنشاء الطلب. سرّي — للوحة الإدارة وحدها، ولا يُمرَّر إلى
+   * أي مكوّن عميل. null = لم يُحفَظ وقتها (طلب سبق هجرة 20260807000000، أو
+   * منتج بلا ثمن شراء يومها).
+   */
+  purchasePriceSnapshot: string | null;
+  /** ثمن الشراء **اليوم** — للتقدير وحده حين يغيب الـsnapshot. سرّي كذلك. */
+  currentPurchasePrice: string | null;
 };
 
 export type AdminOrderStatusHistoryEntry = {
@@ -325,13 +333,18 @@ export async function getAdminOrderItems(orderId: number): Promise<AdminOrderIte
       quantity: number;
       line_total: string;
       unit_label: string | null;
+      purchase_price_snapshot: string | null;
+      current_purchase_price: string | null;
     }[]
   >`
     select oi.id, oi.product_id, oi.variant_id, oi.product_name_snapshot, oi.sku_snapshot,
       oi.unit_price_snapshot, oi.quantity, oi.line_total, p.unit_label,
-      oi.line_status, oi.line_status_reason
+      oi.line_status, oi.line_status_reason,
+      oi.purchase_price_snapshot,
+      coalesce(pv.purchase_price_override, p.purchase_price) as current_purchase_price
     from public.order_items oi
     left join public.products p on p.id = oi.product_id
+    left join public.product_variants pv on pv.id = oi.variant_id
     where oi.order_id = ${orderId}
     order by oi.id asc
   `;
@@ -348,6 +361,8 @@ export async function getAdminOrderItems(orderId: number): Promise<AdminOrderIte
     unitLabel: r.unit_label,
     lineStatus: r.line_status,
     lineStatusReason: r.line_status_reason,
+    purchasePriceSnapshot: r.purchase_price_snapshot,
+    currentPurchasePrice: r.current_purchase_price,
   }));
 }
 

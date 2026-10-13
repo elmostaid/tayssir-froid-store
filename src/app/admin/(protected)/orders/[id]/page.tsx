@@ -22,6 +22,7 @@ import { ActualDeliveryCostForm } from "@/components/admin/ActualDeliveryCostFor
 import { CopyBonButton } from "@/components/admin/CopyBonButton";
 import { DeleteOrderButton } from "@/components/admin/DeleteOrderButton";
 import { CopyDeliveryInfoButton } from "@/components/admin/CopyDeliveryInfoButton";
+import { OrderProfitPanel } from "@/components/admin/OrderProfitPanel";
 import { buildCustomerWhatsAppLink } from "@/lib/whatsapp";
 import { toInternationalDigits } from "@/lib/phone";
 import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
@@ -286,6 +287,26 @@ export default async function AdminOrderDetailPage({ params }: Props) {
           </div>
         )}
       </div>
+
+      {/* ربح الطلبية — بعد المنتجات ومصاريف التوصيل مباشرةً، لأن الرقمين
+          اللذين يغذّيانه يُقرآن ويُعدَّلان فوقه. مقصور على Owner/Admin: ثمن
+          الشراء حقل سرّي ليس ضمن صلاحيات Staff. ويظهر في كل الحالات بلا
+          استثناء — الملغاة والراجعة تُعرَض موسومةً «لم تقع البيعة» بدل أن
+          يختفي ربحها المرجعي أو يُصفَّر. */}
+      {owner && (
+        <OrderProfitPanel
+          status={order.status}
+          lines={items.map((item) => ({
+            quantity: item.quantity,
+            unitPrice: item.unitPriceSnapshot,
+            purchasePriceSnapshot: item.purchasePriceSnapshot,
+            currentPurchasePrice: item.currentPurchasePrice,
+            lineStatus: item.lineStatus,
+          }))}
+          deliveryFee={order.deliveryFee}
+          actualDeliveryCost={order.actualDeliveryCost}
+        />
+      )}
 
       {owner && (
         <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-4">

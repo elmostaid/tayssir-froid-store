@@ -53,6 +53,10 @@ const fixtureItems: AdminOrderItem[] = [
     unitLabel: "قطعة",
     lineStatus: "reserved",
     lineStatusReason: null,
+    // ثمن الشراء جزء من نوع السطر الإداري، ولا يظهر في أي PDF يراه الزبون —
+    // وجوده هنا يحرس ذلك: لو تسرّب إلى القالب لظهر في لقطة هذا الاختبار.
+    purchasePriceSnapshot: "55.00",
+    currentPurchasePrice: "58.00",
   },
 ];
 
