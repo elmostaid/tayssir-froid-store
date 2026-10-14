@@ -1,9 +1,24 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { formatMad } from "@/lib/format";
 import { searchProductsAction } from "@/app/admin/(protected)/orders/actions";
 import type { ProductSearchResult } from "@/lib/queries/adminProductSearch";
+
+/**
+ * مهلة السكون قبل إرسال البحث للخادم.
+ *
+ * كل ضغطة مفتاح كانت تُطلق Server Action مستقلاً: كتابة `TF-RF-006` =
+ * ثمانية استدعاءات متتابعة، كلٌّ منها يفتح اتصالاً جديداً ويستدعي
+ * `supabase.auth.getUser()` (رحلة شبكة كاملة إلى Supabase Auth). سجلّات
+ * 13 أكتوبر أظهرت 1,003 نداء مصادقة في ساعة واحدة من مدير واحد، بينما
+ * استعلام البحث نفسه لا يكلّف سوى 2.5 مللي ثانية — فالكلفة كلها في
+ * الطريق لا في العمل.
+ *
+ * و350 مللي ثانية ليست رقماً اعتباطياً: أسرع من أن يشعر بها من يكتب
+ * اسماً، وأبطأ من المسافة بين ضغطتين متتاليتين لكاتب سريع.
+ */
+export const PRODUCT_SEARCH_DEBOUNCE_MS = 350;
 
 /**
  * محرّر سطور الطلب — مشترك بين إنشاء طلب يدوي وتعديل طلب قائم، لأن العمل
@@ -58,21 +73,55 @@ export function OrderLinesEditor({
   const [searchError, setSearchError] = useState<string | null>(null);
   const [isSearching, startSearch] = useTransition();
 
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * رقم تسلسلي لكل بحث يُرسَل فعلاً.
+   *
+   * **لا يُلغي شيئاً على الخادم، ولا يدّعي ذلك.** الـServer Action الذي
+   * انطلق سيُكمل تنفيذه هناك مهما فعل المتصفّح — لا `AbortController` ولا
+   * غيره يوقفه. ما يضمنه هذا العدّاد شيء واحد فقط، وهو الشيء الذي يراه
+   * المستخدم: **نتيجة قديمة لن تدهس نتيجة أحدث منها**. استجابتان قد تعودان
+   * بأي ترتيب، فمن يكتب «ضاغ» ثم «ضاغط» قد تصله نتائج «ضاغ» بعد نتائج
+   * «ضاغط» فيرى قائمة لا تطابق ما في الحقل. نتجاهل كل استجابة ليست آخر ما
+   * أُرسل.
+   */
+  const latestRequest = useRef(0);
+
+  // مؤقّت معلّق بعد اختفاء المكوّن يستدعي setState على شيء غير موجود.
+  useEffect(() => {
+    return () => {
+      if (debounceTimer.current !== null) clearTimeout(debounceTimer.current);
+    };
+  }, []);
+
   function runSearch(value: string) {
     setTerm(value);
     setSearchError(null);
+
+    // أي كتابة جديدة تُلغي الإرسال المؤجَّل قبلها — هنا يقع التوفير كلّه.
+    if (debounceTimer.current !== null) clearTimeout(debounceTimer.current);
+
     if (value.trim().length < 2) {
+      // إبطال أي استجابة في الطريق: الحقل صار أقصر من حدّ البحث، فنتيجةٌ
+      // قادمة لمصطلح أطول لا تخصّ ما يراه المستخدم الآن.
+      latestRequest.current += 1;
       setResults([]);
       return;
     }
-    startSearch(async () => {
-      const response = await searchProductsAction(value);
-      if (response.ok) setResults(response.results);
-      else {
-        setResults([]);
-        setSearchError(response.error);
-      }
-    });
+
+    debounceTimer.current = setTimeout(() => {
+      const requestId = (latestRequest.current += 1);
+      startSearch(async () => {
+        const response = await searchProductsAction(value);
+        // وصلت متأخّرة عن بحث أحدث — تُهمَل بصمت، ولا تلمس الخطأ أيضاً.
+        if (requestId !== latestRequest.current) return;
+        if (response.ok) setResults(response.results);
+        else {
+          setResults([]);
+          setSearchError(response.error);
+        }
+      });
+    }, PRODUCT_SEARCH_DEBOUNCE_MS);
   }
 
   function addProduct(product: ProductSearchResult) {
@@ -97,6 +146,10 @@ export function OrderLinesEditor({
         },
       ];
     });
+    // اختيار منتج يُنهي البحث: نُلغي المؤجَّل ونُبطل ما هو في الطريق، وإلا
+    // عادت القائمة للظهور بعد ثوانٍ فوق سطر أُضيف بالفعل.
+    if (debounceTimer.current !== null) clearTimeout(debounceTimer.current);
+    latestRequest.current += 1;
     setTerm("");
     setResults([]);
   }
