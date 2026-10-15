@@ -4,8 +4,11 @@ import { useActionState, useState } from "react";
 import {
   createManualOrderAction,
   convertWhatsappLeadAction,
+  isManualOrderKeySpentAction,
   type OrderEditState,
 } from "@/app/admin/(protected)/orders/actions";
+import { useIdempotencyKey } from "@/components/admin/useIdempotencyKey";
+import { MANUAL_ORDER_KEY_FIELD } from "@/lib/orders/manualOrderKey";
 import { OrderLinesEditor } from "@/components/admin/OrderLinesEditor";
 import { MANUAL_ORDER_SOURCES, ORDER_SOURCE_LABELS } from "@/lib/orders/orderSource";
 import { ImportOrderPanel } from "@/components/admin/ImportOrderPanel";
@@ -62,6 +65,10 @@ export function ManualOrderForm({
   // convertWhatsappLead.ts. الشكل (OrderEditState) واحد فالحالتين.
   const action = leadId ? convertWhatsappLeadAction : createManualOrderAction;
   const [state, formAction, pending] = useActionState(action, initialState);
+
+  // مفتاح تفرّد الطلبية — لا يُطلب لتحويل Lead (محروس بقفل ذرّي على حالة
+  // الـlead نفسه). يُولَّد قبل أول محاولة حفظ ويصمد لإعادة تحميل الصفحة.
+  const idempotencyKey = useIdempotencyKey(isManualOrderKeySpentAction, leadId);
   const [draft, setDraft] = useState<ImportedOrderDraft | null>(initialDraft ?? null);
   const [warnings, setWarnings] = useState<ImportIssue[]>([]);
 
@@ -90,6 +97,12 @@ export function ManualOrderForm({
   return (
     <form action={formAction} className="mt-4 flex flex-col gap-4">
       {leadId && <input type="hidden" name="leadId" value={leadId} />}
+      {/* الحفظ لا يُرسَل قبل أن يجهز المفتاح: الزرّ معطّل حتى ذلك الحين
+          (أجزاء من الثانية — قراءة sessionStorage)، فلا تُنشأ طلبية بلا
+          حرس تفرّد لأن المدير كان أسرع من التأثير الجانبي. */}
+      {!leadId && idempotencyKey && (
+        <input type="hidden" name={MANUAL_ORDER_KEY_FIELD} value={idempotencyKey} />
+      )}
       {!leadId && <ImportOrderPanel onDraft={applyDraft} />}
 
       {draft && (
@@ -236,7 +249,9 @@ export function ManualOrderForm({
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="submit"
-          disabled={pending}
+          // المفتاح شرط للإرسال في الطلبية اليدوية: بدونه يُحفظ الطلب بلا
+          // حرس تفرّد، وهو ما نُصلحه هنا أصلاً. (تحويل Lead لا يحتاجه.)
+          disabled={pending || (!leadId && !idempotencyKey)}
           className="min-h-11 rounded-full bg-brand-orange px-6 text-sm font-semibold text-white disabled:bg-neutral-300"
         >
           {pending ? "جارٍ الحفظ…" : draft ? "تأكيد وإنشاء الطلب" : "حفظ الطلب"}

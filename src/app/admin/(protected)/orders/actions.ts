@@ -16,6 +16,10 @@ import {
 import { sendDeferredPurchase } from "@/lib/pixel/sendDeferredPurchase";
 import { revalidateCatalog } from "@/lib/queries/catalogCache";
 import { createManualOrder } from "@/lib/orders/createManualOrder";
+import {
+  MANUAL_ORDER_KEY_FIELD,
+  isValidIdempotencyKey,
+} from "@/lib/orders/manualOrderKey";
 import { convertWhatsappLeadToOrder } from "@/lib/orders/convertWhatsappLead";
 import { updateOrderLines } from "@/lib/orders/updateOrderLines";
 import { isManualOrderSource } from "@/lib/orders/orderSource";
@@ -628,6 +632,12 @@ export async function createManualOrderAction(
   const parsedCost = parseDeliveryCostInput(String(formData.get("actualDeliveryCost") ?? ""));
   if (!parsedCost.ok) return { error: parsedCost.message };
 
+  const rawKey = String(formData.get(MANUAL_ORDER_KEY_FIELD) ?? "");
+  if (rawKey !== "" && !isValidIdempotencyKey(rawKey)) {
+    return { error: "مفتاح الطلب غير صالح. أعد تحميل الصفحة وحاول مرة أخرى." };
+  }
+  const manualKey = rawKey === "" ? null : rawKey;
+
   const result = await createManualOrder({
     customer: {
       fullName: String(formData.get("fullName") ?? ""),
@@ -642,6 +652,10 @@ export async function createManualOrderAction(
     createdByEmail: auth.email,
     items: readLines(formData),
     acknowledgeBelowCost: formData.get("acknowledgeBelowCost") === "on",
+    // المتصفّح يُولّده قبل أول محاولة ويُثبّته عبر إعادة التحميل —
+    // lib/orders/manualOrderKey.ts. غيابه لا يُسقط الحفظ (نماذج قديمة
+    // مفتوحة في تبويب لم يُحدَّث)، لكنه يُسقط الحرس، فنسجّله.
+    idempotencyKey: manualKey,
   });
 
   if (!result.ok) {
@@ -691,6 +705,11 @@ export async function convertWhatsappLeadAction(
     createdByEmail: auth.email,
     items: readLines(formData),
     acknowledgeBelowCost: formData.get("acknowledgeBelowCost") === "on",
+    // لا مفتاح تفرّد هنا عن قصد: تحويل Lead محروس أصلاً بقفل **ذرّي** على
+    // حالة الـlead نفسها (`UPDATE … WHERE status='whatsapp_pending'
+    // RETURNING id` في convertWhatsappLead.ts:49)، فالتحويل الثاني لا يجد
+    // صفاً فيُرفض. إضافة مفتاح ثانٍ هنا تُضيف حرساً مكرّراً على مسار
+    // محروس، وتخلط مسارين مستقلّين بلا مقابل.
   });
 
   if (!result.ok) {
@@ -767,4 +786,28 @@ export async function importOrderDraftAction(
   if (!parsed.ok) return { ok: false, errors: parsed.errors };
 
   return buildOrderDraft(parsed.value);
+}
+
+/**
+ * هل أُنشئت طلبية بهذا المفتاح فعلاً؟
+ *
+ * يُستدعى مرّة واحدة عند فتح نموذج الطلبية اليدوية، ليعرف المتصفّح هل
+ * المفتاح المحفوظ في `sessionStorage` استُهلك في طلبية سابقة فيُدوّره —
+ * انظر `components/admin/useIdempotencyKey.ts` للسبب الكامل.
+ *
+ * قراءة محضة على عمود فريد مفهرس (`orders_idempotency_key_key`)، ولا تكشف
+ * شيئاً: ترجع `true/false` فقط. والصلاحية مفروضة كأي إجراء إداري آخر.
+ *
+ * ترمي عند تعذّر القاعدة بدل أن تُرجع `false`: الكاذب هنا يُدوّر المفتاح
+ * على الشكّ فيُنتج طلبية ثانية، والرمي يُبقيه كما هو — وهو الاتجاه الآمن.
+ */
+export async function isManualOrderKeySpentAction(key: string): Promise<boolean> {
+  const auth = await requireOwner();
+  if ("error" in auth) throw new Error(auth.error);
+  if (!isValidIdempotencyKey(key)) return false;
+
+  const rows = await sql<{ one: number }[]>`
+    select 1 as one from public.orders where idempotency_key = ${key} limit 1
+  `;
+  return rows.length > 0;
 }
