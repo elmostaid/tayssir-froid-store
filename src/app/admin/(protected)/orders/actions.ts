@@ -662,6 +662,16 @@ export async function createManualOrderAction(
     return { error: result.errors[0]?.message ?? "تعذّر حفظ الطلب.", fieldErrors: result.errors };
   }
 
+  // إعادة إرسال نفس المفتاح **لم تُنشئ شيئاً**: الطلبية كانت محفوظة أصلاً.
+  // لا نُبطل الذاكرة ولا نُعلن تغيّر مخزون — لم يتغيّر شيء. والأهم أننا
+  // نُعلِم المدير صريحاً، لأن التحويل الصامت إلى صفحة الطلبية كان سيجعله
+  // يظنّ أن ما كتبه في هذه المحاولة حُفظ — وهو لم يُحفَظ ولن يُحفَظ، فإدخال
+  // الطلبية محروس بـ`do nothing` فلا يُحدِّث حرفاً. يصل الإعلام عبر معامل
+  // في الرابط لأن `redirect()` يُنهي الإجراء فلا يمكن إرجاع حالة معه.
+  if (result.replayed) {
+    redirect(`/admin/orders/${result.orderId}?replayed=1`);
+  }
+
   // المخزون تغيّر فعلاً، فصفحات الكتالوج العامة يجب أن تعكسه.
   revalidateCatalog();
   revalidatePath("/admin/orders");

@@ -30,13 +30,18 @@ import { safeQuery } from "@/lib/safeQuery";
 
 export const dynamic = "force-dynamic";
 
-type Props = { params: Promise<{ id: string }> };
+type Props = {
+  params: Promise<{ id: string }>;
+  /** `replayed=1` يصل من createManualOrderAction — انظر أدناه. */
+  searchParams: Promise<{ replayed?: string }>;
+};
 
-export default async function AdminOrderDetailPage({ params }: Props) {
+export default async function AdminOrderDetailPage({ params, searchParams }: Props) {
   const admin = await getAdminUser();
   if (!admin) redirect("/admin/login");
 
   const { id } = await params;
+  const { replayed } = await searchParams;
   const orderId = Number(id);
   if (!Number.isInteger(orderId)) notFound();
 
@@ -63,6 +68,21 @@ export default async function AdminOrderDetailPage({ params }: Props) {
       <Link href="/admin/orders" className="text-xs text-neutral-500 hover:underline">
         ← الرجوع إلى الطلبات
       </Link>
+
+      {/* إعادة إرسال بنفس مفتاح التفرّد: هذه الطلبية كانت محفوظة أصلاً،
+          والمحاولة الأخيرة **لم تكتب شيئاً**. التصريح بذلك ليس تجميلاً —
+          بدونه يرى المدير صفحة الطلبية فيظنّ أن ما عدّله قبل الضغط حُفظ،
+          فيُسلّم بياناً خاطئاً للزبون. */}
+      {replayed === "1" && (
+        <div className="mt-2 rounded-xl border border-amber-300 bg-amber-50 p-3">
+          <p className="text-sm font-bold text-amber-900">هذه الطلبية كانت محفوظة أصلاً</p>
+          <p className="mt-1 text-xs leading-relaxed text-amber-800">
+            محاولتك الأخيرة لم تُنشئ طلبية جديدة ولم تُنقص المخزون مرّة ثانية — وهذا
+            هو المقصود. <span className="font-semibold">وإن كنت قد غيّرت شيئاً قبل
+            الضغط فذاك التغيير لم يُحفَظ</span>؛ عدّل الطلبية من هذه الصفحة.
+          </p>
+        </div>
+      )}
 
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">

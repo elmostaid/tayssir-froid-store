@@ -27,7 +27,9 @@ const input = (key: string | null, quantity = 2, unitPrice = 500) => ({
     notes: null,
   },
   source: "phone" as const,
-  items: [{ productId, variantId: null, quantity, unitPrice }],
+  // `unitPriceOverride` لا `unitPrice`: هو الاسم الذي تقرأه
+  // resolveLines، وبيع الهاتف يسمح بثمن خاص (MANUAL_LINE_RULES).
+  items: [{ productId, variantId: null, quantity, unitPriceOverride: unitPrice }],
   deliveryFee: 35,
   actualDeliveryCost: null,
   createdByEmail: "test@local",
@@ -205,5 +207,25 @@ describe("مفتاح تفرّد الطلبية اليدوية", () => {
     // طلبيتان: هذا بالضبط العطل الذي يُغلقه المفتاح، ويبقى قائماً حين يغيب.
     expect(a.orderId).not.toBe(b.orderId);
     expect(await stockNow()).toBe(before - 4);
+  });
+});
+
+describe("ما يراه المدير عند إعادة الإرسال", () => {
+  test("النتيجة تُعلن replayed=true صريحاً — لا نجاح صامت", async () => {
+    const key = newIdempotencyKey();
+    const first = await createManualOrder(input(key, 2, 500));
+    const again = await createManualOrder(input(key, 7, 777));
+    expect(first.ok && again.ok).toBe(true);
+    if (!first.ok || !again.ok) return;
+
+    // هذه الراية هي ما يُشعِل التنبيه في صفحة الطلبية (?replayed=1):
+    // بدونها كان المدير يُحوَّل بصمت فيظنّ أن 7×777 حُفظت.
+    expect(first.replayed).toBe(false);
+    expect(again.replayed).toBe(true);
+
+    // ونتحقّق مرة أخرى أن 7×777 لم تُكتب فعلاً.
+    const [row] = await sql<{ items_subtotal: string }[]>`
+      select items_subtotal from public.orders where id = ${again.orderId}`;
+    expect(Number(row.items_subtotal)).toBe(1000); // 2×500 لا 7×777
   });
 });

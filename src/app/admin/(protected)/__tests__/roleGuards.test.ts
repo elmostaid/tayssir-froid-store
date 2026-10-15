@@ -201,7 +201,12 @@ describe("صفحات الطلبات — متاحة لـStaff (ضمن صلاحي�
     );
     let threw = false;
     try {
-      await AdminOrderDetailPage({ params: Promise.resolve({ id: String(order.id) }) });
+      await AdminOrderDetailPage({
+        params: Promise.resolve({ id: String(order.id) }),
+        // صار للصفحة searchParams (إشعار إعادة الإرسال) — لا علاقة له
+        // بحارس الصلاحية الذي يفحصه هذا الاختبار.
+        searchParams: Promise.resolve({}),
+      });
     } catch (err) {
       threw = true;
       const digest = String((err as { digest?: string } | undefined)?.digest ?? "");
