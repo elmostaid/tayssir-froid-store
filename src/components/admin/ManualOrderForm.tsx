@@ -67,8 +67,13 @@ export function ManualOrderForm({
   const [state, formAction, pending] = useActionState(action, initialState);
 
   // مفتاح تفرّد الطلبية — لا يُطلب لتحويل Lead (محروس بقفل ذرّي على حالة
-  // الـlead نفسه). يُولَّد قبل أول محاولة حفظ ويصمد لإعادة تحميل الصفحة.
-  const idempotencyKey = useIdempotencyKey(isManualOrderKeySpentAction, leadId);
+  // الـlead نفسه). يُولَّد قبل أول محاولة حفظ، ويصمد لإعادة التحميل، ولا
+  // يُدوَّر إلا بفعل صريح — انظر useIdempotencyKey.ts.
+  const { key: idempotencyKey, spent: keySpent, startNew } = useIdempotencyKey(
+    isManualOrderKeySpentAction,
+    leadId
+  );
+  const blockedBySpentKey = !leadId && keySpent;
   const [draft, setDraft] = useState<ImportedOrderDraft | null>(initialDraft ?? null);
   const [warnings, setWarnings] = useState<ImportIssue[]>([]);
 
@@ -76,6 +81,18 @@ export function ManualOrderForm({
   // يجعل React يُركِّب الحقول من جديد بقيمها الجديدة، بدل محاولة تحويل
   // نموذج غير مُتحكَّم فيه إلى مُتحكَّم فيه في منتصف حياته.
   const [draftKey, setDraftKey] = useState(0);
+
+  /**
+   * طلبية جديدة مستقلة: مفتاح جديد **و**حقول فارغة معاً، لا أحدهما.
+   * `draftKey` هو ما يُركِّب حقول النموذج من جديد (نفس الحيلة المستعملة
+   * للاستيراد)، فيُمحى ما استعاده المتصفّح بالزرّ الخلفي.
+   */
+  function beginNewOrder() {
+    startNew();
+    setDraft(null);
+    setWarnings([]);
+    setDraftKey((current) => current + 1);
+  }
 
   function applyDraft(next: ImportedOrderDraft, nextWarnings: ImportIssue[]) {
     setDraft(next);
@@ -96,6 +113,26 @@ export function ManualOrderForm({
 
   return (
     <form action={formAction} className="mt-4 flex flex-col gap-4">
+      {/* الزرّ الخلفي قد يُعيد حقول طلبية حُفظت بالفعل. المفتاح لا يُدوَّر
+          تلقائياً (وإلا صار المحتوى القديم + مفتاح جديد = طلبية ثانية)،
+          فنُعطّل الإرسال ونطلب فعلاً صريحاً. */}
+      {blockedBySpentKey && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-3">
+          <p className="text-sm font-bold text-amber-900">هذه الطلبية حُفظت بالفعل</p>
+          <p className="mt-1 text-xs leading-relaxed text-amber-800">
+            ما تراه في الحقول قد يكون ما استعاده المتصفّح من طلبية مسجَّلة. الحفظ
+            معطَّل هنا حتى لا تُسجَّل مرّتين.
+          </p>
+          <button
+            type="button"
+            onClick={beginNewOrder}
+            className="mt-2 inline-flex min-h-9 items-center rounded-full border border-amber-400 bg-white px-3 text-xs font-semibold text-amber-900"
+          >
+            ابدأ طلبية جديدة
+          </button>
+        </div>
+      )}
+
       {leadId && <input type="hidden" name="leadId" value={leadId} />}
       {/* الحفظ لا يُرسَل قبل أن يجهز المفتاح: الزرّ معطّل حتى ذلك الحين
           (أجزاء من الثانية — قراءة sessionStorage)، فلا تُنشأ طلبية بلا
@@ -251,7 +288,7 @@ export function ManualOrderForm({
           type="submit"
           // المفتاح شرط للإرسال في الطلبية اليدوية: بدونه يُحفظ الطلب بلا
           // حرس تفرّد، وهو ما نُصلحه هنا أصلاً. (تحويل Lead لا يحتاجه.)
-          disabled={pending || (!leadId && !idempotencyKey)}
+          disabled={pending || (!leadId && !idempotencyKey) || blockedBySpentKey}
           className="min-h-11 rounded-full bg-brand-orange px-6 text-sm font-semibold text-white disabled:bg-neutral-300"
         >
           {pending ? "جارٍ الحفظ…" : draft ? "تأكيد وإنشاء الطلب" : "حفظ الطلب"}
