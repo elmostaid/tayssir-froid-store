@@ -9,6 +9,7 @@ import {
 import type { Category } from "@/lib/types";
 import { ProductCard } from "@/components/ProductCard";
 import { safeQuery } from "@/lib/safeQuery";
+import { inBatches } from "@/lib/queryBatches";
 import { LoadMoreProducts } from "@/components/LoadMoreProducts";
 import { ServiceUnavailableError } from "@/lib/serviceUnavailable";
 import { getSiteUrl } from "@/lib/siteUrl";
@@ -72,23 +73,31 @@ export default async function CategoryPage({ params, searchParams }: Props) {
   // التصنيف المُحلَّل إطلاقاً. الآن الأربعة تُنفَّذ فـPromise.all واحد؛
   // فحص "غير موجود" يبقى بعدها كما كان تماماً. نفس السلوك بالضبط، فقط أسرع
   // تحت تدهور قاعدة البيانات (لا "تراكم" استعلامات متتالية).
-  const [categoryResult, products, variantProductIds, settings] = await Promise.all([
+  //
+  // أربعة استعلامات من مجمّع سعته خمسة، والترويسة والفوتر يطلبان ثلاثة
+  // أخرى بالتوازي. `inBatches(3)` يُبقي سلوتين حرّين دائماً بدل أن تأخذ
+  // الصفحة أربعة من خمسة. والترتيب مقصود: التصنيف والمنتجات أولاً — وهما
+  // ما لا تُعرض الصفحة بدونه — ثم المتغيّرات والإعدادات.
+  const [categoryResult, products, variantProductIds, settings] = await inBatches([
     // .catch() وحده لا يحمي من تعليق (hang) بلا استجابة أصلاً — لا يرفض ولا
     // ينجح، فلا catch يُفعَّل أبداً (نفس فجوة 504 الحقيقية المُوثَّقة فـ
     // safeQuery.ts). safeQuery تضمن مهلة قصوى فعلية هنا أيضاً.
-    safeQuery<Category | null | "SERVICE_UNAVAILABLE">(
-      () => getCategoryBySlug(slug),
-      "SERVICE_UNAVAILABLE",
-      "category.getCategoryBySlug"
-    ),
-    safeQuery(
-      // عنصر زائد واحد يكشف وجود دفعة تالية بلا استعلام عدّ ثانٍ.
-      () => getProducts({ categorySlug: slug, limit: CATEGORY_PAGE_SIZE + 1, query, sort }),
-      [],
-      "category.getProducts"
-    ),
-    safeQuery(() => getProductIdsWithVariants(), new Set<number>(), "category.getProductIdsWithVariants"),
-    safeQuery(() => getSettings(), FALLBACK_SETTINGS, "category.getSettings"),
+    () =>
+      safeQuery<Category | null | "SERVICE_UNAVAILABLE">(
+        () => getCategoryBySlug(slug),
+        "SERVICE_UNAVAILABLE",
+        "category.getCategoryBySlug"
+      ),
+    () =>
+      safeQuery(
+        // عنصر زائد واحد يكشف وجود دفعة تالية بلا استعلام عدّ ثانٍ.
+        () => getProducts({ categorySlug: slug, limit: CATEGORY_PAGE_SIZE + 1, query, sort }),
+        [],
+        "category.getProducts"
+      ),
+    () =>
+      safeQuery(() => getProductIdsWithVariants(), new Set<number>(), "category.getProductIdsWithVariants"),
+    () => safeQuery(() => getSettings(), FALLBACK_SETTINGS, "category.getSettings"),
   ]);
 
   if (categoryResult === "SERVICE_UNAVAILABLE") {

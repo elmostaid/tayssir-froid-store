@@ -26,6 +26,8 @@
  * `ok: false` يعرضه القسم صراحةً بوصفه تعذّراً — ولا رقم بينهما.
  */
 
+import { MAX_CONCURRENT_QUERIES } from "@/lib/queryBatches";
+
 /** نتيجة قسم: قيمة حقيقية، أو تعذُّر مُعلَن. لا ثالث لهما. */
 export type SectionData<T> = { readonly ok: true; readonly value: T } | { readonly ok: false };
 
@@ -33,8 +35,12 @@ export type SectionData<T> = { readonly ok: true; readonly value: T } | { readon
  * أقصى عدد استعلامات متوازية تُطلقها صفحة إدارة واحدة.
  *
  * ثلاثة من أصل خمسة في المجمّع، فيبقى واحد للـlayout وواحد احتياطياً.
+ *
+ * الاسم باقٍ كما هو لأن 9 ملفات إدارة تستورده، لكن القيمة والدالّة
+ * انتقلتا إلى `@/lib/queryBatches` — صارت واجهة المتجر تحتاجهما أيضاً،
+ * فلم يبق موضعهما الصحيح داخل مجلّد الإدارة.
  */
-export const ADMIN_MAX_CONCURRENT_QUERIES = 3;
+export const ADMIN_MAX_CONCURRENT_QUERIES = MAX_CONCURRENT_QUERIES;
 
 /**
  * يُنفِّذ استعلاماً ولا يرمي أبداً. الفشل يصير `{ ok: false }` يراه القسم
@@ -57,23 +63,4 @@ export async function loadSection<T>(
   }
 }
 
-type AnyTask = () => Promise<unknown>;
-
-/**
- * يُنفِّذ المهام على دفعات لا تتجاوز `size` مهمة متوازية، ويحفظ ترتيب
- * النتائج وأنواعها كما لو كانت `Promise.all`.
- *
- * الترتيب مقصود: الدفعة الأولى تحمل ما تعرضه الصفحة أولاً، فيصل أهمّ ما
- * في الصفحة قبل تفاصيلها.
- */
-export async function inBatches<const T extends readonly AnyTask[]>(
-  tasks: T,
-  size: number = ADMIN_MAX_CONCURRENT_QUERIES
-): Promise<{ -readonly [K in keyof T]: Awaited<ReturnType<T[K]>> }> {
-  const results: unknown[] = [];
-  for (let i = 0; i < tasks.length; i += size) {
-    const batch = tasks.slice(i, i + size) as readonly AnyTask[];
-    results.push(...(await Promise.all(batch.map((task) => task()))));
-  }
-  return results as { -readonly [K in keyof T]: Awaited<ReturnType<T[K]>> };
-}
+export { inBatches } from "@/lib/queryBatches";

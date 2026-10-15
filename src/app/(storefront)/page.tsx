@@ -20,6 +20,7 @@ import { resolveProductImageUrls } from "@/lib/storage/resolveProductImageUrl";
 import { TOP_DEMAND_SKUS } from "@/lib/catalog/topDemand";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
 import { safeQuery } from "@/lib/safeQuery";
+import { inBatches } from "@/lib/queryBatches";
 
 // تُعرض هذه الصفحة ديناميكياً عند كل طلب (وليس عند البناء) لأن بيانات
 // المنتجات والأسعار تأتي من قاعدة البيانات ويجب أن تكون محدَّثة دائماً.
@@ -99,19 +100,28 @@ export default async function HomePage() {
     measuredTopDemand,
     variantProductIds,
     settings,
-  ] = await Promise.all([
-    getFilteredCategories("home.getCategories"),
-    safeQuery(() => getProductCountsByCategory(), {}, "home.getProductCountsByCategory"),
+    // ثمانية استعلامات كانت تُطلَق كلها في وقت واحد — من مجمّع سعته خمسة
+    // (`db.ts: max 5`). فطلبٌ واحد على هذه الصفحة كان يحتكر المجمّع كاملاً
+    // (مقيس: 5 اتصالات من 5)، فيجد التخطيط — الترويسة والفوتر يُصيَّران
+    // بالتوازي لا بعدها — طابوراً، ويجده كل زائر ثانٍ. الآن ثلاثة على
+    // الأكثر، فيبقى سلوتان حرّان دائماً. الكلفة المقيسة لزائر واحد: صفر
+    // (42ms مقابل 43ms). التفاصيل والأرقام الكاملة في `queryBatches.ts`.
+    //
+    // الترتيب مقصود: الدفعة الأولى تحمل التصنيفات والأعداد والأغلفة — أعلى
+    // ما في الصفحة — فيصل أولاً.
+  ] = await inBatches([
+    () => getFilteredCategories("home.getCategories"),
+    () => safeQuery(() => getProductCountsByCategory(), {}, "home.getProductCountsByCategory"),
     // غلاف لكل تصنيف بلا صورة مصمَّمة — من أول منتج فيه بترتيب المدير.
-    safeQuery(() => getCategoryCoverImages(), {}, "home.getCategoryCoverImages"),
+    () => safeQuery(() => getCategoryCoverImages(), {}, "home.getCategoryCoverImages"),
     // نطلب عنصراً زائداً واحداً لنعرف هل توجد دفعة تالية، بدل استعلام عدّ
     // منفصل. الزائد يُقتطع قبل العرض.
-    safeQuery(() => getProducts({ limit: HOME_PAGE_SIZE + 1 }), [], "home.getProducts"),
+    () => safeQuery(() => getProducts({ limit: HOME_PAGE_SIZE + 1 }), [], "home.getProducts"),
     // «الأكثر طلباً» — اختيار صاحب المتجر أولاً، والقياس احتياطاً.
-    safeQuery(() => getFeaturedProducts(), [], "home.getFeaturedProducts"),
-    safeQuery(() => getProductsBySkus([...TOP_DEMAND_SKUS]), [], "home.getTopDemand"),
-    safeQuery(() => getProductIdsWithVariants(), new Set<number>(), "home.getProductIdsWithVariants"),
-    safeQuery(() => getSettings(), FALLBACK_SETTINGS, "home.getSettings"),
+    () => safeQuery(() => getFeaturedProducts(), [], "home.getFeaturedProducts"),
+    () => safeQuery(() => getProductsBySkus([...TOP_DEMAND_SKUS]), [], "home.getTopDemand"),
+    () => safeQuery(() => getProductIdsWithVariants(), new Set<number>(), "home.getProductIdsWithVariants"),
+    () => safeQuery(() => getSettings(), FALLBACK_SETTINGS, "home.getSettings"),
   ]);
 
   const categories = sortHomeCategories(categoriesRaw);
