@@ -1,4 +1,4 @@
-import { describe, test, expect } from "vitest";
+import { afterEach, describe, test, expect } from "vitest";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { GA_MEASUREMENT_ID } from "@/lib/analytics/config";
@@ -45,5 +45,38 @@ describe("GoogleAnalytics — وسم GA4 الأساسي فقط، مرة واحد
     const source = await readFile(componentPath, "utf-8");
     expect(source).not.toMatch(/fbq\s*\(/);
     expect(source).not.toContain("connect.facebook.net");
+  });
+});
+
+describe("GA4 لا يُرسَل من غير الإنتاج — عزل المعاينة", () => {
+  const original = process.env.NEXT_PUBLIC_VERCEL_ENV;
+  afterEach(() => {
+    if (original === undefined) delete process.env.NEXT_PUBLIC_VERCEL_ENV;
+    else process.env.NEXT_PUBLIC_VERCEL_ENV = original;
+  });
+
+  test("الإنتاج وحده يُفعّل القياس", async () => {
+    const { isAnalyticsEnabled } = await import("@/lib/analytics/config");
+    process.env.NEXT_PUBLIC_VERCEL_ENV = "production";
+    expect(isAnalyticsEnabled()).toBe(true);
+  });
+
+  test("المعاينة لا تُرسل قياساً إلى خاصية الإنتاج", async () => {
+    const { isAnalyticsEnabled } = await import("@/lib/analytics/config");
+    process.env.NEXT_PUBLIC_VERCEL_ENV = "preview";
+    expect(isAnalyticsEnabled()).toBe(false);
+  });
+
+  test("والتطوير المحلي كذلك (المتغيّر غائب)", async () => {
+    const { isAnalyticsEnabled } = await import("@/lib/analytics/config");
+    delete process.env.NEXT_PUBLIC_VERCEL_ENV;
+    expect(isAnalyticsEnabled()).toBe(false);
+  });
+
+  test("المكوّن يُرجع null بلا أي سكربت خارج الإنتاج", async () => {
+    const source = await readFile(componentPath, "utf-8");
+    // الحارس قبل أي <Script>: لا طلب شبكة إطلاقاً، لا سكربت مُعطَّل.
+    expect(source).toContain("if (!isAnalyticsEnabled()) return null;");
+    expect(source.indexOf("isAnalyticsEnabled()")).toBeLessThan(source.indexOf("<Script"));
   });
 });
