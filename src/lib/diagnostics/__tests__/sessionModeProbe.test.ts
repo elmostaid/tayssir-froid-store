@@ -39,8 +39,8 @@ afterAll(async () => {
 
 describe("الإعداد الفعلي كما يراه الخادم", () => {
   test("المهلة المُرسَلة كمعامل بدء تظهر في current_setting", () => {
-    expect(report.runtimeConfig.statementTimeoutOptionMs).toBe(1500);
-    expect(report.runtimeConfig.poolMax).toBe(2);
+    expect(report.runtimeConfig!.statementTimeoutOptionMs).toBe(1500);
+    expect(report.runtimeConfig!.poolMax).toBe(2);
     // الاتصال المباشر يقبل المعامل، فالخادم يُقرّ به بنفسه.
     expect(report.serverSettings?.statement_timeout).toBe("1500ms");
   });
@@ -91,14 +91,14 @@ describe("معاملة sql.begin() عند تجاوز المهلة", () => {
 describe("الاتصالات والانتظار", () => {
   test("يقرأ حدود الخادم وعدّادات طابور العميل", () => {
     expect(Number(report.pool.serverLimits?.max_connections)).toBeGreaterThan(0);
-    expect(report.pool.clientQueueCounters.armed).toBeGreaterThan(0);
-    expect(report.pool.clientQueueCounters.peakInFlight).toBeGreaterThan(0);
+    expect(report.pool.clientQueueCounters!.armed).toBeGreaterThan(0);
+    expect(report.pool.clientQueueCounters!.peakInFlight).toBeGreaterThan(0);
     // الاتصال المحلي مباشر فلا اتصالات باسم Supavisor — صفر هنا صحيح.
     expect(report.pool.supavisorBackends?.total).toBe(0);
   });
 
   test("كل استعلام سُلِّح انتهى فعلاً — لا اتصال محجوز إلى الأبد", () => {
-    expect(report.pool.clientQueueCounters.inFlight).toBe(0);
+    expect(report.pool.clientQueueCounters!.inFlight).toBe(0);
   });
 });
 

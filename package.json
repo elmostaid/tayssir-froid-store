@@ -11,7 +11,8 @@
     "test:setup-db": "./scripts/setup-test-db.sh",
     "typecheck": "tsc --noEmit",
     "gen:meta-catalog-audit": "tsx scripts/gen-audit-report.ts",
-    "validate:meta-feed": "tsx scripts/validate-meta-feed.ts"
+    "validate:meta-feed": "tsx scripts/validate-meta-feed.ts",
+    "vercel-build": "tsx scripts/session-mode-probe.ts; next build"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.5.1",

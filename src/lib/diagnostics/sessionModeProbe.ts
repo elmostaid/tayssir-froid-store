@@ -1,5 +1,5 @@
-import { sql } from "@/lib/db";
-import { dbRuntimeConfig, dbQueryCounters } from "@/lib/db";
+import type postgres from "postgres";
+import { sql as sharedSql, dbRuntimeConfig, dbQueryCounters } from "@/lib/db";
 
 /**
  * قياسات نمط الاتصال على قاعدة المعاينة المعزولة — كل استعلام هنا **نصّ
@@ -10,7 +10,13 @@ import { dbRuntimeConfig, dbQueryCounters } from "@/lib/db";
  * وما يخرج منه أرقام وحالات فقط: مهل، أزمنة، رموز أخطاء، أعداد اتصالات،
  * ومعرّف عملية الخادم. لا رابط قاعدة بيانات، لا كلمة سر، ولا صفّ واحد من
  * بيانات الزبناء.
+ *
+ * ويأخذ العميل كوسيط (بدل استيراده ثابتاً) لسبب واحد مهم: هكذا يمكن تشغيل
+ * نفس القياس على **رابطين في نفس اللحظة** — منفذ المعاملة ومنفذ الجلسة —
+ * فتصير المقارنة بين نمطين لا بين نشرين ولا بين لحظتين.
  */
+
+export type ProbeClient = ReturnType<typeof postgres>;
 
 /** جدول فحص صغير يُنشأ على قاعدة المعاينة وحدها، وليس في أي migration. */
 const PROBE_TABLE = "diag_probe";
@@ -101,7 +107,7 @@ type SettingsRow = {
 };
 
 /** ما يراه التطبيق فعلاً على اتصاله الحقيقي — لا ما نظنّه. */
-async function readServerSettings() {
+async function readServerSettings(sql: ProbeClient) {
   return withGuard("settings", async () => {
     const rows = await sql<SettingsRow[]>`
       select
@@ -112,12 +118,12 @@ async function readServerSettings() {
         current_setting('statement_timeout', true)                   as statement_timeout,
         current_setting('transaction_timeout', true)                 as transaction_timeout,
         current_setting('idle_in_transaction_session_timeout', true) as idle_in_transaction_session_timeout,
-        current_user                                             as db_user,
+        current_user                                                 as db_user,
         current_setting('server_version_num')                        as server_version_num,
-        pg_backend_pid()                                         as backend_pid,
+        pg_backend_pid()                                             as backend_pid,
         (select backend_start from pg_stat_activity where pid = pg_backend_pid()) as backend_started_at,
         (extract(epoch from (now() - (select backend_start from pg_stat_activity where pid = pg_backend_pid()))))::int
-                                                                 as seconds_since_backend_start
+                                                                     as seconds_since_backend_start
     `;
     return rows[0] ?? null;
   });
@@ -130,7 +136,7 @@ async function readServerSettings() {
  * بدّل الخادم خلفنا، وهو سلوك نمط المعاملة. يصحّ الاستنتاج بثقة عند
  * max=1 لأن الاتصال واحد لا غيره.
  */
-async function detectSessionState(originalTimeout: string | null) {
+async function detectSessionState(sql: ProbeClient, originalTimeout: string | null) {
   return withGuard("session-state", async () => {
     // set_config(name, value, is_local=false) هي SET نفسها لكن كدالة —
     // فتمرّ القيمة كمعامل مُرتبط، ولا يُركَّب أي نصّ SQL في هذا الملف
@@ -153,14 +159,14 @@ async function detectSessionState(originalTimeout: string | null) {
 }
 
 /** استعلام يتجاوز المهلة: هل يوقفه الخادم، ومتى، وهل يبقى الاتصال سليماً؟ */
-async function probeLongQuery() {
+async function probeLongQuery(sql: ProbeClient) {
   const attempt = await withGuard("long-query", async () => {
     await sql`select pg_sleep(${LONG_SLEEP_SECONDS})`;
     return "completed" as const;
   });
 
-  // السؤال الثاني في طلبك: «وما كيخليش الاتصال معلقاً». نثبته باستعلام
-  // تافه بعده مباشرة — نجاحه يعني أن الاتصال عاد للمجمّع سليماً.
+  // السؤال الثاني: «وما كيخليش الاتصال معلقاً». نثبته باستعلام تافه بعده
+  // مباشرة — نجاحه يعني أن الاتصال عاد للمجمّع سليماً.
   const after = await withGuard("after-long-query", async () => {
     const [row] = await sql<{ ok: number }[]>`select 1 as ok`;
     return row?.ok === 1;
@@ -169,6 +175,7 @@ async function probeLongQuery() {
   return {
     requestedSleepSeconds: LONG_SLEEP_SECONDS,
     elapsedMs: attempt.elapsedMs,
+    completedWithoutTimeout: attempt.value === "completed",
     stoppedByServer: attempt.error?.fromServer === true,
     error: attempt.error,
     guardFired: attempt.guardFired,
@@ -181,12 +188,8 @@ async function probeLongQuery() {
  * سلوك معاملة sql.begin() عند تجاوز المهلة — وهو السؤال الذي يمسّ الطلبيات
  * والمخزون مباشرة. نكتب صفّاً أولاً ثم نُعلِّق المعاملة: المطلوب إثباته أن
  * المهلة تُرجِع المعاملة **كاملة** فلا يبقى نصف طلب مكتوباً.
- *
- * ملاحظة مقصودة: استعلامات داخل sql.begin لا تمرّ من Proxy الخاص بـdb.ts،
- * فلا مؤقّت إلغاء من جهة العميل هنا إطلاقاً — ما يوقف هذه المعاملة هو
- * الخادم وحده، وهذا بالضبط ما نريد قياسه بلا تشويش.
  */
-async function probeTransaction() {
+async function probeTransaction(sql: ProbeClient) {
   const tableReady = await withGuard("probe-table", async () => {
     const [row] = await sql<{ exists: boolean }[]>`
       select exists (
@@ -234,6 +237,7 @@ async function probeTransaction() {
     skipped: false,
     reason: null,
     elapsedMs: attempt.elapsedMs,
+    committed: attempt.value === "committed",
     error: attempt.error,
     guardFired: attempt.guardFired,
     rowsAfter: rowsAfter.value,
@@ -256,16 +260,16 @@ type PoolRow = {
  * `pg_stat_activity` يرى اتصالات Supavisor على الخادم ولا يرى طابور عميلنا
  * داخل النسخة؛ وعدّادات db.ts ترى الطابور ولا ترى الخوادم.
  */
-async function readPoolState() {
+async function readPoolState(sql: ProbeClient, includeClientCounters: boolean) {
   const server = await withGuard("pool", async () => {
     const [row] = await sql<PoolRow[]>`
       select
-        count(*)::int                                                              as total,
-        count(*) filter (where state = 'active')::int                              as active,
-        count(*) filter (where state = 'idle')::int                                as idle,
-        count(*) filter (where state = 'idle in transaction')::int                  as idle_in_transaction,
-        count(*) filter (where wait_event_type = 'Client')::int                    as waiting_on_client,
-        count(*) filter (where wait_event_type = 'Lock')::int                      as waiting_on_lock
+        count(*)::int                                                   as total,
+        count(*) filter (where state = 'active')::int                   as active,
+        count(*) filter (where state = 'idle')::int                     as idle,
+        count(*) filter (where state = 'idle in transaction')::int       as idle_in_transaction,
+        count(*) filter (where wait_event_type = 'Client')::int          as waiting_on_client,
+        count(*) filter (where wait_event_type = 'Lock')::int            as waiting_on_lock
       from pg_stat_activity
       where backend_type = 'client backend'
         and application_name like 'Supavisor%'
@@ -285,27 +289,41 @@ async function readPoolState() {
   return {
     supavisorBackends: server.value,
     serverLimits: limits.value,
-    clientQueueCounters: dbQueryCounters(),
+    // العدّادات تخصّ عميل db.ts المشترك وحده؛ لعميل مُنشأ للقياس لا معنى لها.
+    clientQueueCounters: includeClientCounters ? dbQueryCounters() : null,
   };
 }
 
 export type SessionModeReport = Awaited<ReturnType<typeof runSessionModeProbe>>;
 
-export async function runSessionModeProbe() {
+export async function runSessionModeProbe(options?: {
+  sql?: ProbeClient;
+  label?: string;
+  /** اشمل عدّادات طابور العميل — صحيحة فقط لعميل db.ts المشترك. */
+  includeClientCounters?: boolean;
+  /** اشمل إعداد db.ts — لا معنى له لعميل مُنشأ بإعداد آخر. */
+  includeRuntimeConfig?: boolean;
+}) {
+  const sql = options?.sql ?? (sharedSql as unknown as ProbeClient);
+  const includeClientCounters = options?.includeClientCounters ?? options?.sql === undefined;
+  const includeRuntimeConfig = options?.includeRuntimeConfig ?? options?.sql === undefined;
+
   const startedAt = new Date().toISOString();
-  const settingsBefore = await readServerSettings();
+  const settingsBefore = await readServerSettings(sql);
   const sessionState = await detectSessionState(
+    sql,
     settingsBefore.value?.statement_timeout ?? null
   );
-  const longQuery = await probeLongQuery();
-  const transaction = await probeTransaction();
-  const pool = await readPoolState();
-  const settingsAfter = await readServerSettings();
+  const longQuery = await probeLongQuery(sql);
+  const transaction = await probeTransaction(sql);
+  const pool = await readPoolState(sql, includeClientCounters);
+  const settingsAfter = await readServerSettings(sql);
 
   return {
+    label: options?.label ?? "shared-client",
     startedAt,
     finishedAt: new Date().toISOString(),
-    runtimeConfig: dbRuntimeConfig(),
+    runtimeConfig: includeRuntimeConfig ? dbRuntimeConfig() : null,
     serverSettings: settingsBefore.value,
     serverSettingsError: settingsBefore.error,
     sessionState: sessionState.value,

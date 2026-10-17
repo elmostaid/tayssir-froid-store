@@ -1,5 +1,11 @@
 import postgres from "postgres";
 import { previewOnlyVerdict } from "@/lib/diagnostics/previewOnly";
+import {
+  connectionFingerprint as connectionFingerprintOf,
+  deriveSessionModeUrl,
+  sessionModeSwitch,
+  type ConnectionFingerprint,
+} from "@/lib/diagnostics/sessionModeUrl";
 
 type SqlClient = ReturnType<typeof postgres>;
 
@@ -60,7 +66,10 @@ function readStatementTimeoutOption(
   return { send: true, ms: parsed };
 }
 
-export type ConnectionSource = "DATABASE_URL" | "DATABASE_URL_SESSION_TEST";
+export type ConnectionSource =
+  | "DATABASE_URL"
+  | "DATABASE_URL_SESSION_TEST"
+  | "DATABASE_URL (منفذ الجلسة مشتقّاً في الذاكرة)";
 
 /**
  * رابط اتصال بديل **للاختبار فقط**، واسمه مختلف عن `DATABASE_URL` عمداً.
@@ -77,14 +86,55 @@ export type ConnectionSource = "DATABASE_URL" | "DATABASE_URL_SESSION_TEST";
  * `DATABASE_URL` كما هو — فلا يمكن لهذا المتغيّر أن يُحوِّل الإنتاج إلى
  * قاعدة أخرى بأي حال، لا بخطأ ولا بنيّة.
  */
-function readConnectionSource(
-  env: NodeJS.ProcessEnv = process.env
-): { value: string | undefined; source: ConnectionSource } {
+export type ResolvedConnection = {
+  value: string | undefined;
+  source: ConnectionSource;
+  /** بصمة الاتصال المستعمل فعلاً — بلا كلمة سر وبلا الرابط كاملاً. */
+  fingerprint: ConnectionFingerprint | null;
+  sessionModeNote: string;
+};
+
+function readConnectionSource(env: NodeJS.ProcessEnv = process.env): ResolvedConnection {
+  // رابط اختبار مُدخَل صراحةً يُستعمل كما هو: صاحبه اختاره بنفسه، فلا نفرض
+  // عليه قواعد الاشتقاق (قد يكون اتصالاً مباشراً لا عبر المجمّع أصلاً).
+  // ويبقى حارس البيئة قائماً: لا يُقرأ إطلاقاً في أي نشر إنتاجي.
   const override = env.DATABASE_URL_SESSION_TEST?.trim();
   if (override && previewOnlyVerdict(env).allowed) {
-    return { value: override, source: "DATABASE_URL_SESSION_TEST" };
+    return {
+      value: override,
+      source: "DATABASE_URL_SESSION_TEST",
+      fingerprint: connectionFingerprintOf(override) ?? null,
+      sessionModeNote: "رابط اختبار مُدخَل صراحةً، يُستعمل كما هو",
+    };
   }
-  return { value: env.DATABASE_URL, source: "DATABASE_URL" };
+
+  const base = env.DATABASE_URL;
+  const decision = sessionModeSwitch(env);
+
+  if (!decision.enabled || !base) {
+    return {
+      value: base,
+      source: "DATABASE_URL",
+      fingerprint: base ? (connectionFingerprintOf(base) ?? null) : null,
+      sessionModeNote: decision.enabled ? "لا رابط" : decision.reason,
+    };
+  }
+
+  // الشروط كلها تحقّقت: نشر معاينة، على فرع الاختبار، ومتّصل بالمشروع
+  // المعزول. فنشتقّ منفذ الجلسة في الذاكرة. وأي شرط يفشل داخل الاشتقاق
+  // (مضيف غير المجمّع، معرّف مشروع آخر، منفذ غير معروف) يرمي خطأً واضحاً
+  // ولا يرجع بصمت إلى الرابط الأصلي — لأن الرجوع الصامت يعني أن نقيس نمط
+  // المعاملة ونكتب في التقرير «نمط الجلسة».
+  const derived = deriveSessionModeUrl(base);
+  return {
+    value: derived.url,
+    source: "DATABASE_URL (منفذ الجلسة مشتقّاً في الذاكرة)",
+    fingerprint: derived.after,
+    sessionModeNote: derived.alreadySessionMode
+      ? "الرابط كان على منفذ الجلسة أصلاً"
+      : `المنفذ ${derived.before.port} ← ${derived.after.port}` +
+        (derived.removedPgbouncerFlag ? " و‏حُذفت pgbouncer=true" : ""),
+  };
 }
 
 /**
@@ -94,8 +144,11 @@ function readConnectionSource(
  */
 export function dbRuntimeConfig() {
   const statementTimeout = readStatementTimeoutOption();
+  const connection = readConnectionSource();
   return {
-    connectionSource: readConnectionSource().source,
+    connectionSource: connection.source,
+    connectionFingerprint: connection.fingerprint,
+    sessionModeNote: connection.sessionModeNote,
     poolMax: readPoolMax(),
     statementTimeoutOptionMs: statementTimeout.send ? statementTimeout.ms : null,
     hardQueryTimeoutMs: QUERY_HARD_TIMEOUT_MS,
