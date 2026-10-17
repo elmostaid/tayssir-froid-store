@@ -7,6 +7,96 @@ type SqlClient = ReturnType<typeof postgres>;
 // (8 ثوان) حتى لا يسبق مهلة الخادم في الحالة التي يعمل فيها الخادم فعلاً.
 const QUERY_HARD_TIMEOUT_MS = 10000;
 
+/**
+ * القيم التي كانت مكتوبة حرفياً داخل buildClient. تُستخرَج هنا لسببين: كي
+ * يقرأها مسار التشخيص ويُبلِّغ عن الإعداد الفعلي بلا تكرار يدوي يتناقض مع
+ * الواقع، وكي يبقى الافتراضي **نفسه بالحرف** عندما لا يُضبَط أي متغيّر
+ * بيئة — فهذا الفرع فرع اختبار، ولا يجوز أن يغيّر سلوك الإنتاج بمجرّد دمجه.
+ */
+const DEFAULT_POOL_MAX = 5;
+const DEFAULT_STATEMENT_TIMEOUT_MS = 8000;
+const CONNECT_TIMEOUT_SECONDS = 5;
+const IDLE_TIMEOUT_SECONDS = 20;
+const MAX_LIFETIME_SECONDS = 60 * 30;
+
+/**
+ * حجم المجمّع من متغيّر بيئة — لمقارنة max=1 بـmax=2 على معاينة معزولة
+ * خلف Supavisor في نمط الجلسة، حيث كل اتصال عميل يحجز خادماً كاملاً فيصير
+ * العدد قراراً له ثمن مقيس، لا رقماً مكتوباً تخميناً.
+ *
+ * أي قيمة غائبة أو مشوَّهة أو خارج النطاق المعقول تُعيدنا إلى 5 بالضبط —
+ * أي إلى سلوك الإنتاج الحالي حرفياً. فلا يمكن لمتغيّر بيئة خاطئ أن يُنتج
+ * مجمّعاً بحجم صفر أو بحجم يُغرق قاعدة البيانات.
+ */
+function readPoolMax(raw: string | undefined = process.env.DB_POOL_MAX): number {
+  if (raw === undefined || raw.trim() === "") return DEFAULT_POOL_MAX;
+  const parsed = Number(raw.trim());
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 10) return DEFAULT_POOL_MAX;
+  return parsed;
+}
+
+export type StatementTimeoutOption = { send: false } | { send: true; ms: number };
+
+/**
+ * هل نُرسل `statement_timeout` كمعامل بدء اتصال (startup parameter)؟
+ *
+ * هذا سؤال مقيس لا مفترض: مجمّع المعاملات **يرفض** هذا المعامل أصلاً
+ * (`08P01 unsupported startup parameter`)، وتغيير المنفذ إلى 5432 وحده لا
+ * يضمن قبوله — فتوثيق Supabase يقول إن المهلة على مستوى الجلسة «تعمل مع
+ * نمط الجلسة أو الاتصال المباشر» دون أن يَعِد بقبول هذه الصيغة بالذات من
+ * postgres.js. فنجعل الإرسال قابلاً للإطفاء (`off`) حتى نختبر الحالتين على
+ * نفس النشر: مع المعامل وبدونه. الافتراضي بلا أي متغيّر = 8000 كما اليوم.
+ */
+function readStatementTimeoutOption(
+  raw: string | undefined = process.env.DB_STATEMENT_TIMEOUT_MS
+): StatementTimeoutOption {
+  if (raw === undefined || raw.trim() === "")
+    return { send: true, ms: DEFAULT_STATEMENT_TIMEOUT_MS };
+  if (raw.trim().toLowerCase() === "off") return { send: false };
+  const parsed = Number(raw.trim());
+  if (!Number.isInteger(parsed) || parsed < 1000 || parsed > 120000)
+    return { send: true, ms: DEFAULT_STATEMENT_TIMEOUT_MS };
+  return { send: true, ms: parsed };
+}
+
+/**
+ * الإعداد الفعلي الذي بُني به العميل — يقرأه مسار التشخيص ليقارن ما نظنّه
+ * بما يقوله الخادم في `SHOW statement_timeout`. لا يحتوي ولا يستنتج أي سرّ:
+ * لا رابط اتصال ولا كلمة سر ولا اسم مضيف، أرقاماً فقط.
+ */
+export function dbRuntimeConfig() {
+  const statementTimeout = readStatementTimeoutOption();
+  return {
+    poolMax: readPoolMax(),
+    statementTimeoutOptionMs: statementTimeout.send ? statementTimeout.ms : null,
+    hardQueryTimeoutMs: QUERY_HARD_TIMEOUT_MS,
+    connectTimeoutSeconds: CONNECT_TIMEOUT_SECONDS,
+    idleTimeoutSeconds: IDLE_TIMEOUT_SECONDS,
+    maxLifetimeSeconds: MAX_LIFETIME_SECONDS,
+    prepare: false as const,
+  };
+}
+
+/**
+ * عدّادات داخل النسخة — `postgres.js` لا يُصدِّر حالة مجمّعه (الطوابير
+ * والاتصالات مُغلَقة داخل closure)، و`pg_stat_activity` يرى اتصالات
+ * Supavisor لا طابور عميلنا. فهذه العدّادات هي الطريقة الوحيدة لمعرفة كم
+ * استعلاماً كان **في الجوّ** فعلاً عند الذروة، وهو بالضبط ما يفرّق بين
+ * max=1 وmax=2 تحت حمل.
+ */
+const queryCounters = { armed: 0, inFlight: 0, peakInFlight: 0, settled: 0 };
+
+export function dbQueryCounters(): Readonly<typeof queryCounters> {
+  return { ...queryCounters };
+}
+
+export function resetDbQueryCounters(): void {
+  queryCounters.armed = 0;
+  queryCounters.inFlight = 0;
+  queryCounters.peakInFlight = 0;
+  queryCounters.settled = 0;
+}
+
 type CancellableQuery = {
   then?: unknown;
   cancel?: () => void;
@@ -61,9 +151,20 @@ function boundQueryLifetime<T>(query: T): T {
     }
   };
 
+  const settle = () => {
+    disarm();
+    queryCounters.inFlight -= 1;
+    queryCounters.settled += 1;
+  };
+
   const arm = () => {
     if (armed) return;
     armed = true;
+    queryCounters.armed += 1;
+    queryCounters.inFlight += 1;
+    if (queryCounters.inFlight > queryCounters.peakInFlight) {
+      queryCounters.peakInFlight = queryCounters.inFlight;
+    }
     timer = setTimeout(() => {
       timer = undefined;
       try {
@@ -77,7 +178,7 @@ function boundQueryLifetime<T>(query: T): T {
     // تنظيف المؤقّت عند انتهاء الاستعلام نجاحاً أو فشلاً. نستعمل then
     // الأصلي (قبل الترقيع) لتفادي أي تسلسل لا نهائي، وكلا المُعالِجَين
     // يُعيد undefined فلا ينشأ رفض غير مُلتقَط من هذا الفرع.
-    Reflect.apply(originalThen, pending, [disarm, disarm]);
+    Reflect.apply(originalThen, pending, [settle, settle]);
   };
 
   Object.defineProperty(pending, "then", {
@@ -143,9 +244,11 @@ function getClient(): SqlClient {
 }
 
 function buildClient(connectionString: string): SqlClient {
+  const statementTimeout = readStatementTimeoutOption();
   return postgres(connectionString, {
-    max: 5,
-    idle_timeout: 20,
+    // 5 بلا متغيّر بيئة — نفس قيمة الإنتاج حرفياً. انظر readPoolMax.
+    max: readPoolMax(),
+    idle_timeout: IDLE_TIMEOUT_SECONDS,
     // القيمة الافتراضية فـpostgres.js هي 30 ثانية — أطول من مهلة تنفيذ أي
     // Vercel Serverless Function عادةً (10 ثوان فـHobby). إذا كانت قاعدة
     // البيانات الحقيقية غير قابلة للوصول أو بطيئة (شبكة، Supabase متوقف
@@ -155,13 +258,13 @@ function buildClient(connectionString: string): SqlClient {
     // التراجع للبيانات المحلية الاحتياطية (preview) المصمَّمة أصلاً لهذه
     // الحالة بالضبط. مهلة قصيرة هنا تضمن فشلاً سريعاً يُفعِّل ذلك التراجع
     // فعلياً بدل صفحة معلَّقة بلا أي رد.
-    connect_timeout: 5,
+    connect_timeout: CONNECT_TIMEOUT_SECONDS,
     // اتصال طويل العمر خلف pooler بنمط transaction قد يُصبح «قديماً» بصمت
     // (الـpooler أعاد تدوير الاتصال الحقيقي خلفه، أو أُغلق من الطرف الآخر
     // بلا إشعار). بلا سقف لعمر الاتصال، تبقى نسخة الخادم الساخنة تحاول
     // استعمال اتصال ميت إلى الأبد. نصف ساعة سقف آمن: أطول بكثير من عمر أي
     // طلب فعلي، وأقصر بكثير من عمر نسخة lambda ساخنة.
-    max_lifetime: 60 * 30,
+    max_lifetime: MAX_LIFETIME_SECONDS,
     // ⚠️ connect_timeout يحدّ فقط من مدة الوصول إلى ReadyForQuery (فتح
     // اتصال TCP + مصافحة بروتوكول Postgres/المصادقة) — بمجرد اكتمال
     // الاتصال، لا يحدّ من مدة تنفيذ أي استعلام لاحق على الخادم إطلاقاً.
@@ -174,9 +277,14 @@ function buildClient(connectionString: string): SqlClient {
     // وليس افتراضاً: أُعيد إنتاجه محلياً (قفل ACCESS EXCLUSIVE يدوي على
     // جدول حقيقي أثناء طلب صفحة فعلي) قبل هذا الإصلاح، وتأكَّد أن الصفحة
     // تتعلَّق فعلاً بلا حد زمني، ثم تأكَّد أن هذا السطر وحده يحلّه.
-    connection: {
-      statement_timeout: 8000,
-    },
+    //
+    // ⚠️ إضافة هذا الفرع: الإرسال صار مشروطاً (انظر
+    // readStatementTimeoutOption). بلا متغيّر بيئة يُرسَل 8000 كما اليوم
+    // بالحرف؛ وبـ`DB_STATEMENT_TIMEOUT_MS=off` لا يُرسَل المعامل إطلاقاً،
+    // فنكتشف هل منفذ 5432 يقبله فعلاً أم أنه كان يُرفَض بصمت طوال الوقت.
+    ...(statementTimeout.send
+      ? { connection: { statement_timeout: statementTimeout.ms } }
+      : {}),
     // postgres.js يُعِدّ (PREPARE) كل استعلام افتراضياً ويُخزِّن اسمه على
     // اتصال TCP الحالي ليعيد استعماله لاحقاً. هذا يفشل بشكل متقطّع خلف أي
     // pooler على مستوى المعاملة (transaction pooling، كما في Supabase
