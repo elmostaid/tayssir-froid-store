@@ -195,18 +195,27 @@ async function ordersAndStockCheck() {
   };
 
   try {
-    const [product] = await sql<{ id: number; stock_quantity: number }[]>`
-      select p.id, p.stock_quantity
+    // الكمية تُقرأ من قواعد المنتج نفسه لا تُفترَض: الجولة الأولى رفضت
+    // الطلب لأن 2 لم تكن تحترم الحد الأدنى للكمية ومضاعفاتها
+    // (resolveLines.ts:207) — فصار الفحص يحترم قواعد الكتالوج كما يحترمها
+    // زبون حقيقي.
+    const [product] = await sql<
+      { id: number; stock_quantity: number; min_order_qty: number; qty_increment: number }[]
+    >`
+      select p.id, p.stock_quantity,
+             coalesce(p.min_order_qty, 1)  as min_order_qty,
+             coalesce(p.qty_increment, 1)  as qty_increment
       from public.products p
-      where p.stock_quantity >= 10
+      where p.stock_quantity >= coalesce(p.min_order_qty, 1) * 4 + 10
         and not exists (select 1 from public.product_variants v where v.product_id = p.id)
       order by p.id
       limit 1
     `;
-    if (!product) return { skipped: true, reason: "لا منتج بلا متغيّرات ومخزونه ≥ 10" };
+    if (!product) return { skipped: true, reason: "لا منتج مناسب بلا متغيّرات ومخزون كافٍ" };
 
     const stockBefore = product.stock_quantity;
-    const items = [{ productId: product.id, variantId: null, quantity: 2 }];
+    const quantity = Math.max(product.min_order_qty, product.qty_increment);
+    const items = [{ productId: product.id, variantId: null, quantity }];
 
     const first = await createOrder({ items, customer, idempotencyKey: `${marker}-a` });
 
@@ -236,13 +245,16 @@ async function ordersAndStockCheck() {
       stockBefore,
       stockAfterFirstOrder: afterFirst?.stock_quantity ?? null,
       stockAfterConcurrent: afterConcurrent?.stock_quantity ?? null,
+      quantityPerOrder: quantity,
       firstOrderOk: first.ok,
+      firstOrderErrors: first.ok ? null : first.errors,
       concurrentOk: concurrent.filter((r) => r.ok).length,
+      concurrentErrors: concurrent.filter((r) => !r.ok).map((r) => (r.ok ? null : r.errors)),
       ordersCreated: rows.length,
       distinctIdempotencyKeys: [...new Set(rows.map((r) => r.idempotency_key))].length,
       // المتوقَّع: طلبيتان فقط (الأولى + واحدة من الثلاث)، وخصم 4 وحدات.
       expectedOrders: 2,
-      expectedStockDrop: 4,
+      expectedStockDrop: quantity * 2,
       actualStockDrop:
         afterConcurrent?.stock_quantity != null ? stockBefore - afterConcurrent.stock_quantity : null,
     };
