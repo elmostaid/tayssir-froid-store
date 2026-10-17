@@ -24,6 +24,7 @@ import {
 } from "../src/lib/diagnostics/sessionModeUrl";
 import { previewOnlyVerdict } from "../src/lib/diagnostics/previewOnly";
 import { runSessionModeProbe, type ProbeClient } from "../src/lib/diagnostics/sessionModeProbe";
+import { reportProjectKeys } from "../src/lib/diagnostics/keyIdentity";
 
 /** قيمة مميَّزة لا يضبطها أي شيء آخر — بها نفرّق سبب المهلة عن مصدرها. */
 const DISTINCT_TIMEOUT_MS = 4321;
@@ -337,6 +338,12 @@ async function main() {
   // الطلبيات والمخزون عبر مسار الكود الحقيقي، على اتصال نمط الجلسة
   // (عميل db.ts المشترك يشتقّ المنفذ بنفسه داخل هذا الفرع).
   payload.ordersAndStock = await ordersAndStockCheck();
+
+  // فحص مفتاحَي ANON وSERVICE_ROLE: بنتيجة طلب حقيقي لا بقيمتهما — المشروع
+  // يرفض مفتاح غيره بـ401. ولا يخرج من هنا إلا رمز الحالة ومعرّف المشروع
+  // العام. (كان هذا الفحص محجوزاً في مسار التشخيص المحميّ بالمصادقة، فنُقل
+  // إلى هنا ليعمل بلا أي تدخّل.)
+  payload.projectKeys = await reportProjectKeys();
 
   console.log(`[probe] ${JSON.stringify(payload).slice(0, 1200)}`);
 
