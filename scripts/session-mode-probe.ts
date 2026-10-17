@@ -127,6 +127,44 @@ async function main() {
     console.log(`[session-mode-probe] === ${run.label} ===`);
     console.log(`[session-mode-probe] ${JSON.stringify(run)}`);
   }
+
+  // وتُحفَظ النتيجة في جدول على قاعدة المعاينة أيضاً، لا في سجل البناء
+  // وحده: سجلات البناء تُقرأ سطراً سطراً ويضيع فيها الجوهر بين تحذيرات
+  // npm، أما الصفّ فيُستعلَم مرة واحدة ويبقى للمقارنة بين الجولات.
+  // الكتابة عبر الرابط الأصلي (نمط المعاملة) لأنه المعروف أنه يعمل — فلو
+  // فشل نمط الجلسة كلياً يبقى سجل فشله محفوظاً.
+  const recorder = buildClient(base);
+  try {
+    for (const run of runs) {
+      await recorder`
+        insert into public.diag_runs (commit_sha, label, payload)
+        values (
+          ${process.env.VERCEL_GIT_COMMIT_SHA ?? null},
+          ${run.label},
+          ${recorder.json({
+            poolMax: POOL_MAX,
+            statementTimeoutOption:
+              STATEMENT_TIMEOUT_RAW === "off" ? "off" : process.env.DB_STATEMENT_TIMEOUT_MS ?? "8000",
+            fingerprintBefore: derived.before,
+            fingerprintAfter: derived.after,
+            removedPgbouncerFlag: derived.removedPgbouncerFlag,
+            run,
+          })}
+        )
+      `;
+    }
+    console.log(`[session-mode-probe] حُفظت ${runs.length} نتيجة في public.diag_runs`);
+  } catch (error) {
+    console.log(
+      `[session-mode-probe] تعذّر حفظ النتائج: ${error instanceof Error ? error.message : String(error)}`
+    );
+  } finally {
+    try {
+      await recorder.end({ timeout: 5 });
+    } catch {
+      /* لا يهمّ */
+    }
+  }
 }
 
 main()
