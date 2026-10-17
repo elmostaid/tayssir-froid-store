@@ -168,6 +168,101 @@ async function fullProbe(target: ModeTarget, max: number) {
     : { label, ok: false as const, error: result.error, code: result.code };
 }
 
+/**
+ * الطلبيات والمخزون عبر **مسار الكود الحقيقي** لا عبر SQL يدوي.
+ *
+ * شرطك: «لا تكتفِ بظهور HTTP 200». فهذا الفحص يستدعي `createOrder` نفسها —
+ * نفس الدالة التي يستعملها زبون الموقع — على اتصال نمط الجلسة، ويتحقّق من
+ * ثلاثة أشياء بالأرقام: طلبية واحدة تُنشأ، والمخزون ينزل بالكمية بالضبط،
+ * وثلاث محاولات متزامنة بنفس مفتاح التفرّد تُنتج **طلبية واحدة وخصماً
+ * واحداً** لا ثلاثة.
+ *
+ * ببيانات اصطناعية بحتة، وعلى قاعدة المعاينة المعزولة وحدها، ويُنظَّف بعده.
+ */
+async function ordersAndStockCheck() {
+  // الاستيراد داخل الدالة: هذه الوحدات تبني عميل db.ts المشترك، ولا نريد
+  // بناءه إلا بعد أن تتحقّق كل شروط البيئة أعلاه.
+  const { createOrder } = await import("../src/lib/orders/createOrder");
+  const { sql } = await import("../src/lib/db");
+
+  const marker = `probe-${Date.now()}`;
+  const customer = {
+    fullName: `اختبار نمط الجلسة ${marker}`,
+    phone: "0600000199",
+    city: "مراكش",
+    address: "عنوان اختباري — لا زبون خلفه",
+    notes: marker,
+  };
+
+  try {
+    const [product] = await sql<{ id: number; stock_quantity: number }[]>`
+      select p.id, p.stock_quantity
+      from public.products p
+      where p.stock_quantity >= 10
+        and not exists (select 1 from public.product_variants v where v.product_id = p.id)
+      order by p.id
+      limit 1
+    `;
+    if (!product) return { skipped: true, reason: "لا منتج بلا متغيّرات ومخزونه ≥ 10" };
+
+    const stockBefore = product.stock_quantity;
+    const items = [{ productId: product.id, variantId: null, quantity: 2 }];
+
+    const first = await createOrder({ items, customer, idempotencyKey: `${marker}-a` });
+
+    const [afterFirst] = await sql<{ stock_quantity: number }[]>`
+      select stock_quantity from public.products where id = ${product.id}
+    `;
+
+    // ثلاث محاولات متزامنة بنفس المفتاح — هذا هو الفحص الذي يمسّ المال.
+    const key = `${marker}-b`;
+    const concurrent = await Promise.all([
+      createOrder({ items, customer, idempotencyKey: key }),
+      createOrder({ items, customer, idempotencyKey: key }),
+      createOrder({ items, customer, idempotencyKey: key }),
+    ]);
+
+    const [afterConcurrent] = await sql<{ stock_quantity: number }[]>`
+      select stock_quantity from public.products where id = ${product.id}
+    `;
+    const rows = await sql<{ id: number; idempotency_key: string | null }[]>`
+      select id, idempotency_key from public.orders where customer_notes = ${marker}
+    `;
+
+    const createdIds = rows.map((r) => r.id);
+    const result = {
+      skipped: false,
+      productId: product.id,
+      stockBefore,
+      stockAfterFirstOrder: afterFirst?.stock_quantity ?? null,
+      stockAfterConcurrent: afterConcurrent?.stock_quantity ?? null,
+      firstOrderOk: first.ok,
+      concurrentOk: concurrent.filter((r) => r.ok).length,
+      ordersCreated: rows.length,
+      distinctIdempotencyKeys: [...new Set(rows.map((r) => r.idempotency_key))].length,
+      // المتوقَّع: طلبيتان فقط (الأولى + واحدة من الثلاث)، وخصم 4 وحدات.
+      expectedOrders: 2,
+      expectedStockDrop: 4,
+      actualStockDrop:
+        afterConcurrent?.stock_quantity != null ? stockBefore - afterConcurrent.stock_quantity : null,
+    };
+
+    // تنظيف: نُرجِع المخزون ونحذف طلبيات الاختبار، فلا تبقى أرقام مصطنعة
+    // تُشوّش أي قياس لاحق على المعاينة.
+    if (createdIds.length > 0) {
+      await sql`delete from public.orders where id = any(${createdIds})`;
+      await sql`update public.products set stock_quantity = ${stockBefore} where id = ${product.id}`;
+    }
+
+    return { ...result, cleanedUp: createdIds.length };
+  } catch (error) {
+    return {
+      skipped: false,
+      error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+    };
+  }
+}
+
 async function main() {
   const branch = process.env.VERCEL_GIT_COMMIT_REF;
   if (branch !== SESSION_MODE_TEST_BRANCH) {
@@ -226,6 +321,10 @@ async function main() {
       (payload.fullProbes as unknown[]).push(await fullProbe(target, max));
     }
   }
+
+  // الطلبيات والمخزون عبر مسار الكود الحقيقي، على اتصال نمط الجلسة
+  // (عميل db.ts المشترك يشتقّ المنفذ بنفسه داخل هذا الفرع).
+  payload.ordersAndStock = await ordersAndStockCheck();
 
   console.log(`[probe] ${JSON.stringify(payload).slice(0, 1200)}`);
 
