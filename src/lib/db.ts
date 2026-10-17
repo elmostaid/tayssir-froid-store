@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { previewOnlyVerdict } from "@/lib/diagnostics/previewOnly";
 
 type SqlClient = ReturnType<typeof postgres>;
 
@@ -59,14 +60,42 @@ function readStatementTimeoutOption(
   return { send: true, ms: parsed };
 }
 
+export type ConnectionSource = "DATABASE_URL" | "DATABASE_URL_SESSION_TEST";
+
+/**
+ * رابط اتصال بديل **للاختبار فقط**، واسمه مختلف عن `DATABASE_URL` عمداً.
+ *
+ * سببه عملي: إضافة متغيّر ثانٍ بنفس المفتاح `DATABASE_URL` مقصوراً على فرع
+ * واحد تصطدم في واجهة Vercel بتعارض «مفتاح مكرَّر لنفس البيئة» إن لم يُضبَط
+ * حقل الفرع بدقّة، فيُحفَظ شيء غير المقصود أو لا يُحفَظ شيء أصلاً. ومفتاح
+ * **جديد** لا يتعارض مع أي شيء ويُضاف في خطوة واحدة.
+ *
+ * وما يجعله آمناً ليس نطاق Vercel بل الكود نفسه: هذا السطر موجود في فرع
+ * الاختبار وحده، فأي نشر آخر لا يقرأ هذا المتغيّر إطلاقاً ولو وُجد. ومع
+ * ذلك نُضيف الحارس نفسه (previewOnlyVerdict): في أي نشر إنتاجي، أو في أي
+ * معاينة غير متّصلة بمشروع Supabase المعزول، يُتجاهَل البديل كلياً ويُستعمل
+ * `DATABASE_URL` كما هو — فلا يمكن لهذا المتغيّر أن يُحوِّل الإنتاج إلى
+ * قاعدة أخرى بأي حال، لا بخطأ ولا بنيّة.
+ */
+function readConnectionSource(
+  env: NodeJS.ProcessEnv = process.env
+): { value: string | undefined; source: ConnectionSource } {
+  const override = env.DATABASE_URL_SESSION_TEST?.trim();
+  if (override && previewOnlyVerdict(env).allowed) {
+    return { value: override, source: "DATABASE_URL_SESSION_TEST" };
+  }
+  return { value: env.DATABASE_URL, source: "DATABASE_URL" };
+}
+
 /**
  * الإعداد الفعلي الذي بُني به العميل — يقرأه مسار التشخيص ليقارن ما نظنّه
  * بما يقوله الخادم في `SHOW statement_timeout`. لا يحتوي ولا يستنتج أي سرّ:
- * لا رابط اتصال ولا كلمة سر ولا اسم مضيف، أرقاماً فقط.
+ * لا رابط اتصال ولا كلمة سر ولا اسم مضيف، أرقاماً واسم المتغيّر المستعمل فقط.
  */
 export function dbRuntimeConfig() {
   const statementTimeout = readStatementTimeoutOption();
   return {
+    connectionSource: readConnectionSource().source,
     poolMax: readPoolMax(),
     statementTimeoutOptionMs: statementTimeout.send ? statementTimeout.ms : null,
     hardQueryTimeoutMs: QUERY_HARD_TIMEOUT_MS,
@@ -209,7 +238,7 @@ function getClient(): SqlClient {
   if (globalThis.__tayssirSql) return globalThis.__tayssirSql;
   if (cachedClient) return cachedClient;
 
-  const connectionString = process.env.DATABASE_URL;
+  const { value: connectionString } = readConnectionSource();
   if (!connectionString) {
     throw new Error(
       "DATABASE_URL غير معرَّف. أضفه في ملف .env.local (انظر .env.example للتفاصيل)."
