@@ -2,6 +2,7 @@ import type postgres from "postgres";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   ConnectionGuard,
+  classifyStatement,
   DB_RESILIENCE_DEFAULTS,
   readDbResilienceConfig,
   type DbResilienceConfig,
@@ -194,7 +195,7 @@ describe("مقبس ميت: الفحص يتعلّق، فيُعاد إنشاء ا�
 describe("سلامة الطلبيات: لا إتلاف أثناء معاملة كتابة", () => {
   test("معاملة جارية ⇒ يُؤجَّل الإتلاف ولا يُلمَس العميل", () => {
     const { guard, made } = harness({ behaviours: ["ok", "ok"] });
-    const lease = guard.leaseForWrite();
+    const lease = guard.leaseForWrite(60_000);
     expect(lease.client).toBe(made[0].client);
 
     const outcome = guard.requestRecycle("test");
@@ -212,8 +213,8 @@ describe("سلامة الطلبيات: لا إتلاف أثناء معاملة �
 
   test("ينفَّذ التأجيل عند انتهاء آخر معاملة — لا قبلها", () => {
     const { guard, made } = harness({ behaviours: ["ok", "ok"] });
-    const first = guard.leaseForWrite();
-    const second = guard.leaseForWrite();
+    const first = guard.leaseForWrite(60_000);
+    const second = guard.leaseForWrite(60_000);
     guard.requestRecycle("test");
 
     first.release();
@@ -226,7 +227,7 @@ describe("سلامة الطلبيات: لا إتلاف أثناء معاملة �
 
   test("معاملة بلا حكم مسبق لا تُسبّب أي إتلاف عند انتهائها", () => {
     const { guard, made } = harness({ behaviours: ["ok", "ok"] });
-    guard.leaseForWrite().release();
+    guard.leaseForWrite(60_000).release();
     expect(made[0].calls.ended).toBe(0);
     expect(guard.stats().generation).toBe(1);
   });
@@ -236,7 +237,7 @@ describe("سلامة الطلبيات: لا إتلاف أثناء معاملة �
     const { guard, advanceClock, made } = harness({ behaviours: ["hang", "ok"] });
     guard.current();
     guard.noteHealthy();
-    guard.leaseForWrite();
+    guard.leaseForWrite(60_000);
     advanceClock(9000);
 
     const pending = guard.ensureLive();
@@ -293,5 +294,110 @@ describe("الفحص لا يرمي أبداً", () => {
     const result = await guard.ensureLive();
     expect(result.action).toBe("failed");
     expect(result.errorCode).toBe("Error");
+  });
+});
+
+describe("classifyStatement — من النص الذي كتبه مطوِّر، لا من قيم المستخدم", () => {
+  const read = (parts: readonly string[] | null) => classifyStatement(parts);
+
+  test("قراءة صريحة", () => {
+    expect(read(["select id, name from public.products where id = ", ""])).toBe("read");
+    expect(read(["  \n select count(*)::int as n from public.orders"])).toBe("read");
+    expect(read(["-- تعليق\n select 1"])).toBe("read");
+    expect(read(["select * from public.orders order by created_at desc limit ", ""])).toBe("read");
+  });
+
+  test("كل كتابة تُصنَّف كتابةً، ولو جاءت في أجزاء قالَب متعدّدة", () => {
+    expect(read(["insert into public.orders (a) values (", ")"])).toBe("write");
+    expect(read(["update public.product_variants set stock_quantity = stock_quantity - ", ""])).toBe("write");
+    expect(read(["delete from public.categories where id = ", ""])).toBe("write");
+    expect(read(["\n        insert into public.order_status_history (order_id) values (", ")"])).toBe("write");
+  });
+
+  test("CTE تُخفي كتابةً داخلها ⇒ كتابة", () => {
+    expect(read(["with moved as (insert into public.a select 1 returning id) select * from moved"])).toBe(
+      "write"
+    );
+  });
+
+  test("ما لا نفهمه كتابةٌ — لا قراءة", () => {
+    expect(read(null)).toBe("write");
+    expect(read([])).toBe("write");
+    expect(read(["order by sale_price asc"])).toBe("write");
+    expect(read(["select set_config('statement_timeout', ", ", false)"])).toBe("write");
+    expect(read(["truncate public.probe_writes"])).toBe("write");
+  });
+
+  test("قيمة زبون لا يمكن أن تُغيّر التصنيف — القيم ليست من الأجزاء الثابتة", () => {
+    // قالَب حقيقي: sql`select * from products where name = ${userInput}`
+    // الأجزاء الثابتة وحدها هي ما يُمرَّر، والقيمة تمرّ كمعامل مربوط.
+    expect(read(["select * from public.products where name = ", ""])).toBe("read");
+  });
+});
+
+describe("موعد نهاية عقد الكتابة — حماية لا قُفل أبدي", () => {
+  test("عقد لم يتجاوز موعده يمنع الإتلاف", () => {
+    const { guard, made } = harness({ behaviours: ["ok", "ok"] });
+    guard.leaseForWrite(13_000);
+    expect(guard.requestRecycle("read-hang")).toMatchObject({
+      reason: "deferred-write-in-flight",
+      writesInFlight: 1,
+    });
+    expect(made[0].calls.ended).toBe(0);
+  });
+
+  test("وبعد موعده يتوقّف عن المنع — فلا تُقفل كتابةٌ معلَّقة استعادةَ القراءات", () => {
+    const { guard, advanceClock, made } = harness({ behaviours: ["ok", "ok"] });
+    guard.leaseForWrite(13_000);
+    advanceClock(13_001);
+    expect(guard.stats().writesInFlight).toBe(1);
+    expect(guard.stats().writesBlockingRecycle).toBe(0);
+    expect(guard.requestRecycle("read-hang")).toMatchObject({ recycled: true });
+    expect(made[0].calls.ended).toBe(1);
+  });
+
+  test("عقد بلا موعد (off) يمنع إلى الأبد", () => {
+    const { guard, advanceClock, made } = harness({ behaviours: ["ok", "ok"] });
+    guard.leaseForWrite(Number.POSITIVE_INFINITY);
+    advanceClock(10 * 60 * 1000);
+    expect(guard.requestRecycle("read-hang")).toMatchObject({
+      reason: "deferred-write-in-flight",
+    });
+    expect(made[0].calls.ended).toBe(0);
+  });
+
+  test("عقد كتابةٍ واحد نشط يكفي لمنع الإتلاف ولو تجاوز غيره موعده", () => {
+    const { guard, advanceClock, made } = harness({ behaviours: ["ok", "ok"] });
+    guard.leaseForWrite(5_000);
+    advanceClock(6_000);
+    guard.leaseForWrite(13_000);
+    expect(guard.stats().writesBlockingRecycle).toBe(1);
+    expect(guard.requestRecycle("read-hang")).toMatchObject({
+      reason: "deferred-write-in-flight",
+    });
+    expect(made[0].calls.ended).toBe(0);
+  });
+});
+
+describe("leaseForClient — العقد يُرفَع على العميل الذي بُني عليه الاستعلام", () => {
+  test("عميل ما زال هو الحالي ⇒ عقد حقيقي", () => {
+    const { guard, made } = harness({ behaviours: ["ok", "ok"] });
+    const client = guard.current();
+    expect(guard.leaseForClient(client, 13_000).leased).toBe(true);
+    expect(guard.stats().writesBlockingRecycle).toBe(1);
+    expect(made).toHaveLength(1);
+  });
+
+  test("عميل أُتلف قبل التسليح ⇒ عقد فارغ، ولا حماية لشريحة لا كتابة فيها", () => {
+    const { guard, made } = harness({ behaviours: ["ok", "ok"] });
+    const stale = guard.current();
+    guard.requestRecycle("whatever");
+    expect(guard.current()).not.toBe(stale);
+
+    const lease = guard.leaseForClient(stale, 13_000);
+    expect(lease.leased).toBe(false);
+    // الشريحة الجديدة لم تُحمَ خطأً بكتابةٍ تجري على عميل أُتلف أصلاً.
+    expect(guard.stats().writesBlockingRecycle).toBe(0);
+    expect(made[1].calls.ended).toBe(0);
   });
 });

@@ -525,6 +525,65 @@ async function scenarioPoolExhaustion(): Promise<Result> {
   };
 }
 
+/**
+ * 8 — السؤال بعينه: هل يمكن لإتلافٍ سببه تعليق **قراءة** أن يقطع كتابةً
+ * متزامنة؟
+ *
+ * `mute-server` يجعل ما نكتبه يصل إلى الخادم وما يردّ به يُفقَد. فالقراءة
+ * تتعلّق، والكتابة **تُنفَّذ على الخادم فعلاً** ويُفقَد جوابها — أي أسوأ
+ * لحظة ممكنة للإتلاف. ثم نقيس عند 15 ثانية (بعد نقطة تصعيد القراءة 13،
+ * وقبل نهاية عقد الكتابة 20) وعند 23 ثانية.
+ */
+async function scenarioReadHangVsWrite(): Promise<Result> {
+  await freshStart();
+  // ⚠️ اتصالان مفتوحان قبل العطل، لا واحد. وهذا ليس تفصيلاً: مع
+  // `mute-server` لا تكتمل مصافحة أي اتصال **جديد** (جوابها مفقود) فيفشل
+  // عند connect_timeout بعد 5 ثوان — فلو اقتسم الاستعلامان اتصالاً واحداً
+  // لما وصلت الكتابة إلى الخادم إطلاقاً، ولقِسنا شيئاً آخر تماماً.
+  await Promise.all([readQuery(), readQuery()]);
+  const tag = `read-vs-write-${Date.now()}`;
+
+  proxy.mode = "mute-server";
+  const startedAt = performance.now();
+
+  const read = sql`select count(*)::int as n from public.probe_writes`;
+  const readSettled = track(read as unknown as Promise<unknown>, startedAt);
+  const write = sql`insert into public.probe_writes (tag) values (${tag})`;
+  const writeSettled = track(write as unknown as Promise<unknown>, startedAt);
+
+  await sleep(15000);
+  const at15s = {
+    generation: dbGuard.stats().generation,
+    destroyedClients: dbGuard.stats().destroyedClients,
+    recyclesDeferred: dbGuard.stats().recyclesDeferred,
+    writesBlockingRecycle: dbGuard.stats().writesBlockingRecycle,
+    readSettlement: readSettled() ?? "معلَّقة",
+    writeSettlement: writeSettled() ?? "معلَّقة",
+  };
+
+  await sleep(8000);
+  const at23s = {
+    generation: dbGuard.stats().generation,
+    writesBlockingRecycle: dbGuard.stats().writesBlockingRecycle,
+    writeSettlement: writeSettled() ?? "معلَّقة",
+  };
+
+  proxy.mode = "pass";
+  await sleep(300);
+  await terminateTestDbBackends();
+  await sleep(400);
+  const rows = await rowsWithTag(tag);
+
+  return {
+    at15s,
+    at23s,
+    // الشرط الحاسم: صفّ واحد. الكتابة نُفِّذت مرّة، ولا شيء كرّرها.
+    rowsWithTag: rows,
+    noDuplicate: rows <= 1,
+    ...(await measureRecovery()),
+  };
+}
+
 /** 5 — انقطاع **قبل** COMMIT: المعاملة يجب أن تُرجَع بلا أي صفّ. */
 async function scenarioWriteBeforeCommit(): Promise<Result> {
   await freshStart();
@@ -607,6 +666,7 @@ const SCENARIOS: Array<[string, () => Promise<Result>]> = [
   ["3-stalled-handshake", scenarioStalledHandshake],
   ["4-socket-dies-mid-query", scenarioSocketDiesMidQuery],
   ["7-pool-exhaustion", scenarioPoolExhaustion],
+  ["8-read-hang-vs-write", scenarioReadHangVsWrite],
   ["5-write-before-commit", scenarioWriteBeforeCommit],
   ["6-write-after-commit", scenarioWriteAfterCommit],
 ];

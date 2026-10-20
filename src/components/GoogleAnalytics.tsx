@@ -1,5 +1,5 @@
 import Script from "next/script";
-import { GA_MEASUREMENT_ID } from "@/lib/analytics/config";
+import { GA_MEASUREMENT_ID, isAnalyticsEnabled } from "@/lib/analytics/config";
 
 /**
  * «وسم Google» الأساسي (gtag.js) لـGoogle Analytics 4 — هو نفسه المقتطف
@@ -22,6 +22,10 @@ import { GA_MEASUREMENT_ID } from "@/lib/analytics/config";
  * على الآخر.
  */
 export function GoogleAnalytics() {
+  // الإنتاج وحده. في المعاينة لا يُحمَّل السكريبت ولا يُرسَل أي حدث، فلا
+  // تختلط حركة الاختبار بأرقام الموقع الحقيقي. راجع isAnalyticsEnabled.
+  if (!isAnalyticsEnabled()) return null;
+
   return (
     <>
       <Script

@@ -124,6 +124,30 @@ export function readDbResilienceConfig(
   };
 }
 
+/**
+ * تصنيف العبارة من **الأجزاء الثابتة** لقالَب الوسم فقط — أي من النص الذي
+ * كتبه مطوِّر في الملف، لا من أي قيمة يُرسلها مستخدم (قيم المستخدم تمرّ
+ * كمعاملات مربوطة `${...}` ولا تدخل هنا إطلاقاً). فلا مجال لأن تُحوِّل
+ * قيمةُ زبون قراءةً إلى كتابة أو العكس.
+ *
+ * والقاعدة متحفِّظة في اتجاه واحد: لا تُصنَّف عبارة قراءةً إلا إذا بدأت
+ * بـ`select` **ولم** يظهر فيها أي فعل كتابة إطلاقاً. فـ
+ * `with x as (insert ...) select ...` كتابةٌ، وكل ما لم نفهمه كتابةٌ. ثمن
+ * الخطأ في جانب «كتابة» حمايةٌ زائدة لبضع ثوانٍ؛ وفي الجانب الآخر طلبية.
+ */
+export type StatementKind = "read" | "write";
+
+const WRITE_VERBS =
+  /\b(insert|update|delete|merge|truncate|create|alter|drop|grant|revoke|comment|refresh|call|do|copy|lock|reindex|vacuum|analyze|set|reset|begin|commit|rollback|savepoint|prepare|listen|notify|select\s+(?:set_config|pg_terminate_backend|pg_cancel_backend|nextval|setval))\b/i;
+
+export function classifyStatement(strings: readonly string[] | null): StatementKind {
+  if (!strings || strings.length === 0) return "write";
+  const text = strings.join(" ");
+  const trimmed = text.replace(/(--[^\n]*\n|\/\*[\s\S]*?\*\/|\s)+/g, " ").trimStart();
+  if (!/^select\b/i.test(trimmed)) return "write";
+  return WRITE_VERBS.test(trimmed) ? "write" : "read";
+}
+
 export type PreflightAction =
   | "disabled"
   | "skipped-cold"
@@ -154,6 +178,8 @@ export type GuardStats = {
   hasClient: boolean;
   idleMs: number | null;
   writesInFlight: number;
+  /** منها ما يمنع الإتلاف فعلاً الآن — الباقي تجاوز موعده. */
+  writesBlockingRecycle: number;
   condemned: boolean;
   preflights: Record<PreflightAction, number>;
   recycles: number;
@@ -163,11 +189,20 @@ export type GuardStats = {
   destroyedClients: number;
 };
 
+type WriteLease = { deadlineAt: number };
+
 type Slot = {
   client: SqlClient;
   generation: number;
   lastHealthyAt: number | null;
-  writesInFlight: number;
+  /**
+   * عقود الكتابة الجارية على هذه الشريحة. عقدٌ لم يتجاوز موعده يمنع
+   * الإتلاف منعاً مطلقاً. وعقدٌ تجاوز موعده يتوقّف عن المنع فقط — ولا
+   * يُسبِّب إتلافاً بنفسه أبداً. أي أن الكتابة تحصل على **حماية** لا على
+   * عدوانية: كتابة معلَّقة وحدها على نسخة خاملة لا تُتلف شيئاً، لكنها لا
+   * تُقفل استعادة القراءات إلى الأبد.
+   */
+  writeLeases: Set<WriteLease>;
   condemned: boolean;
 };
 
@@ -236,7 +271,7 @@ export class ConnectionGuard {
       client: this.deps.create(),
       generation: ++this.generation,
       lastHealthyAt: null,
-      writesInFlight: 0,
+      writeLeases: new Set(),
       condemned: false,
     };
     return this.slot.client;
@@ -256,24 +291,58 @@ export class ConnectionGuard {
    * القديم قابلاً للإتلاف وفيه COMMIT جارٍ. العقد يربط القفل بالشريحة
    * التي سلّمها بعينها، فلا توجد لحظة بينهما أصلاً.
    */
-  leaseForWrite(): { client: SqlClient; release: () => void } {
+  leaseForWrite(ttlMs: number): { client: SqlClient; release: () => void } {
     const client = this.current();
-    const slot = this.slot!;
-    slot.writesInFlight += 1;
+    return { client, release: this.leaseForClient(client, ttlMs).release };
+  }
+
+  /**
+   * عقد كتابة على **عميل بعينه**.
+   *
+   * ولماذا بعينه: العقد قد يُطلَب بعد لحظة من إنشاء الاستعلام (التسليح
+   * يقع عند أول `then`)، وقد يكون إتلافٌ وقع بينهما. فلو رُفع العقد على
+   * «العميل الحالي» أيّاً كان، لحمينا شريحةً لا تجري عليها كتابة وتركنا
+   * الكتابة الحقيقية بلا حماية. وإن لم يكن هذا العميل هو الحالي، فشريحته
+   * أُتلفت أصلاً واستعلاماتها مرفوضة — فالحماية بلا معنى، ويُرجَع عقد
+   * فارغ.
+   */
+  leaseForClient(
+    client: SqlClient,
+    ttlMs: number
+  ): { leased: boolean; release: () => void } {
+    const slot = this.slot;
+    if (!slot || slot.client !== client) return { leased: false, release: () => {} };
+
+    const lease: WriteLease = {
+      deadlineAt: Number.isFinite(ttlMs) ? this.now() + ttlMs : Number.POSITIVE_INFINITY,
+    };
+    slot.writeLeases.add(lease);
 
     let released = false;
     const release = () => {
       if (released) return;
       released = true;
-      slot.writesInFlight = Math.max(0, slot.writesInFlight - 1);
-      // إن حُكم على هذه الشريحة أثناء المعاملة، يُنفَّذ الإتلاف الآن —
-      // بعد أن صارت نتيجة COMMIT معروفة ومسجَّلة. فلا يبقى عميل معروف
+      slot.writeLeases.delete(lease);
+      // إن حُكم على هذه الشريحة أثناء الكتابة، يُنفَّذ الإتلاف الآن —
+      // بعد أن صارت نتيجة الكتابة معروفة ومسجَّلة. فلا يبقى عميل معروف
       // الموت في الخدمة، ولا يُتلَف وهناك COMMIT قد يصير مجهولاً.
-      if (slot.writesInFlight === 0 && slot.condemned && this.slot === slot) {
+      if (
+        slot.writeLeases.size === 0 &&
+        slot.condemned &&
+        this.slot === slot
+      ) {
         this.requestRecycle("deferred-after-write");
       }
     };
-    return { client, release };
+    return { leased: true, release };
+  }
+
+  /** عقود الكتابة التي ما زالت تمنع الإتلاف فعلاً (لم تتجاوز موعدها). */
+  private blockingWrites(slot: Slot): number {
+    const now = this.now();
+    let blocking = 0;
+    for (const lease of slot.writeLeases) if (lease.deadlineAt > now) blocking += 1;
+    return blocking;
   }
 
   private idleMs(): number | null {
@@ -388,14 +457,15 @@ export class ConnectionGuard {
     const slot = this.slot;
     if (!slot) return { recycled: false, reason: "no-client" };
 
-    if (slot.writesInFlight > 0) {
+    const blocking = this.blockingWrites(slot);
+    if (blocking > 0) {
       slot.condemned = true;
       this.counters.recyclesDeferred += 1;
-      this.emit("recycle-deferred", { reason, writesInFlight: slot.writesInFlight });
+      this.emit("recycle-deferred", { reason, writesInFlight: blocking });
       return {
         recycled: false,
         reason: "deferred-write-in-flight",
-        writesInFlight: slot.writesInFlight,
+        writesInFlight: blocking,
       };
     }
 
@@ -414,7 +484,7 @@ export class ConnectionGuard {
       client: this.deps.create(),
       generation: ++this.generation,
       lastHealthyAt: null,
-      writesInFlight: 0,
+      writeLeases: new Set(),
       condemned: false,
     };
     this.lastRecycleAt = this.now();
@@ -447,7 +517,8 @@ export class ConnectionGuard {
       generation: this.generation,
       hasClient: this.slot !== null,
       idleMs: this.idleMs(),
-      writesInFlight: this.slot?.writesInFlight ?? 0,
+      writesInFlight: this.slot?.writeLeases.size ?? 0,
+      writesBlockingRecycle: this.slot ? this.blockingWrites(this.slot) : 0,
       condemned: this.slot?.condemned ?? false,
       preflights: { ...this.counters.preflights },
       recycles: this.counters.recycles,

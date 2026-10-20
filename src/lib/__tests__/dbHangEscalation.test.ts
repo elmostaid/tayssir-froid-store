@@ -81,10 +81,18 @@ vi.mock("postgres", () => {
       state.endCalls.push(options);
       // هذا هو ما يفعله terminate() فعلاً: رفض محلي فوري لكل استعلام
       // جارٍ أو مُرسَل، بلا انتظار أي بايت من الخادم.
+      // كما terminate() حرفياً: يرفض الاستعلام الجاري وما في sent[] —
+      // أي ما سُلِّم إلى اتصال فعلاً. وجزء الاستعلام (fragment) لم
+      // يُسلَّم أبداً (handle() لم يُستدعَ عليه)، فلا يُرفَض ولا يُنتج
+      // رفضاً غير مُلتقَط. فنُقيّد الرفض بما جرى تسليحه فقط.
       for (const q of state.queries) {
-        if (!q.settled) q.rejectWith(Object.assign(new Error("write CONNECTION_DESTROYED"), {
-          code: "CONNECTION_DESTROYED",
-        }));
+        if (!q.settled && q.handled) {
+          q.rejectWith(
+            Object.assign(new Error("write CONNECTION_DESTROYED"), {
+              code: "CONNECTION_DESTROYED",
+            })
+          );
+        }
       }
     };
 
@@ -249,5 +257,140 @@ describe("سلامة الطلبيات: معاملة كتابة جارية تمن
     ).rejects.toThrow("فشل منطقي");
 
     expect(dbGuard.stats().writesInFlight).toBe(0);
+  });
+});
+
+describe("إتلافُ مسار القراءة لا يقطع كتابةً متزامنة", () => {
+  // ⚠️ حقيقة في postgres.js تُفسِّر سبب وجود العقود أصلاً: لا توجد أي
+  // واجهة لإتلاف **اتصال واحد**. `end()` يُتلف المجمّع كاملاً
+  // (index.js:365 ⇒ connections.map(c => c.end())). فإتلافٌ سببه تعليق
+  // قراءةٍ كان سيأخذ معه كل كتابة جارية على نفس النسخة. العقد هو
+  // الحماية الوحيدة الممكنة، ولذلك يجب أن يُغطّي كل كتابة بلا استثناء.
+
+  test("عبارة كتابة مفردة (خارج أي معاملة) تمنع إتلافاً سببه تعليق قراءة", async () => {
+    const { sql, dbGuard } = await import("@/lib/db");
+
+    // كتابة من نوع ما تنفّذه لوحة الإدارة: تحديث مفرد بلا sql.begin.
+    const write = sql`update public.orders set delivery_fee = ${30} where id = ${1}`;
+    void (write as unknown as Promise<unknown>).catch(() => {});
+    // قراءة متزامنة تتعلّق تعليقاً كاملاً وتستنفد الإلغاء ثم التصعيد.
+    const read = sql`select count(*) from public.orders`;
+    void (read as unknown as Promise<unknown>).catch(() => {});
+
+    await vi.advanceTimersByTimeAsync(13_100);
+
+    // القراءة طلبت الإتلاف، والكتابة منعته — فلا شيء أُتلف.
+    // (عقد الكتابة 20 ثانية، أطول من نقطة تصعيد القراءة 13 ثانية.)
+    expect(dbGuard.stats().writesBlockingRecycle).toBe(1);
+    expect(dbGuard.stats().recyclesDeferred).toBeGreaterThanOrEqual(1);
+    expect(clients[0].endCalls).toHaveLength(0);
+    // ونتيجة الكتابة ما زالت ممكنة: لم يُرفَض وعدها من جانبنا.
+    expect(clients[0].queries[0].settled).toBe(false);
+  });
+
+  test("وعندما تُحسم الكتابة، يُنفَّذ الإتلاف المؤجَّل فتستعيد النسخة قراءاتها", async () => {
+    const { sql, dbGuard } = await import("@/lib/db");
+
+    const write = sql`insert into public.order_status_history (order_id) values (${1})`;
+    void (write as unknown as Promise<unknown>).catch(() => {});
+    const read = sql`select 1 from public.orders`;
+    void (read as unknown as Promise<unknown>).catch(() => {});
+    await vi.advanceTimersByTimeAsync(13_100);
+    expect(clients[0].endCalls).toHaveLength(0);
+
+    // الخادم ردّ على الكتابة (نجاحاً) ⇒ النتيجة معروفة ومسجَّلة.
+    clients[0].queries[0].resolveWith([{ id: 1 }]);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(clients[0].endCalls).toEqual([{ timeout: 0 }]);
+    expect(dbGuard.stats().generation).toBe(2);
+  });
+
+  test("عبارة الكتابة لا تُصعِّد بنفسها أبداً: تُلغى ولا تُتلف العميل", async () => {
+    const { sql, dbGuard } = await import("@/lib/db");
+
+    const write = sql`update public.orders set actual_delivery_cost = ${12} where id = ${7}`;
+    void (write as unknown as Promise<unknown>).catch(() => {});
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(clients[0].queries[0].cancelCalls).toBe(1);
+
+    // دقيقة كاملة بعدها: لا إتلاف ولا تصعيد من الكتابة نفسها.
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(clients[0].endCalls).toHaveLength(0);
+    expect(dbGuard.stats().escalations).toBe(0);
+  });
+
+  test("كتابة معلَّقة لا تُقفل الاستعادة إلى الأبد: بعد انتهاء عقدها تنجح قراءة لاحقة", async () => {
+    const { sql, dbGuard } = await import("@/lib/db");
+
+    const write = sql`update public.orders set delivery_fee = ${30} where id = ${1}`;
+    void (write as unknown as Promise<unknown>).catch(() => {});
+    await vi.advanceTimersByTimeAsync(20_100);
+    expect(dbGuard.stats().writesBlockingRecycle).toBe(0);
+
+    // قراءة جديدة تتعلّق ⇒ لها الآن أن تُصعِّد وتستعيد النسخة.
+    const read = sql`select 1 from public.orders`;
+    void (read as unknown as Promise<unknown>).catch(() => {});
+    await vi.advanceTimersByTimeAsync(13_100);
+
+    expect(clients[0].endCalls).toEqual([{ timeout: 0 }]);
+    expect(dbGuard.stats().generation).toBe(2);
+  });
+});
+
+describe("لا رفض غير مُلتقَط من الإلغاء ولا من الإتلاف", () => {
+  test("إتلافُ عميلٍ عليه استعلامات معلَّقة لا يُنتج unhandledRejection", async () => {
+    const captured: unknown[] = [];
+    const onUnhandled = (reason: unknown) => captured.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+
+    try {
+      const { sql } = await import("@/lib/db");
+
+      // قراءة مُنتظَرة كما في التطبيق، وأخرى لا ينتظرها أحد (شكل
+      // تجديد الكاش في الخلفية)، وجزء استعلام لا يُنفَّذ أبداً.
+      const awaited = sql`select 1 from public.products`;
+      const outcome = (awaited as unknown as Promise<unknown>).then(
+        () => "ok",
+        () => "failed"
+      );
+      const fireAndForget = sql`select 2 from public.products`;
+      void (fireAndForget as unknown as Promise<unknown>).catch(() => {});
+      const fragment = sql`order by sale_price asc`;
+      expect(fragment).toBeDefined();
+
+      await vi.advanceTimersByTimeAsync(13_100);
+      expect(clients[0].endCalls).toEqual([{ timeout: 0 }]);
+      await expect(outcome).resolves.toBe("failed");
+
+      // نُفرِغ طابور المهام المتناهية الصغر مرّات حتى يظهر أي رفض متأخّر.
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(captured).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
+  test("فشل end() نفسه لا يُنتج رفضاً غير مُلتقَط", async () => {
+    const captured: unknown[] = [];
+    const onUnhandled = (reason: unknown) => captured.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+
+    try {
+      const { sql, dbGuard } = await import("@/lib/db");
+      const read = sql`select 1 from public.products`;
+      void (read as unknown as Promise<unknown>).catch(() => {});
+
+      dbGuard.requestRecycle("forced");
+      await vi.advanceTimersByTimeAsync(100);
+
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+      expect(captured).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
   });
 });
