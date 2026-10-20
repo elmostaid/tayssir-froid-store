@@ -326,26 +326,6 @@ function templateStringsOf(first: unknown): readonly string[] | null {
   return first.filter((part): part is string => typeof part === "string");
 }
 
-/**
- * الإعداد الفعلي الذي بُني به العميل — أرقامٌ فقط، بلا أي سرّ: لا رابط
- * اتصال ولا كلمة سر ولا اسم مضيف. يقرأه مسار قياس المعاينة ليقارن ما
- * نظنّه بما يقوله الخادم فعلاً.
- */
-export function dbRuntimeConfigSnapshot() {
-  return {
-    poolMax: 5,
-    statementTimeoutOptionMs: 8000,
-    hardQueryTimeoutMs: QUERY_HARD_TIMEOUT_MS,
-    writeStatementLeaseMs: WRITE_STATEMENT_LEASE_MS,
-    transactionLeaseMs: readTransactionLeaseMs(),
-    connectTimeoutSeconds: 5,
-    idleTimeoutSeconds: 20,
-    maxLifetimeSeconds: 60 * 30,
-    prepare: false as const,
-    resilience: readDbResilienceConfig(),
-  };
-}
-
 export const sql: SqlClient = new Proxy(function () {} as unknown as SqlClient, {
   apply(_target, _thisArg, args) {
     const client = getClient();

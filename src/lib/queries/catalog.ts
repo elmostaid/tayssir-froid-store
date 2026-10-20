@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { unstable_cache } from "next/cache";
 import { sql } from "@/lib/db";
+import { dbGuard } from "@/lib/db";
 import { safeQuery } from "@/lib/safeQuery";
 import { ServiceUnavailableError } from "@/lib/serviceUnavailable";
 import {
@@ -74,10 +75,33 @@ function cachedCatalogQuery<Args extends unknown[], Result>(
   keyParts: string[],
   run: (...args: Args) => Promise<Result>
 ): (...args: Args) => Promise<Result> {
-  const cached = unstable_cache(run, keyParts, {
-    tags: [CATALOG_TAG],
-    revalidate: CATALOG_REVALIDATE_SECONDS,
-  });
+  // ⚠️ الفحص هنا، **داخل** الدالة المُخزَّنة، لا خارجها فقط.
+  //
+  // السبب مقيس على المعاينة لا مستنتج: `safeQuery` تُغلِّف **البحث في
+  // المخزن المؤقّت**، لا الاستعلام نفسه. فعند إصابة المخزن لا يُنفَّذ
+  // `run` إطلاقاً، وعند **تجديد الكاش في الخلفية** يُنفِّذه Next من تلقائه
+  // خارج أي نداء لـ`safeQuery` — فلا يمرّ من الفحص المسبق أبداً.
+  //
+  // وهذا بالضبط ما ظهر في سجلات المعاينة: تجديدان في الخلفية انتهيا
+  // بـCONNECTION_DESTROYED عند 13 ثانية (التصعيد أنهاهما بدل 300 ثانية،
+  // وهو نجاح) — لكنهما كانا سينجحان أصلاً لو فُحص الاتصال قبلهما.
+  //
+  // وتجديد الكاش في الخلفية هو أخطر مسار في هذه العلّة كلها: الزائر
+  // استلم صفحته من المخزن وانصرف، والنسخة تبقى محتجزة بعده وحدها. فموضع
+  // الفحص الصحيح هو هنا: سطر واحد يُغطّي كل استعلامات الفهرس المُخزَّنة،
+  // إصابةً وتجديداً. وعلى الطلب العادي لا ثمن مزدوج: النداء الثاني يجد
+  // الاتصال حيّاً بالدليل فيتخطّى نفسه فوراً.
+  const cached = unstable_cache(
+    async (...args: Args): Promise<Result> => {
+      await dbGuard.ensureLive();
+      return run(...args);
+    },
+    keyParts,
+    {
+      tags: [CATALOG_TAG],
+      revalidate: CATALOG_REVALIDATE_SECONDS,
+    }
+  );
 
   return async (...args: Args): Promise<Result> => {
     try {

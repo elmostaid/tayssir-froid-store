@@ -1,6 +1,6 @@
 import { cache } from "react";
 import { unstable_cache } from "next/cache";
-import { sql } from "@/lib/db";
+import { dbGuard, sql } from "@/lib/db";
 import {
   CATALOG_TAG,
   CATALOG_REVALIDATE_SECONDS,
@@ -61,10 +61,20 @@ const runSettingsQuery = async () => sql<{ key: string; value: unknown }[]>`
   select key, value from public.settings
 `;
 
-const cachedSettings = unstable_cache(runSettingsQuery, ["store-settings"], {
-  tags: [CATALOG_TAG],
-  revalidate: CATALOG_REVALIDATE_SECONDS,
-});
+// الفحص داخل الدالة المُخزَّنة لنفس السبب المشروح في catalog.ts: تجديد
+// الكاش في الخلفية يُنفِّذها Next خارج أي نداء لـsafeQuery، فلا يمرّ من
+// الفحص إن كان خارجها.
+const cachedSettings = unstable_cache(
+  async () => {
+    await dbGuard.ensureLive();
+    return runSettingsQuery();
+  },
+  ["store-settings"],
+  {
+    tags: [CATALOG_TAG],
+    revalidate: CATALOG_REVALIDATE_SECONDS,
+  }
+);
 
 // نفس المعالجة المشروحة في catalog.ts: خارج سياق Next.js (اختبارات التكامل،
 // سكريبتات tsx) لا يوجد مخزن مؤقّت، فننفّذ الاستعلام مباشرة بدل أن تسقط
