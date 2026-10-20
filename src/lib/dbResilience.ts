@@ -261,7 +261,22 @@ export class ConnectionGuard {
   }
 
   private emit(kind: string, detail: Record<string, unknown>): void {
-    this.deps.onEvent?.({ kind, detail });
+    if (this.deps.onEvent) {
+      this.deps.onEvent({ kind, detail });
+      return;
+    }
+    // ⚠️ لماذا السجلّ هو الطريق الوحيد لقياس هذا في الإنتاج: كل مسار في
+    // Next على Vercel يُنشَر **دالةً خادومية منفصلة**، ولكل دالة نسختها
+    // من هذا الحارس. فعدّادات نسخةٍ لا يراها مسارٌ آخر إطلاقاً — ولو كان
+    // في نفس النشر. أي مسار تشخيص يقرأ `stats()` يقرأ عدّادات نفسه لا
+    // عدّادات الصفحات. فالسجلّ المُوحَّد هو ما يجمعها.
+    //
+    // ولا يُسجَّل إلا ما يستحقّ: الحالة الغالبة (تخطّي الفحص لأن الاتصال
+    // حيّ بالدليل) لا تمرّ من هنا أصلاً — راجع record(). فسطرٌ في السجلّ
+    // يعني أن شيئاً حقيقياً حدث.
+    console.log(
+      `[db-resilience] ${kind} ${JSON.stringify(detail)}`
+    );
   }
 
   /** العميل الحالي، يُنشأ عند أول طلب. */
@@ -443,8 +458,19 @@ export class ConnectionGuard {
 
   private record(result: PreflightResult): PreflightResult {
     this.counters.preflights[result.action] += 1;
+    // `skipped-fresh` هي الحالة الغالبة تحت أي حمل (آخر استعلام نجح قبل
+    // أقل من staleAfterMs)، و`disabled` حالة الإطفاء — فتسجيلهما ضجيج
+    // بحجم حركة الموقع. وما عداهما قليل بطبعه ويستحقّ سطراً: فحصٌ عمل
+    // فعلاً (passed) أو كشف موتاً (timed-out/failed) أو بدءٌ بارد.
     if (result.action !== "skipped-fresh" && result.action !== "disabled") {
-      this.emit("preflight", { ...result });
+      this.emit("preflight", {
+        action: result.action,
+        elapsedMs: result.elapsedMs,
+        idleMs: result.idleMs,
+        ...(result.errorCode ? { errorCode: result.errorCode } : {}),
+        ...(result.recycle ? { recycle: result.recycle } : {}),
+        counts: { ...this.counters.preflights },
+      });
     }
     return result;
   }

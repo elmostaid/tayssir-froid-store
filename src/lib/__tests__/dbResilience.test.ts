@@ -401,3 +401,56 @@ describe("leaseForClient — العقد يُرفَع على العميل الذ�
     expect(made[1].calls.ended).toBe(0);
   });
 });
+
+describe("رصد ما يحدث فعلاً: السجلّ هو الطريق الوحيد عبر الدوال المنفصلة", () => {
+  test("تخطّي الفحص لأن الاتصال حيّ لا يُسجَّل — وإلا صار السجلّ بحجم الحركة", async () => {
+    const events: { kind: string }[] = [];
+    let now = 1_000_000;
+    const guard = new ConnectionGuard({
+      create: () => fakeClient("ok").client,
+      now: () => now,
+      onEvent: (e) => events.push({ kind: e.kind }),
+    });
+    guard.current();
+    guard.noteHealthy();
+    now += 1000;
+    await guard.ensureLive();
+    expect(events).toEqual([]);
+  });
+
+  test("فحصٌ عمل فعلاً يُسجَّل مع مدّته وعمر الخمول وعدّاداته", async () => {
+    const events: { kind: string; detail: Record<string, unknown> }[] = [];
+    let now = 1_000_000;
+    const guard = new ConnectionGuard({
+      create: () => fakeClient("ok").client,
+      now: () => now,
+      onEvent: (e) => events.push(e),
+    });
+    guard.current();
+    guard.noteHealthy();
+    now += 9000;
+    await guard.ensureLive();
+
+    expect(events).toHaveLength(1);
+    expect(events[0].kind).toBe("preflight");
+    expect(events[0].detail).toMatchObject({ action: "passed", idleMs: 9000 });
+    expect(events[0].detail.counts).toMatchObject({ passed: 1 });
+    // ولا سرّ في السطر: لا رابط ولا كلمة سر ولا بيانات زبون.
+    expect(JSON.stringify(events[0])).not.toContain("postgres://");
+  });
+
+  test("إعادة الإنشاء والتأجيل يُسجَّلان بسببهما", () => {
+    const events: { kind: string; detail: Record<string, unknown> }[] = [];
+    const guard = new ConnectionGuard({
+      create: () => fakeClient("ok").client,
+      onEvent: (e) => events.push(e),
+    });
+    const lease = guard.leaseForWrite(20_000);
+    guard.requestRecycle("read-hang");
+    lease.release();
+
+    expect(events.map((e) => e.kind)).toEqual(["recycle-deferred", "recycle"]);
+    expect(events[0].detail).toMatchObject({ reason: "read-hang", writesInFlight: 1 });
+    expect(events[1].detail).toMatchObject({ reason: "deferred-after-write", generation: 2 });
+  });
+});
