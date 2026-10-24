@@ -48,8 +48,17 @@ export const CAMPAIGN_PAGE_SIZE = 24;
 export type CampaignTab = {
   /** قيمة `?type=` في الرابط — قصيرة وقابلة للقراءة في روابط الإعلانات. */
   key: string;
-  /** نصّ الزرّ. */
+  /** نصّ الزرّ في شريط التبويبات: ثلاثة أزرار في صفّ، فالقِصَر شرط. */
   label: string;
+  /**
+   * الاسم الكامل للنوع، حيث يوجد عرضٌ له: عناوين الوجه المحايد
+   * (`campaignOverview.tsx`) وأزراره بعرض الشاشة. يسقط إلى `label` إن غاب.
+   *
+   * ولماذا حقلان لا واحد: «مكينة الصابون نصف أوتوماتيك» في ثلث عرض شاشة
+   * 360px يُقصّ، و«نصف أوتوماتيك» في عنوان قسم كامل يبدو ناقصاً. الاسم
+   * الذي يصلح للزرّ ليس الذي يصلح للعنوان.
+   */
+  fullLabel?: string;
   /** التصنيف الحقيقي في قاعدة البيانات. */
   categorySlug: string;
 };
@@ -71,6 +80,7 @@ export async function CampaignLanding({
   basePath,
   tabs,
   requestedType,
+  allTypesHref,
 }: {
   title: string;
   subtitle: string;
@@ -79,6 +89,12 @@ export async function CampaignLanding({
   basePath: string;
   tabs: CampaignTab[];
   requestedType?: string;
+  /**
+   * رابط الرجوع إلى وجه محايد يعرض الأنواع كلها بالتساوي (انظر
+   * `campaignOverview.tsx`). اختياري: الصفحات التي لا تملك وجهاً محايداً
+   * — الشوفو — تتركه فارغاً فلا يظهر شيء ولا يتغيّر سلوكها.
+   */
+  allTypesHref?: string;
 }) {
   const active = resolveTab(tabs, requestedType);
 
@@ -138,7 +154,18 @@ export async function CampaignLanding({
           );
         })}
       </nav>
-      <p className="mt-2 text-xs text-neutral-500">{hint}</p>
+      <div className="mt-2 flex flex-wrap items-baseline justify-between gap-2">
+        <p className="text-xs text-neutral-500">{hint}</p>
+        {allTypesHref && (
+          <Link
+            href={allTypesHref}
+            prefetch={false}
+            className="shrink-0 text-xs font-bold text-brand-turquoise-dark underline-offset-2 hover:underline"
+          >
+            شوف كل الأنواع
+          </Link>
+        )}
+      </div>
 
       <p className="mt-3 text-sm text-neutral-500">
         {/* لا نعلن رقماً لا نعرفه — نفس قاعدة صفحة التصنيف. */}
