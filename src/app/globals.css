@@ -1,4 +1,11 @@
-@import "tailwindcss";
+/* Tailwind v3.4 الكلاسيكية — بلا التوجيهات/الدوال الحصرية بـTailwind v4
+   (cascade layers، typed custom properties، theme-in-CSS). ألوان/خط Tailwind
+   (bg-brand-orange، font-sans، إلخ) مُعرَّفة الآن فـtailwind.config.ts وتقرأ
+   نفس متغيرات CSS هذه (var(--brand-orange)...) — مصدر الحقيقة اللوني يبقى
+   واحداً فقط، هنا. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 /*
  * الهوية البصرية مستخرجة مباشرة من شعار Tayssir Froid الرسمي:
@@ -22,31 +29,16 @@
 
   --whatsapp: #25d366;
   --whatsapp-dark: #1da851;
-}
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-
-  --color-brand-orange: var(--brand-orange);
-  --color-brand-orange-dark: var(--brand-orange-dark);
-  --color-brand-orange-tint: var(--brand-orange-tint);
-
-  --color-brand-turquoise: var(--brand-turquoise);
-  --color-brand-turquoise-dark: var(--brand-turquoise-dark);
-  --color-brand-turquoise-tint: var(--brand-turquoise-tint);
-
-  --color-whatsapp: var(--whatsapp);
-  --color-whatsapp-dark: var(--whatsapp-dark);
-
-  --font-sans: var(--font-arabic);
+  /* خط عربي واضح بدون الاعتماد على تحميل خط خارجي عبر الشبكة — على :root
+     (وليس body كما كان) حتى تتحقق من عنصر html نفسه أيضاً (تصريح
+     font-family الأساسي لـPreflight)، لا فقط من body فما بعده. */
+  --font-arabic: "Segoe UI", Tahoma, Geneva, Arial, sans-serif;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  /* خط عربي واضح بدون الاعتماد على تحميل خط خارجي عبر الشبكة */
-  --font-arabic: "Segoe UI", Tahoma, Geneva, Arial, sans-serif;
   font-family: var(--font-arabic);
 }
 
