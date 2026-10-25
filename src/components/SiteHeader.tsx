@@ -1,8 +1,9 @@
-import Image from "next/image";
 import Link from "next/link";
 import { getFilteredCategories } from "@/lib/queries/catalog";
 import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 import { safeQuery } from "@/lib/safeQuery";
+import { ProductImage } from "@/components/ProductImage";
+import { THUMB_WIDTHS } from "@/lib/images/variants";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
 import { CartBadge } from "@/components/CartBadge";
 import { HeaderWhatsAppButton } from "@/components/HeaderWhatsAppButton";
@@ -32,9 +33,17 @@ export async function SiteHeader() {
         <MobileNav categories={categories} whatsappLink={whatsappLink} />
 
         <Link href="/" className="flex min-w-0 flex-col items-start gap-0.5">
-          <Image
-            src="/brand/logo-tayssir-froid.png"
+          {/*
+           * الشعار يظهر فوق الطيّة في **كل** صفحة، وأصله PNG بعرض 600
+           * (33 KB) يُعرض بارتفاع 32–36px أي ~101 CSS px عرضاً. نسخة 360
+           * WebP تكفي كثافة 3× بـ~7 KB، والأصل يبقى احتياطاً كبقية الصور.
+           */}
+          <ProductImage
+            storagePath="brand/logo-tayssir-froid.png"
+            resolvedSrc="/brand/logo-tayssir-froid.png"
             alt="Tayssir Froid"
+            widths={THUMB_WIDTHS}
+            sizes="101px"
             width={169}
             height={60}
             priority

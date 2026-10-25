@@ -262,7 +262,7 @@ async function main() {
   console.log(`  وُلِّدت: ${made} · مُتخطّاة (مُعالَجة سابقاً): ${skipped} · فشلت: ${failed}`);
   if (origBytes) {
     console.log(`  أصول هذه الدفعة: ${(origBytes / 1048576).toFixed(2)} MB`);
-    console.log(`  نسخها الثلاث:    ${(newBytes / 1048576).toFixed(2)} MB`);
+    console.log(`  نسخها (360+540): ${(newBytes / 1048576).toFixed(2)} MB`);
   }
   console.log(`  حجم public/_opt كاملاً: ${(optDirBytes / 1048576).toFixed(2)} MB`);
   console.log(`  المانيفست: ${done.size} أصلاً مُعالَجاً`);

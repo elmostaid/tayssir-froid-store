@@ -37,6 +37,8 @@ export function ProductImage({
   sizes,
   widths = CARD_WIDTHS,
   priority = false,
+  width,
+  height,
   className,
 }: {
   /** المسار كما هو في `product_images.storage_path` — مفتاح المانيفست. */
@@ -48,6 +50,9 @@ export function ProductImage({
   /** `null` = لا نسخة محسَّنة لهذه الصورة عمداً (انظر صفحة المنتج). */
   widths?: readonly VariantWidth[] | null;
   priority?: boolean;
+  /** أبعاد جوهرية تحجز المكان قبل التحميل (للشعار). البطاقات لا تحتاجها: إطارها ثابت النسبة. */
+  width?: number;
+  height?: number;
   className?: string;
 }) {
   const srcSet = webpSrcSet(storagePath, processedOriginals(), widths);
@@ -73,6 +78,8 @@ export function ProductImage({
       <img
         src={resolvedSrc}
         alt={alt}
+        width={width}
+        height={height}
         sizes={sizes}
         // يقرأه الحارس ليعرف إلى أين يسقط. الأصل نفسه، فالسقوط لا يفشل.
         data-img-fallback={resolvedSrc}
