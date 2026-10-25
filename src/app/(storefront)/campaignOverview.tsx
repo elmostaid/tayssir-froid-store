@@ -201,6 +201,28 @@ export async function CampaignOverview({
                 ))}
               </div>
             )}
+
+            {/* الزرّ الكبير: مباشرةً بعد آخر منتج، لا فوق القسم.
+                الرابط الصغير بجانب العنوان يفيد من يمسح الصفحة بعينه قبل
+                النزول، لكن من قرأ المنتجات الأربعة يصل إلى **نهاية** القسم
+                لا إلى رأسه — ولو لم يجد هناك مخرجاً واضحاً انتقل إلى
+                التصنيف التالي ظانّاً أنه رأى كل شيء، وهي أربعة منتجات من
+                عشرات.
+
+                برتقالي: قاعدة الموقع أن البرتقالي لما يتقدّم بالزبون خطوةً
+                نحو الشراء. وهو هنا كذلك ولا يكسر حياد الصفحة — الأزرار
+                الثلاثة متطابقة تماماً، واحدٌ لكل نوع بنفس الشكل والحجم.
+
+                ويظهر في كل الحالات (منتجات أو قسم فارغ أو تعذُّر قراءة) حتى
+                تبقى الأنواع الثلاثة متساوية بصرياً مهما كانت حالة كلٍّ
+                منها. */}
+            <Link
+              href={typeHref}
+              prefetch={false}
+              className="mt-4 flex min-h-12 w-full items-center justify-center rounded-xl bg-brand-orange px-4 text-center text-sm font-bold text-white shadow-sm transition-colors hover:bg-brand-orange-dark active:bg-brand-orange-dark"
+            >
+              عرض جميع قطع غيار {tab.fullLabel ?? tab.label}
+            </Link>
           </section>
         );
       })}

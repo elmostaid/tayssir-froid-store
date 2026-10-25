@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { readFileSync } from "node:fs";
 import { resolveLandingView, OVERVIEW_PREVIEW_SIZE } from "@/app/(storefront)/campaignOverview";
 import { resolveTab } from "@/app/(storefront)/campaignLanding";
 import { WASHING_TABS } from "@/app/(storefront)/washing-machines/page";
@@ -80,5 +81,55 @@ describe("الوجه المحايد لصفحة مكينات الصابون", () 
     expect(HEATER_TABS.map((tab) => tab.key)).toEqual(["gas", "electric"]);
     expect(HEATER_TABS.every((tab) => tab.fullLabel === undefined)).toBe(true);
     expect(resolveTab(HEATER_TABS).categorySlug).toBe("gas-water-heater-parts");
+  });
+
+  /**
+   * الزرّ الكبير يجب أن يقع **بعد** شبكة المنتجات لا قبلها: من قرأ
+   * المنتجات الأربعة يصل إلى نهاية القسم، ولو لم يجد هناك مخرجاً انتقل
+   * إلى النوع التالي ظانّاً أنه رأى كل شيء. حارسٌ نصّي لأن المكوّن خادمي
+   * ولا يُصيَّر في هذه الحزمة — والترتيب هو بالضبط ما انكسر.
+   */
+  describe("زرّ «عرض جميع قطع غيار …» أسفل كل قسم", () => {
+    const source = readFileSync("src/app/(storefront)/campaignOverview.tsx", "utf8");
+
+    test("نصّ الزرّ مبنيّ من الاسم الكامل للنوع", () => {
+      expect(source).toContain("عرض جميع قطع غيار {tab.fullLabel ?? tab.label}");
+      // أي أن الأزرار الثلاثة تقرأ حرفياً:
+      for (const tab of WASHING_TABS) {
+        expect(`عرض جميع قطع غيار ${tab.fullLabel}`).toMatch(/^عرض جميع قطع غيار مكينة الصابون /);
+      }
+    });
+
+    test("الزرّ يقع بعد شبكة المنتجات، وداخل نفس القسم", () => {
+      const grid = source.indexOf("products.map((product, index)");
+      const button = source.indexOf("عرض جميع قطع غيار");
+      const sectionEnd = source.indexOf("</section>", grid);
+      expect(grid).toBeGreaterThan(-1);
+      expect(button).toBeGreaterThan(grid);
+      expect(button).toBeLessThan(sectionEnd);
+    });
+
+    test("الزرّ يفتح التبويب لا تصنيفاً خارجياً، وبلا جلب مسبق", () => {
+      const button = source.indexOf("عرض جميع قطع غيار");
+      const anchorStart = source.lastIndexOf("<Link", button);
+      const anchor = source.slice(anchorStart, button);
+      expect(anchor).toContain("href={typeHref}");
+      expect(anchor).toContain("prefetch={false}");
+      // typeHref = `${basePath}?type=${tab.key}` — نفس نظام التبويبات.
+      expect(source).toContain("const typeHref = `${basePath}?type=${tab.key}`");
+    });
+
+    test("مساحة ضغط لا تقلّ عن 48px وبعرض الشاشة", () => {
+      const button = source.indexOf("عرض جميع قطع غيار");
+      const anchor = source.slice(source.lastIndexOf("<Link", button), button);
+      expect(anchor).toContain("min-h-12");
+      expect(anchor).toContain("w-full");
+    });
+
+    test("لا يحمّل منتجات إضافية: رابط تنقّل لا زرّ تحميل", () => {
+      // LoadMoreProducts يبقى حصراً في التبويب (campaignLanding)، فالوجه
+      // المحايد لا يجلب أكثر من 4 لكل نوع مهما ضُغط فيه.
+      expect(source).not.toContain("LoadMoreProducts");
+    });
   });
 });
