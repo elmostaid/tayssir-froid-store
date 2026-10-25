@@ -22,6 +22,7 @@
  *   npx tsx scripts/generate-image-variants.mts --sample 30
  *   npx tsx scripts/generate-image-variants.mts --all --limit 50
  *   npx tsx scripts/generate-image-variants.mts --all --dry-run
+ *   npx tsx scripts/generate-image-variants.mts --from-file one.json --force
  */
 import { mkdir, readFile, writeFile, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -43,7 +44,7 @@ const BUCKET_MARKER = "/storage/v1/object/public/product-images/";
  */
 const WEBP_QUALITY = 78;
 
-type Args = { sample: number | null; all: boolean; limit: number | null; dryRun: boolean; fromFile: string | null };
+type Args = { sample: number | null; all: boolean; limit: number | null; dryRun: boolean; fromFile: string | null; force: boolean };
 function parseArgs(argv: string[]): Args {
   const get = (name: string) => {
     const i = argv.indexOf(name);
@@ -55,6 +56,7 @@ function parseArgs(argv: string[]): Args {
     limit: get("--limit") ? Number(get("--limit")) : null,
     dryRun: argv.includes("--dry-run"),
     fromFile: get("--from-file"),
+    force: argv.includes("--force"),
   };
 }
 
@@ -209,7 +211,9 @@ async function main() {
 
   for (const [i, r] of work.entries()) {
     const label = `${String(i + 1).padStart(3)}/${work.length} ${r.sku}`;
-    if (alreadyDone(r.storage_path, VARIANT_WIDTHS)) {
+    // `--force`: أصل محلي استُبدل بنفس اسمه — اسم النسخة مشتقّ من المسار لا
+    // المحتوى، فالتخطّي العادي سيُبقي النسخة القديمة. نادر، لكنه ممكن.
+    if (!args.force && alreadyDone(r.storage_path, VARIANT_WIDTHS)) {
       done.add(r.storage_path);
       skipped++;
       continue;
