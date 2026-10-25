@@ -63,6 +63,9 @@ export function ProductImage({
     if (srcSet) {
       preload(variantPath(storagePath, widths![widths!.length - 1]), {
         as: "image",
+        // بلا `type` يجلب متصفحٌ لا يفكّ WebP النسخةَ عبثاً ثم الأصل (قِيس
+        // على المعاينة بإخفاء نوع <source>). مع `type` يتخطّى الجلب المسبق.
+        type: "image/webp",
         imageSrcSet: srcSet,
         imageSizes: sizes,
         fetchPriority: "high",
