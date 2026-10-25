@@ -1,5 +1,5 @@
 import { preload } from "react-dom";
-import { processedOriginals } from "@/lib/images/manifest";
+import { variantKeys } from "@/lib/images/manifest";
 import { webpSrcSet, CARD_WIDTHS, variantPath, type VariantWidth } from "@/lib/images/variants";
 
 /**
@@ -19,7 +19,8 @@ import { webpSrcSet, CARD_WIDTHS, variantPath, type VariantWidth } from "@/lib/i
  * `migration 20260815000000` وثّق صوراً مكسورة متقطّعة سببها **WebP
  * بحاوية VP8X+ICC** وأسماء غير ASCII. فالاحتياط ثلاثي:
  *
- *   1. **لا srcset أصلاً** ما لم يُثبت المولِّد أنه أنتج النسخ (المانيفست).
+ *   1. **لا srcset أصلاً** ما لم يُسجّل المولِّد بصمة الأصل (المانيفست)،
+ *      ويتحقق فحص البناء أن ملفاتها موجودة وأن الأصل لم يتغيّر بعدها.
  *      فلا رابط مُعلَن بلا ملف.
  *   2. **`<source type="image/webp">`** — يغطّي عدم دعم الصيغة.
  *   3. **`ImageFallbackScript`** — يغطّي ما لا يغطّيه `<picture>` إطلاقاً:
@@ -55,13 +56,14 @@ export function ProductImage({
   height?: number;
   className?: string;
 }) {
-  const srcSet = webpSrcSet(storagePath, processedOriginals(), widths);
+  const variants = variantKeys();
+  const srcSet = webpSrcSet(storagePath, variants, widths);
 
   // الجلب المسبق لصور فوق الطيّة. `imageSrcSet` يجعل المتصفح يحجز **نفس**
   // النسخة التي سيختارها الوسم لاحقاً، لا الأصل — وإلا نزّلنا الاثنين.
   if (priority) {
     if (srcSet) {
-      preload(variantPath(storagePath, widths![widths!.length - 1]), {
+      preload(variantPath(variants.get(storagePath)!, widths![widths!.length - 1]), {
         as: "image",
         // بلا `type` يجلب متصفحٌ لا يفكّ WebP النسخةَ عبثاً ثم الأصل (قِيس
         // على المعاينة بإخفاء نوع <source>). مع `type` يتخطّى الجلب المسبق.

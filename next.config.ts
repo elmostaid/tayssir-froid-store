@@ -79,14 +79,23 @@ const nextConfig: NextConfig = {
   // بدّلت صورة منتج بنفس الاسم يجب أن يراها الزبون قريباً لا بعد سنة.
   // stale-while-revalidate يعطي الشهر التالي عرضاً فورياً من الذاكرة مع
   // تحديث صامت في الخلفية.
-  //
-  // `_opt` (نسخ WebP) تأخذ نفس السياسة لا `immutable`: اسم النسخة مشتقّ من
-  // **مسار** الأصل لا من محتواه، فأصل محلي يُستبدَل بنفس اسمه يُبقي نفس اسم
-  // النسخة. قِيس على المعاينة: بلا هذا السطر كانت تُقدَّم بـ`max-age=0`.
   async headers() {
     return [
       {
-        source: "/:dir(product-images|product-images-v2|product-images-v3|categories|brand|_opt)/:path*",
+        // نسخ WebP: `immutable` لسنة. آمنة لأن اسم كل نسخة **بصمة محتوى**
+        // أصلها (variants.ts): صورة تتغيّر = رابط جديد، فلا يمكن لمتصفح أن
+        // يحتفظ بنسخة قديمة. بلا هذه القاعدة كانت تُقدَّم بـ`max-age=0`
+        // (قِيس على المعاينة)، أي رحلة تحقّق لكل صورة في كل زيارة.
+        source: "/_opt/:path*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
+      },
+      {
+        source: "/:dir(product-images|product-images-v2|product-images-v3|categories|brand)/:path*",
         headers: [
           {
             key: "Cache-Control",

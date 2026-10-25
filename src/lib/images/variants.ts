@@ -6,30 +6,31 @@ import { createHash } from "node:crypto";
  * ## لماذا هذا الملف لا يستورد sharp إطلاقاً
  *
  * الشرط الحاكم: **لا يعمل sharp أثناء أي زيارة زبون.** التحويل يقع مرة
- * واحدة في `scripts/generate-image-variants.mts` (عند الرفع مستقبلاً، أو
- * دفعةً للصور القائمة)، وهذا الملف لا يفعل شيئاً سوى **حساب أسماء
- * متوقَّعة** من المسار الأصلي. لا قراءة قرص، لا شبكة، لا استعلام قاعدة،
- * ولا أي عمل غير سلسلة نصية — فإضافته إلى مسار العرض تكلفتها صفر.
+ * واحدة في `scripts/generate-image-variants.mts`، وهذا الملف لا يفعل شيئاً
+ * سوى بناء روابط من المانيفست. لا قراءة قرص، لا شبكة، لا استعلام قاعدة —
+ * فإضافته إلى مسار العرض تكلفتها صفر.
  *
- * ## لماذا اسم مُجزَّأ (hash) لا اسم مشتقّ من الأصل
+ * ## لماذا اسم النسخة بصمةُ **محتوى** الأصل لا مساره
  *
- * مسارات الصور اليوم ثلاثة أشكال: كائن مخزن `234/<uuid>.jpg`، وملف محلي
- * `product-images-v3/TF-WM-005/TF-WM-005.jpg`، وملفات قديمة كان اسمها
- * عربياً مُرمَّزاً. و`migration 20260815000000` وثّق أن **الأسماء غير
- * ASCII كانت أحد سببَي الصور المكسورة المتقطّعة**. فاشتقاق اسم النسخة من
- * الاسم الأصلي يُعيد إنتاج نفس الخطر، ويُنتج مساراتٍ طويلة متداخلة.
+ * كان الاسم مشتقّاً من المسار، فسقط في فحص ما قبل النشر: أصل محلي
+ * يُستبدَل بنفس اسمه (`product-images-v3/TF-WM-005/TF-WM-005.jpg`) يُبقي
+ * نفس اسم النسخة — فإما يبقى المانيفست يشير إلى نسخة الصورة القديمة إلى
+ * الأبد، أو تُعاد كتابتها بنفس الاسم فيحتفظ المتصفح بالقديمة طوال مدة
+ * الذاكرة المؤقتة.
  *
- * SHA-1 للمسار الأصلي يحلّ ذلك كلّه: **ASCII بحت دائماً**، طول ثابت، فريد
- * لكل أصل، ومستقرّ — نفس الأصل يعطي نفس الاسم في كل بناء، فلا تتغيّر
- * الروابط بلا سبب ويبقى `immutable` صحيحاً.
+ * SHA-1 لبايتات الأصل يحلّ الحالتين معاً: محتوى جديد = اسم جديد، فلا يمكن
+ * لأي ذاكرة مؤقتة أن تقدّم نسخة قديمة، وتصبح `immutable` آمنة تماماً.
+ * ويبقى ما كان يضمنه المسار المجزَّأ: **ASCII بحت دائماً** (الأسماء غير
+ * ASCII كانت أحد سببَي الصور المكسورة في `migration 20260815000000`)،
+ * وطول ثابت. وكمكسب جانبي: صورتان متطابقتان تحت مسارين تتشاركان نسخة واحدة.
  *
  * ## لماذا لا نخمّن أن النسخة موجودة
  *
  * `<picture>` يتراجع عن صيغة لا يدعمها المتصفح، لكنه **لا يتراجع عن ملف
- * يرجع 404**: المتصفح يعرض صورة مكسورة. فلا يُبنى `srcset` إلا لمسار
- * أثبت المولِّد أنه أنتج نسخه فعلاً (`variant-manifest.json`). وفوق ذلك
- * هناك حارس وقت التشغيل (`ImageFallbackScript`) لحالات 404 والشبكة
- * والملف التالف.
+ * يرجع 404**. فلا يُبنى `srcset` إلا لمسار سجّل المولِّد بصمته في
+ * `variant-manifest.json`، وفحص البناء (`scripts/verify-image-variants.mjs`)
+ * يُسقط أي مدخل ملفّه ناقص أو أصله المحلي تغيّر. وفوق ذلك حارس وقت
+ * التشغيل (`ImageFallbackScript`) لحالات 404 والشبكة والملف التالف.
  */
 
 /**
@@ -60,33 +61,30 @@ export const THUMB_WIDTHS: readonly VariantWidth[] = [360];
 /** جذر النسخ المحسَّنة. ثابت لأن الحارس في مسار `/img` لا يمسّه. */
 export const VARIANT_PREFIX = "/_opt";
 
-/**
- * مفتاح الأصل: أول 16 حرفاً من SHA-1 لمساره كما هو مخزَّن في
- * `product_images.storage_path` — لا للمسار المحلول. المخزَّن هو الثابت
- * الوحيد عبر البيئات (المعاينة والإنتاج يقرآن نفس الصفوف).
- */
-export function variantKey(storagePath: string): string {
-  return createHash("sha1").update(storagePath).digest("hex").slice(0, 16);
+/** بصمة الأصل: أول 16 حرفاً من SHA-1 لبايتاته. يحسبها المولِّد وحده. */
+export function contentKey(bytes: Uint8Array): string {
+  return createHash("sha1").update(bytes).digest("hex").slice(0, 16);
 }
 
-/** مسار نسخة واحدة. ASCII بحت دائماً. */
-export function variantPath(storagePath: string, width: VariantWidth): string {
-  return `${VARIANT_PREFIX}/${variantKey(storagePath)}-${width}.webp`;
+/** مسار نسخة واحدة من بصمتها. ASCII بحت دائماً. */
+export function variantPath(key: string, width: VariantWidth): string {
+  return `${VARIANT_PREFIX}/${key}-${width}.webp`;
 }
 
 /**
- * `srcset` لنسخ WebP، أو `null` إن لم تُولَّد نسخ هذا الأصل بعد.
+ * `srcset` لنسخ WebP، أو `null` إن لم تُسجَّل بصمة لهذا الأصل.
  *
- * `null` ليس حالة خطأ بل الحالة الطبيعية أثناء المعالجة التدريجية: صورة
- * لم تُعالَج بعد تُعرض بأصلها كما اليوم بالضبط، بلا أي فرق للزبون. وهذا
- * ما يجعل المعالجة على دفعات آمنة — لا لحظة يكون فيها الموقع نصفه مكسور.
+ * `variants` تربط المسار كما هو في `product_images.storage_path` ببصمة
+ * محتواه. `null` ليس حالة خطأ بل الحالة الطبيعية لصورة جديدة لم تُعالَج
+ * بعد: تُعرض بأصلها كما اليوم بالضبط، بلا أي فرق للزبون.
  */
 export function webpSrcSet(
   storagePath: string,
-  processed: ReadonlySet<string>,
+  variants: ReadonlyMap<string, string>,
   widths: readonly VariantWidth[] | null = CARD_WIDTHS
 ): string | null {
   if (!widths || widths.length === 0) return null;
-  if (!processed.has(storagePath)) return null;
-  return widths.map((w) => `${variantPath(storagePath, w)} ${w}w`).join(", ");
+  const key = variants.get(storagePath);
+  if (!key) return null;
+  return widths.map((w) => `${variantPath(key, w)} ${w}w`).join(", ");
 }

@@ -1,29 +1,29 @@
 import manifest from "@/lib/images/variant-manifest.json";
 
 /**
- * قائمة الأصول التي وُلِّدت نسخها المحسَّنة فعلاً.
+ * خريطة الأصول المُعالَجة: مسار الأصل ← بصمة محتواه (اسم نسخه).
  *
- * يكتبها `scripts/generate-image-variants.mts` ولا يُعدَّل يدوياً. وجودها
- * في المستودع — لا في قاعدة البيانات — مقصود لثلاثة أسباب:
+ * يكتبها `scripts/generate-image-variants.mts` ولا تُعدَّل يدوياً، ويُنقّيها
+ * `scripts/verify-image-variants.mjs` قبل كل بناء. وجودها في المستودع — لا
+ * في قاعدة البيانات — مقصود لثلاثة أسباب:
  *
  *   1. **صفر استعلام إضافي.** الشرط الحاكم أن تحسين الصور لا يزيد الضغط
- *      على PostgreSQL. ملف ثابت يُقرأ مرة واحدة عند إقلاع نسخة الخادم،
- *      فلا استعلام ولا اتصال ولا تجديد كاش.
+ *      على PostgreSQL. ملف ثابت يُقرأ مرة واحدة عند إقلاع نسخة الخادم.
  *   2. **لا انقطاع أثناء المعالجة التدريجية.** البناء الذي لا يعرف صورةً
- *      يعرضها بأصلها، والذي يعرفها يقدّم نسخها. فالدفعات تُضاف بلا لحظة
- *      يكون فيها رابطٌ معلَناً وملفُّه غير موجود.
+ *      يعرضها بأصلها، والذي يعرفها يقدّم نسخها.
  *   3. **التراجع بحذف الملفات وحدها.** حذف النسخ وإفراغ هذا الملف يُعيد
- *      الموقع إلى سلوكه اليوم بالضبط.
+ *      الموقع إلى سلوكه قبل التحسين بالضبط.
  *
- * `Set` يُبنى مرة واحدة عند تحميل الوحدة — بحثٌ بـO(1) لكل صورة بدل مسح
- * مصفوفة طولها مئات لكل بطاقة في كل طلب.
+ * `Map` تُبنى مرة واحدة عند تحميل الوحدة — بحثٌ بـO(1) لكل صورة.
  */
-const processed: ReadonlySet<string> = new Set(manifest.processed);
+const variants: ReadonlyMap<string, string> = new Map(
+  Object.entries(manifest.variants as Record<string, string>)
+);
 
-export function processedOriginals(): ReadonlySet<string> {
-  return processed;
+export function variantKeys(): ReadonlyMap<string, string> {
+  return variants;
 }
 
 export function variantCount(): number {
-  return processed.size;
+  return variants.size;
 }

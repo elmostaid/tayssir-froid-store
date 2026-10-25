@@ -1,7 +1,7 @@
 "use server";
 
 import { resolveProductImageUrls } from "@/lib/storage/resolveProductImageUrl";
-import { processedOriginals } from "@/lib/images/manifest";
+import { variantKeys } from "@/lib/images/manifest";
 import { webpSrcSet } from "@/lib/images/variants";
 
 // السلة (localStorage جانب العميل) لا تخزّن سوى storage_path الخام —
@@ -28,12 +28,12 @@ export async function resolveCartImageSources(
 ): Promise<Record<string, { src: string; srcSet: string | null }>> {
   const paths = storagePaths.filter((p): p is string => Boolean(p));
   const srcByPath = await resolveProductImageUrls(paths);
-  const processed = processedOriginals();
+  const variants = variantKeys();
   const out: Record<string, { src: string; srcSet: string | null }> = {};
   for (const p of paths) {
     const src = srcByPath[p];
     if (!src) continue;
-    out[p] = { src, srcSet: webpSrcSet(p, processed, [360]) };
+    out[p] = { src, srcSet: webpSrcSet(p, variants, [360]) };
   }
   return out;
 }

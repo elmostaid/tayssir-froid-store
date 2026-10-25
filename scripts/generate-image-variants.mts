@@ -23,13 +23,16 @@
  *   npx tsx scripts/generate-image-variants.mts --all --limit 50
  *   npx tsx scripts/generate-image-variants.mts --all --dry-run
  *   npx tsx scripts/generate-image-variants.mts --from-file one.json --force
+ *
+ * أسماء النسخ بصمة **محتوى** الأصل (انظر variants.ts)، فأصل محلي استُبدل
+ * بنفس اسمه يُكتشَف تلقائياً ويُعطى نسخاً باسم جديد.
  */
 import { mkdir, readFile, writeFile, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import postgres from "postgres";
 import sharp from "sharp";
-import { VARIANT_WIDTHS, variantKey, type VariantWidth } from "../src/lib/images/variants.js";
+import { VARIANT_WIDTHS, contentKey, type VariantWidth } from "../src/lib/images/variants.js";
 
 const ROOT = process.cwd();
 const OUT_DIR = path.join(ROOT, "public", "_opt");
@@ -89,13 +92,27 @@ async function readOriginal(storagePath: string): Promise<Buffer> {
   return Buffer.from(await res.arrayBuffer());
 }
 
-function variantFile(storagePath: string, width: VariantWidth): string {
-  return path.join(OUT_DIR, `${variantKey(storagePath)}-${width}.webp`);
+function variantFile(key: string, width: VariantWidth): string {
+  return path.join(OUT_DIR, `${key}-${width}.webp`);
 }
 
-/** هل لهذا الأصل نسخه كاملة أصلاً؟ أساس «لا إعادة معالجة بلا سبب». */
-function alreadyDone(storagePath: string, widths: readonly VariantWidth[]): boolean {
-  return widths.every((w) => existsSync(variantFile(storagePath, w)));
+/** هل لهذه البصمة نسخها كاملة على القرص؟ */
+function filesExist(key: string): boolean {
+  return VARIANT_WIDTHS.every((w) => existsSync(variantFile(key, w)));
+}
+
+/**
+ * هل يمكن تخطّي هذا الأصل بلا تنزيل؟ أساس «لا إعادة معالجة بلا سبب».
+ *
+ * كائن المخزن يُتخطّى بمجرد وجود بصمته وملفاتها: رفع لوحة الإدارة يُنشئ دائماً
+ * اسماً جديداً `{productId}/{UUID}` (imageActions.ts)، فمحتوى المسار لا
+ * يتغيّر أبداً. أما الملف المحلي فقد يُستبدَل بنفس اسمه، فتُعاد بصمته من
+ * القرص (رخيص) وتُقارَن — تغيّرت = يُعالَج من جديد باسم جديد.
+ */
+async function canSkip(storagePath: string, known: string | undefined): Promise<boolean> {
+  if (!known || !filesExist(known)) return false;
+  if (storagePath.startsWith("http")) return true;
+  return contentKey(await readFile(path.join(ROOT, "public", storagePath))) === known;
 }
 
 /**
@@ -201,25 +218,24 @@ async function main() {
   }
 
   await mkdir(OUT_DIR, { recursive: true });
-  const processed: string[] = JSON.parse(
-    existsSync(MANIFEST) ? await readFile(MANIFEST, "utf8") : '{"processed":[]}'
-  ).processed;
-  const done = new Set<string>(processed);
+  const known: Record<string, string> = JSON.parse(
+    existsSync(MANIFEST) ? await readFile(MANIFEST, "utf8") : '{"variants":{}}'
+  ).variants;
+  const done = new Map<string, string>(Object.entries(known));
 
   let made = 0, skipped = 0, failed = 0, origBytes = 0, newBytes = 0;
   const failures: string[] = [];
 
   for (const [i, r] of work.entries()) {
     const label = `${String(i + 1).padStart(3)}/${work.length} ${r.sku}`;
-    // `--force`: أصل محلي استُبدل بنفس اسمه — اسم النسخة مشتقّ من المسار لا
-    // المحتوى، فالتخطّي العادي سيُبقي النسخة القديمة. نادر، لكنه ممكن.
-    if (!args.force && alreadyDone(r.storage_path, VARIANT_WIDTHS)) {
-      done.add(r.storage_path);
+    // `--force`: إعادة الترميز رغم وجود النسخ (مثلاً بعد تغيير الجودة).
+    if (!args.force && (await canSkip(r.storage_path, known[r.storage_path]))) {
       skipped++;
       continue;
     }
     try {
       const buf = await readOriginal(r.storage_path);
+      const key = contentKey(buf);
       const meta = await sharp(buf).metadata();
       origBytes += buf.length;
       for (const w of VARIANT_WIDTHS) {
@@ -239,10 +255,10 @@ async function main() {
           // الـmigration كآمنة.
           .webp({ quality: WEBP_QUALITY, effort: 5 })
           .toBuffer();
-        await writeFile(variantFile(r.storage_path, w), out);
+        await writeFile(variantFile(key, w), out);
         newBytes += out.length;
       }
-      done.add(r.storage_path);
+      done.set(r.storage_path, key);
       made++;
       console.log(`  ✅ ${label}  ${meta.width}×${meta.height}  ${(buf.length / 1024).toFixed(0)}KB`);
     } catch (e) {
@@ -257,7 +273,14 @@ async function main() {
 
   await writeFile(
     MANIFEST,
-    JSON.stringify({ generatedAt: new Date().toISOString(), processed: [...done].sort() }, null, 2) + "\n",
+    JSON.stringify(
+      {
+        generatedAt: new Date().toISOString(),
+        variants: Object.fromEntries([...done].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))),
+      },
+      null,
+      2
+    ) + "\n",
     "utf8"
   );
 
