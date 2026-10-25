@@ -1,9 +1,9 @@
-import Image from "next/image";
 import Link from "next/link";
 import type { CatalogProduct } from "@/lib/types";
 import { resolveProductImageUrl } from "@/lib/storage/resolveProductImageUrl";
 import { formatMad } from "@/lib/format";
 import { ProductCardActions } from "@/components/ProductCardActions";
+import { ProductImage } from "@/components/ProductImage";
 
 // مكوّن خادمي async (نمط Next.js App Router قياسي): يحل رابط الصورة من جهة
 // الخادم (محلي للصور القديمة، أو Supabase Storage الحقيقي للصور المرفوعة
@@ -37,14 +37,16 @@ export async function ProductCard({
         href={`/product/${product.slug}`}
         className="group relative block aspect-square w-full bg-neutral-100"
       >
-        {resolvedImageUrl ? (
-          <Image
-            src={resolvedImageUrl}
+        {resolvedImageUrl && imageUrl ? (
+          // `fill` السابق كان يضبط الموضع المطلق بنفسه؛ هنا نكتبه صراحةً
+          // فالبطاقة مربّعة (aspect-square) ولا يتغيّر تخطيطها بحرف واحد.
+          <ProductImage
+            storagePath={imageUrl}
+            resolvedSrc={resolvedImageUrl}
             alt={product.name_ar}
-            fill
             sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 220px"
-            className="object-cover object-center transition-transform group-hover:scale-[1.03]"
-            {...(priority ? { priority: true } : { loading: "lazy" as const })}
+            priority={priority}
+            className="absolute inset-0 h-full w-full object-cover object-center transition-transform group-hover:scale-[1.03]"
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-xs text-neutral-400">

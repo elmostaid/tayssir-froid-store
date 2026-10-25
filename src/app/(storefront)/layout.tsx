@@ -5,6 +5,7 @@ import { AnalyticsClient } from "@/components/AnalyticsClient";
 import { AttributionTracker } from "@/components/AttributionTracker";
 import { MobileCartBar } from "@/components/MobileCartBar";
 import { EARLY_ADD_SCRIPT } from "@/lib/cart/earlyAdd";
+import { ImageFallbackScript } from "@/components/ImageFallbackScript";
 
 export default function StorefrontLayout({
   children,
@@ -21,6 +22,12 @@ export default function StorefrontLayout({
         يظهر أول زر على الشاشة. التفاصيل والضمانات في lib/cart/earlyAdd.ts.
       */}
       <script dangerouslySetInnerHTML={{ __html: EARLY_ADD_SCRIPT }} />
+      {/*
+        حارس الصور: يسقط أي صورة فشل تحميلها إلى أصلها. موضعه هنا — قبل
+        الترويسة والمحتوى — لنفس سبب السكريبت أعلاه: يجب أن يكون مسجَّلاً
+        قبل أن يبدأ المتصفح تحميل أول صورة، لا بعده. التفاصيل في الملف.
+      */}
+      <ImageFallbackScript />
       {/* قياس داخلي مجهول — لا يعرض شيئاً ولا يؤثِّر على التخطيط. */}
       <AnalyticsClient />
       {/* نسب الطلب إلى مصدره — مسار مستقل، لا يعرض شيئاً. */}

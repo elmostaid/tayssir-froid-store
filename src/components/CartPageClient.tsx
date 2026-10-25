@@ -1,12 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { useCart } from "@/components/CartProvider";
 import { cartItemKey, snapQuantity } from "@/lib/cart/cartMath";
 import { resolveImageUrl } from "@/lib/images";
-import { resolveCartImageUrls } from "@/app/(storefront)/cart/resolveCartImageUrls";
+import { resolveCartImageSources } from "@/app/(storefront)/cart/resolveCartImageUrls";
 import { formatMad } from "@/lib/format";
 import {
   DELIVERY_AVAILABILITY,
@@ -29,7 +28,9 @@ export function CartPageClient({
   // بعد التحميل — قبل أن يصل الرد، أو لصورة لم تُحل بعد، نرجع لـ
   // resolveImageUrl التركيبي القديم (صحيح للصور المحلية القديمة، وهي
   // الغالبية) بدل عدم عرض شيء إطلاقاً.
-  const [imageUrlByPath, setImageUrlByPath] = useState<Record<string, string>>({});
+  const [imageUrlByPath, setImageUrlByPath] = useState<
+    Record<string, { src: string; srcSet: string | null }>
+  >({});
 
   useEffect(() => {
     const paths = Array.from(
@@ -37,7 +38,7 @@ export function CartPageClient({
     );
     if (paths.length === 0) return;
     let cancelled = false;
-    resolveCartImageUrls(paths)
+    resolveCartImageSources(paths)
       .then((result) => {
         if (!cancelled) setImageUrlByPath((prev) => ({ ...prev, ...result }));
       })
@@ -87,14 +88,29 @@ export function CartPageClient({
             >
               <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-neutral-100">
                 {item.imageUrl ? (
-                  <Image
-                    src={imageUrlByPath[item.imageUrl] ?? resolveImageUrl(item.imageUrl)}
-                    alt={item.name}
-                    fill
-                    sizes="80px"
-                    className="object-contain"
-                    loading="lazy"
-                  />
+                  <picture>
+                    {imageUrlByPath[item.imageUrl]?.srcSet && (
+                      <source
+                        type="image/webp"
+                        srcSet={imageUrlByPath[item.imageUrl]!.srcSet!}
+                        sizes="80px"
+                      />
+                    )}
+                    <img
+                      src={imageUrlByPath[item.imageUrl]?.src ?? resolveImageUrl(item.imageUrl)}
+                      alt={item.name}
+                      sizes="80px"
+                      // يلتقطه حارس الصور فـالتخطيط: السلة أكثر مكان لا
+                      // يجوز أن تنكسر فيه صورة — الزبون على بعد خطوة من
+                      // الطلب.
+                      data-img-fallback={
+                        imageUrlByPath[item.imageUrl]?.src ?? resolveImageUrl(item.imageUrl)
+                      }
+                      loading="lazy"
+                      decoding="async"
+                      className="absolute inset-0 h-full w-full object-contain"
+                    />
+                  </picture>
                 ) : null}
               </div>
 

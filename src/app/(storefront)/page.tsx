@@ -1,4 +1,3 @@
-import Image from "next/image";
 import Link from "next/link";
 import {
   getCategoryCoverImages,
@@ -11,6 +10,7 @@ import {
 } from "@/lib/queries/catalog";
 import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 import { ProductCard } from "@/components/ProductCard";
+import { ProductImage } from "@/components/ProductImage";
 import { CategoryIcon } from "@/components/CategoryIcon";
 import { HowToOrder } from "@/components/HowToOrder";
 import { LoadMoreProducts } from "@/components/LoadMoreProducts";
@@ -267,18 +267,20 @@ export default async function HomePage() {
                       // الصورة نفسها تحتوي على اسم التصنيف مطبوعاً فأسفلها
                       // (مصمَّمة هكذا مسبقاً) — لا نكرّر الاسم فنص HTML فوقها
                       // تفادياً للتكرار البصري، ونكتفي بعدد المنتجات تحتها.
-                      <Image
-                        src={imageSrc}
+                      <ProductImage
+                        // مفتاح المانيفست: مسار الصورة المصمَّمة بلا الشرطة
+                        // الأولى (كما يقرأها المولِّد من public/)، أو مسار
+                        // صورة المنتج حين يكون الغلاف من منتجات التصنيف.
+                        storagePath={brandedSrc ? brandedSrc.replace(/^\//, "") : coverPath!}
+                        resolvedSrc={imageSrc}
                         alt={category.name_ar}
-                        fill
                         sizes="(max-width: 640px) 50vw, (max-width: 1152px) 33vw, 280px"
-                        className="object-contain object-center p-2"
+                        className="absolute inset-0 h-full w-full object-contain object-center p-2"
                         // التصنيفات نزلت تحت قسم «الأكثر طلباً»، فلا تظهر
                         // منها بطاقة فوق الطيّة أصلاً. حجزها بـpriority كان
                         // سيُنزِّل ثلاث عشرة صورة بأولوية قصوى قبل JavaScript
                         // نفسه — وهو ما كان يؤخّر أول عرض وأول حدث Meta على
-                        // الشبكات الضعيفة.
-                        loading="lazy"
+                        // الشبكات الضعيفة. (الكسل افتراضي فـProductImage.)
                       />
                     ) : (
                       <span className="flex h-full w-full flex-col items-center justify-center gap-2 p-4">

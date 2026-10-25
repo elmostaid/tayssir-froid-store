@@ -48,7 +48,13 @@ describe("ProductCard — يحل رابط الصورة عبر resolveProductImag
     await renderProductCard({ product: baseProduct({ primary_image_path: storagePath }), imageUrl: storagePath });
 
     const img = screen.getByAltText("منتج اختبار") as HTMLImageElement;
-    expect(img.src).toContain(encodeURIComponent(`/${storagePath}`));
+    // كان التأكيد يفحص ترميز `/_next/image?url=…` الذي يُنتجه `<Image>`.
+    // البطاقة صارت `<picture>` + `<img>` عادي (`images.unoptimized` يُلغي
+    // أي تحسين من `<Image>` أصلاً)، فالرابط يصل كما هو — والقصد واحد:
+    // المسار المحلي يُعرض حرفياً.
+    expect(new URL(img.src).pathname).toBe(`/${storagePath}`);
+    // وهو نفسه ما يسقط إليه حارس الصور عند أي فشل.
+    expect(img.getAttribute("data-img-fallback")).toBe(`/${storagePath}`);
   });
 
   test("صورة مرفوعة حديثاً: تُعرض عبر /img/ من نطاق الموقع لا من رابط Supabase مباشرة", async () => {
@@ -60,8 +66,36 @@ describe("ProductCard — يحل رابط الصورة عبر resolveProductImag
     const img = screen.getByAltText("منتج اختبار") as HTMLImageElement;
     // Supabase على هذه الخطة تُرجع الصور بـno-cache مهما فعلنا عند الرفع،
     // فنُقدّمها من نطاقنا حيث نتحكّم في ترويسة التخزين المؤقّت.
-    expect(img.src).toContain(encodeURIComponent("/img/999999999/new-remote.webp"));
+    expect(new URL(img.src).pathname).toBe("/img/999999999/new-remote.webp");
     expect(img.src).not.toContain("example.supabase.co");
+  });
+
+  /**
+   * الحارس الأول: صورة لم يُولِّد لها المولِّد نسخاً لا تُعلَن لها نسخة.
+   * `<picture>` لا يتراجع عن 404 — فإعلان `srcset` بلا ملف = صورة مكسورة.
+   */
+  test("أصل غير مُعالَج: لا `<source>` WebP إطلاقاً، والأصل وحده يُعرض", async () => {
+    const storagePath = "product-images/TF-NOT-PROCESSED/x.jpg";
+    await renderProductCard({ product: baseProduct({ primary_image_path: storagePath }), imageUrl: storagePath });
+    const img = screen.getByAltText("منتج اختبار") as HTMLImageElement;
+    expect(img.closest("picture")?.querySelector("source")).toBeNull();
+    expect(img.getAttribute("loading")).toBe("lazy");
+  });
+
+  /**
+   * المسار كاملاً من المانيفست الحقيقي إلى الوسم: TF-CK-001 من عيّنة
+   * التجربة المُعالَجة فعلاً — لا محاكاة.
+   */
+  test("أصل مُعالَج: `<source type=\"image/webp\">` بنسختَي 360 و540، والأصل باقٍ في `<img>`", async () => {
+    const storagePath = "product-images/TF-CK-001/TF-CK-001.jpg";
+    await renderProductCard({ product: baseProduct({ primary_image_path: storagePath }), imageUrl: storagePath });
+    const img = screen.getByAltText("منتج اختبار") as HTMLImageElement;
+    const source = img.closest("picture")?.querySelector("source");
+    expect(source?.getAttribute("type")).toBe("image/webp");
+    expect(source?.getAttribute("srcset")).toMatch(/^\/_opt\/[0-9a-f]{16}-360\.webp 360w, \/_opt\/[0-9a-f]{16}-540\.webp 540w$/);
+    // الأصل لا يُستبدل: هو `src` الوسم وهدف السقوط معاً.
+    expect(new URL(img.src).pathname).toBe(`/${storagePath}`);
+    expect(img.getAttribute("data-img-fallback")).toBe(`/${storagePath}`);
   });
 
   test("بدون صورة (imageUrl=null): يعرض 'بدون صورة' بدل محاولة حل أي رابط", async () => {
