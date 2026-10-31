@@ -17,12 +17,26 @@ function makeRequest(body: unknown, extraHeaders: Record<string, string> = {}) {
       "Content-Type": "application/json",
       "user-agent": "Mozilla/5.0 test-agent",
       "x-forwarded-for": "9.9.9.9, 10.0.0.1",
-      cookie: "_fbp=fb.1.111.222; _fbc=fb.1.333.444",
+      cookie: "_fbp=fb.1.111.222; _fbc=fb.1.333.444; tf_ad_consent=granted",
       ...extraHeaders,
     },
     body: JSON.stringify(body),
   });
 }
+
+describe("POST /api/pixel-events — الموافقة شرطٌ على الخادم أيضاً", () => {
+  test.each([
+    ["لم يُجب", "_fbp=fb.1.111.222"],
+    ["رفض", "_fbp=fb.1.111.222; tf_ad_consent=denied"],
+    ["قيمة مزوّرة", "tf_ad_consent=yes"],
+  ])("%s: 204 ولا شيء يصل Meta — مهما أرسل المتصفح", async (_label, cookie) => {
+    const response = await POST(
+      makeRequest({ eventName: "PageView", eventId: "evt-x", customData: {} }, { cookie })
+    );
+    expect(response.status).toBe(204);
+    expect(sendCapiEventMock).not.toHaveBeenCalled();
+  });
+});
 
 describe("POST /api/pixel-events — إعادة توجيه أحداث Pixel (غير Purchase) إلى Meta CAPI", () => {
   test("حدث مسموح (AddToCart): يستدعي sendCapiEvent بنفس event_id، content_type/currency مفروضان من الخادم دائماً", async () => {

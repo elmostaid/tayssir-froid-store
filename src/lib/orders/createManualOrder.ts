@@ -10,6 +10,14 @@ import { isManualOrderSource, ORDER_SOURCE_LABELS, type OrderSource } from "@/li
 import { MAX_DELIVERY_COST_MAD } from "@/lib/orders/deliveryCost";
 import { belowCostMessage, findBelowCostLines } from "@/lib/orders/belowCost";
 import type { CreateOrderFieldError } from "@/lib/orders/types";
+import {
+  linkOriginByLeadId,
+  linkOriginByReference,
+  manualOrderConsent,
+  OriginReferenceError,
+} from "@/lib/orders/originReference";
+import { sendDeferredPurchase } from "@/lib/pixel/sendDeferredPurchase";
+import { CLICK_ID_KEYS } from "@/lib/privacy/attribution";
 
 /**
  * تسجيل بيع وقع **خارج الموقع**: واتساب، هاتف، أو في المحل.
@@ -23,9 +31,11 @@ import type { CreateOrderFieldError } from "@/lib/orders/types";
  *    درهم على واتساب اشترى فعلاً، ورفض تسجيله يعني إخفاء بيع حقيقي.
  *  • **لا تحديد معدّل بالهاتف.** ذلك درع ضد إغراق آلي من الإنترنت، ولا معنى
  *    له خلف تسجيل دخول إداري.
- *  • **لا Purchase إلى Meta ولا CAPI ولا حدث قياس داخلي.** هذا البيع لم يمرّ
- *    بالموقع، فحسبانه تحويلاً إعلانياً كذبٌ يُفسد نسبة التحويل وتقييم
- *    الحملات معاً.
+ *  • **لا حدث قياس داخلي، وPurchase بقناته الحقيقية فقط.** هذا البيع لم يمرّ
+ *    بالموقع، فلا يدخل قمع «زائر ← طلب». أما Meta فتعرفه بيعةَ `chat`/
+ *    `phone_call`/`physical_store` — لا بيعة موقع أبداً — وبشرطين:
+ *    موافقة (موروثة من مرجع Q-/W- أو مُصرَّح بها)، ومفتاح
+ *    `META_OFFLINE_PURCHASES_ENABLED`. انظر sendDeferredPurchase.ts.
  *  • **لا إشعار "طلب جديد".** المدير هو من كتبه للتو.
  *
  * والحالة `confirmed` لا `new`: هذا الطلب مُتَّفق عليه مع الزبون قبل إدخاله
@@ -56,6 +66,16 @@ export type ManualOrderInput = {
    * خاسراً — انظر lib/orders/belowCost.ts.
    */
   acknowledgeBelowCost?: boolean;
+  /**
+   * الزيارة التي جاءت منها الطلبية: مرجع يلصقه المدير من المحادثة (Q-/W-)،
+   * أو lead محدَّد عند التحويل. غيابها ⇒ طلبية بلا مصدر معروف — لا يُفترَض.
+   */
+  origin?: { reference?: string | null; leadId?: number | null };
+  /**
+   * المدير يصرّح بأنه سأل الزبون فوافق على مشاركة بيانات البيعة (الهاتف
+   * مُشفَّراً) مع Meta. لا يُفترَض أبداً: الافتراضي false.
+   */
+  adConsentDeclared?: boolean;
 };
 
 export type ManualOrderResult =
@@ -152,6 +172,34 @@ export async function createManualOrder(input: ManualOrderInput): Promise<Manual
 
       await writeNewOrderLines(trx, order.id, lines);
 
+      // الربط بالزيارة داخل نفس المعاملة: مرجع خاطئ يُلغي الطلبية كاملة
+      // (لا مخزون محجوز ولا رقم مستهلك) بدل طلبية بإسناد ناقص.
+      const origin = input.origin?.leadId
+        ? await linkOriginByLeadId(trx, order.id, input.origin.leadId)
+        : await linkOriginByReference(trx, order.id, input.origin?.reference);
+      const consent = manualOrderConsent(origin, input.adConsentDeclared === true);
+      // بلا موافقة موروثة: لا هوية، ولا معرّفات نقر — تبقى UTM وحدها.
+      const stripClickIds = (value: unknown) =>
+        value && typeof value === "object" && !consent.copyIdentity
+          ? Object.fromEntries(
+              Object.entries(value as Record<string, unknown>).filter(
+                ([key]) => !(CLICK_ID_KEYS as readonly string[]).includes(key)
+              )
+            )
+          : value;
+      if (origin || consent.adConsent !== "unknown") {
+        await trx`
+          update public.orders set
+            origin_reference = ${origin?.reference ?? null},
+            attribution_first = ${origin?.attributionFirst ? trx.json(stripClickIds(origin.attributionFirst) as never) : null},
+            attribution_last = ${origin?.attributionLast ? trx.json(stripClickIds(origin.attributionLast) as never) : null},
+            capi_identity = ${consent.copyIdentity && origin?.capiIdentity ? trx.json(origin.capiIdentity as never) : null},
+            ad_consent = ${consent.adConsent},
+            ad_consent_source = ${consent.source}
+          where id = ${order.id}
+        `;
+      }
+
       await trx`
         insert into public.order_status_history (order_id, status, note, changed_by)
         values (
@@ -164,6 +212,11 @@ export async function createManualOrder(input: ManualOrderInput): Promise<Manual
       return order;
     });
 
+    // البيعة مؤكَّدة منذ إنشائها: تُرسَل الآن — أو تُرفض بسببها (لا موافقة،
+    // المفتاح مُطفأ) دون أي أثر. `await` لا `void`: دالة serverless قد
+    // تتجمّد بعد الجواب، ولا ترمي أبداً، فلا خطر على الطلبية المحفوظة.
+    await sendDeferredPurchase(created.id);
+
     return {
       ok: true,
       orderId: created.id,
@@ -171,6 +224,9 @@ export async function createManualOrder(input: ManualOrderInput): Promise<Manual
       publicReference: created.public_reference,
     };
   } catch (error) {
+    if (error instanceof OriginReferenceError) {
+      return { ok: false, errors: [{ field: "originReference", message: error.message }] };
+    }
     if (error instanceof StockConflictError) {
       return {
         ok: false,

@@ -157,7 +157,10 @@ export async function retryDeferredPurchase(orderId: number): Promise<OrderActio
   if (outcome.reason === "already_sent") return { error: null };
 
   const why: Record<string, string> = {
-    not_website: "هذا طلب يدوي — مبيعات الموقع وحدها تُرسَل إلى Meta.",
+    no_consent: "لا موافقة مسجَّلة من الزبون على مشاركة بياناته مع Meta — لا يُرسَل شيء.",
+    offline_disabled:
+      "مبيعات خارج الموقع لا تُرسَل إلى Meta بعد (META_OFFLINE_PURCHASES_ENABLED مُطفأ حتى إذن CNDP).",
+    unknown_channel: "قناة الطلب غير معروفة — لا نخمّن قناة لـMeta.",
     not_a_sale: "الطلب ليس في حالة بيعة مؤكَّدة.",
     nothing_to_send: "لا سطر محجوز في هذا الطلب.",
     order_not_found: "الطلب غير موجود.",
@@ -642,6 +645,8 @@ export async function createManualOrderAction(
     createdByEmail: auth.email,
     items: readLines(formData),
     acknowledgeBelowCost: formData.get("acknowledgeBelowCost") === "on",
+    origin: { reference: String(formData.get("originReference") ?? "") || null },
+    adConsentDeclared: formData.get("adConsentDeclared") === "on",
   });
 
   if (!result.ok) {
@@ -691,6 +696,7 @@ export async function convertWhatsappLeadAction(
     createdByEmail: auth.email,
     items: readLines(formData),
     acknowledgeBelowCost: formData.get("acknowledgeBelowCost") === "on",
+    adConsentDeclared: formData.get("adConsentDeclared") === "on",
   });
 
   if (!result.ok) {

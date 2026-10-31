@@ -1,6 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import { WhatsAppInquiryLink } from "@/components/WhatsAppInquiryLink";
 
 /**
  * زرّ واتساب في الترويسة — **للاستفسار وحده**، لا لإتمام الطلب.
@@ -30,17 +31,23 @@ import { usePathname } from "next/navigation";
  */
 const HIDDEN_ON = new Set(["/checkout"]);
 
-export function HeaderWhatsAppButton({ href }: { href: string }) {
+export function HeaderWhatsAppButton({
+  whatsappNumber,
+  inquiryMessage,
+}: {
+  whatsappNumber: string;
+  inquiryMessage: string;
+}) {
   const pathname = usePathname();
 
   if (HIDDEN_ON.has(pathname)) return null;
 
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label="واتساب للاستفسار"
+    <WhatsAppInquiryLink
+      whatsappNumber={whatsappNumber}
+      message={inquiryMessage}
+      kind="general"
+      ariaLabel="واتساب للاستفسار"
       className="inline-flex min-h-11 shrink-0 flex-col items-center justify-center gap-1 rounded-2xl border border-whatsapp bg-white px-2 py-1 text-whatsapp-dark transition-colors hover:bg-whatsapp hover:text-white active:scale-95 sm:flex-row sm:gap-2 sm:rounded-full sm:px-4 sm:py-2"
     >
       <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden="true">
@@ -52,6 +59,6 @@ export function HeaderWhatsAppButton({ href }: { href: string }) {
       <span className="hidden whitespace-nowrap text-sm font-semibold sm:inline">
         واتساب للاستفسار
       </span>
-    </a>
+    </WhatsAppInquiryLink>
   );
 }

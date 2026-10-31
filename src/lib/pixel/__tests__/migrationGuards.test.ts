@@ -82,12 +82,15 @@ async function seedOrder(options: {
     insert into public.orders (
       customer_name, customer_phone, customer_city, items_subtotal,
       status, source, confirmed_at,
-      meta_purchase_sent_at, ga_purchase_sent_at
+      meta_purchase_sent_at, ga_purchase_sent_at, ad_consent
     ) values (
       'زبون حرس الترحيل', ${`${PHONE_PREFIX}${String(phoneCounter).padStart(4, "0")}`},
       'الدار البيضاء', 240, ${options.status}, ${options.source}, now(),
       ${options.metaGuard ? sql`now()` : null},
-      ${options.gaGuard ? sql`now()` : null}
+      ${options.gaGuard ? sql`now()` : null},
+      -- طلبات الموقع هنا تصف زائراً وافق: الحرس هو المختبَر لا الموافقة.
+      -- واليدوي يبقى 'unknown' كما تركه الترحيل في الإنتاج.
+      ${options.source === "website" ? "granted" : "unknown"}
     )
     returning id
   `;
@@ -116,7 +119,9 @@ describe("الترحيل: لا بيعة بأثر رجعي", () => {
 
     // يُرفَض مرتين: المصدر يدوي، والحرس مستهلك. فحتى لو رُفع أحدهما يبقى
     // الآخر — وهو ما يجعل الطلب 177 مستحيلاً إرساله ثانيةً.
-    expect(await sendDeferredPurchase(orderId)).toEqual({ sent: false, reason: "not_website" });
+    // طلب يدوي تاريخي: لا موافقة مسجَّلة (الترحيل يتركها 'unknown') — فلا
+    // شيء يُرسَل، قبل أن يصل الأمر حتى إلى الحرس.
+    expect(await sendDeferredPurchase(orderId)).toEqual({ sent: false, reason: "no_consent" });
     expect(sendCapiEventMock).not.toHaveBeenCalled();
   });
 

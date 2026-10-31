@@ -1,5 +1,7 @@
 import Image from "next/image";
-import { buildWhatsAppLink } from "@/lib/whatsapp";
+import { WhatsAppInquiryLink } from "@/components/WhatsAppInquiryLink";
+import { PrivacySettingsLink } from "@/components/ConsentBanner";
+import Link from "next/link";
 import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 import { safeQuery } from "@/lib/safeQuery";
 import { DELIVERY_AVAILABILITY, DELIVERY_COST_TIMING } from "@/lib/delivery";
@@ -11,10 +13,6 @@ export async function SiteFooter() {
     "SiteFooter.getSettings"
   );
 
-  const whatsappLink = buildWhatsAppLink(
-    settings.whatsappNumber,
-    `مرحباً، عندي سؤال بخصوص منتجات ${settings.storeName}.`
-  );
 
   return (
     <footer className="border-t border-neutral-200 bg-white">
@@ -38,14 +36,20 @@ export async function SiteFooter() {
           🚚 {DELIVERY_AVAILABILITY}. {DELIVERY_COST_TIMING}. الدفع عند الاستلام
           فقط.
         </p>
-        <a
-          href={whatsappLink}
-          target="_blank"
-          rel="noopener noreferrer"
+        <WhatsAppInquiryLink
+          whatsappNumber={settings.whatsappNumber}
+          message={`مرحباً، عندي سؤال بخصوص منتجات ${settings.storeName}.`}
+          kind="general"
           className="mt-3 inline-block font-medium text-whatsapp-dark underline"
         >
           تواصل معنا عبر واتساب
-        </a>
+        </WhatsAppInquiryLink>
+        <p className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-500">
+          <Link href="/privacy" className="underline">
+            سياسة الخصوصية
+          </Link>
+          <PrivacySettingsLink />
+        </p>
       </div>
     </footer>
   );

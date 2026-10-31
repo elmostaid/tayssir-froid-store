@@ -14,6 +14,9 @@ import { notifyNewOrder } from "@/lib/notifications/notifyNewOrder";
 import { sendCapiEvent } from "@/lib/pixel/capi";
 import { writeServerOrderSubmittedEvent } from "@/lib/analytics/serverPurchase";
 import { resolveFbc } from "@/lib/pixel/fbc";
+import { capiIdentityFromRequest } from "@/lib/pixel/identity";
+import { isAdConsentGranted, parseAdConsent } from "@/lib/privacy/consent";
+import { attributionForConsent } from "@/lib/privacy/attribution";
 import { toInternationalDigits } from "@/lib/phone";
 import { getSiteUrl } from "@/lib/siteUrl";
 import { customerAddressOrNull } from "@/lib/orders/customerAddress";
@@ -161,7 +164,9 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
 
     // النسب يُنقّى هنا لا في المتصفح: ما يصل من العميل غير موثوق. تنقية
     // فاشلة تعني NULL — لا استثناء ولا طلباً مرفوضاً.
-    const attribution = sanitizeAttribution(input.attribution);
+    // معرّفات النقر لا تُخزَّن بلا موافقة؛ وسوم UTM تبقى (إحصاء لا يُعرّف أحداً).
+    const adConsent = parseAdConsent(input.requestContext?.adConsent);
+    const attribution = attributionForConsent(sanitizeAttribution(input.attribution), adConsent);
     const attributionFirst = attribution?.first ? sql.json(attribution.first) : null;
     const attributionLast = attribution?.last ? sql.json(attribution.last) : null;
 
@@ -194,22 +199,11 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     // و`fbc` تُبنى هنا لا هناك: الكوكي حاضرة الآن إن كانت، و`fbclid` مع
     // لحظته محفوظان في الإسناد — فنُثبّت القيمة الصحيحة في وقتها بدل
     // محاولة استرجاعها بعد ساعات.
+    //
+    // بلا موافقة لا لقطة إطلاقاً — انظر lib/pixel/identity.ts.
     const lastTouch = attribution?.last ?? attribution?.first ?? null;
-    const capiIdentity = sql.json({
-      fbp: input.requestContext?.fbp ?? null,
-      fbc:
-        resolveFbc({
-          cookieFbc: input.requestContext?.fbc,
-          fbclid: lastTouch?.fbclid,
-          fbclidAt: lastTouch?.at,
-          host: input.requestContext?.eventSourceUrl,
-        }) ?? null,
-      fbclid: lastTouch?.fbclid ?? null,
-      fbclidAt: lastTouch?.at ?? null,
-      clientIpAddress: input.requestContext?.clientIpAddress ?? null,
-      clientUserAgent: input.requestContext?.clientUserAgent ?? null,
-      eventSourceUrl: input.requestContext?.eventSourceUrl ?? null,
-    });
+    const identitySnapshot = capiIdentityFromRequest(input.requestContext, lastTouch);
+    const capiIdentity = identitySnapshot ? sql.json(identitySnapshot) : null;
 
     // ونفس العلّة في GA4: شراء GA4 انتقل هو أيضاً إلى لحظة التأكيد، فصار
     // `client_id` و`session_id` يلزمان بعد ساعات من مغادرة الزبون. وهما
@@ -225,13 +219,15 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
           customer_name, customer_phone, customer_city, customer_address,
           customer_notes, items_subtotal, delivery_fee, final_total,
           status, source, idempotency_key,
-          attribution_first, attribution_last, capi_identity, ga_identity
+          attribution_first, attribution_last, capi_identity, ga_identity,
+          ad_consent, ad_consent_source
         ) values (
           ${input.customer.fullName.trim()}, ${normalizedPhone}, ${input.customer.city.trim()},
           ${customerAddressOrNull(input.customer.address)}, ${input.customer.notes?.trim() || null},
           ${subtotal}, ${deliveryFee}, ${finalTotal},
           'new', 'website', ${input.idempotencyKey},
-          ${attributionFirst}, ${attributionLast}, ${capiIdentity}, ${gaIdentity}
+          ${attributionFirst}, ${attributionLast}, ${capiIdentity}, ${gaIdentity},
+          ${adConsent}, ${adConsent === "unknown" ? null : "website_banner"}
         )
         on conflict (idempotency_key) do nothing
         returning id, public_reference, order_number
@@ -370,7 +366,9 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       // `event_id` = idempotencyKey، ومعرّف الشراء المؤجَّل مختلف عنه
       // (`purchase:<orderId>`) عمداً: معرّفٌ واحد لحدثين يعني أن Meta قد
       // تعتبر أحدهما تكراراً للآخر فتُسقطه.
-      void sendCapiEvent({
+      //
+      // وبلا موافقة لا شيء يُرسَل إلى Meta — لا هذا ولا الشراء لاحقاً.
+      if (isAdConsentGranted(adConsent)) void sendCapiEvent({
         eventName: "OrderSubmitted",
         eventId: input.idempotencyKey,
         eventSourceUrl: input.requestContext?.eventSourceUrl,

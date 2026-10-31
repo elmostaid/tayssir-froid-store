@@ -46,6 +46,12 @@ export type AdminOrderDetail = AdminOrderListItem & {
   /** سبب آخر فشل في تسليم البيعة. غير فارغ = يحتاج إعادة محاولة. */
   metaPurchaseError: string | null;
   metaPurchaseAttempts: number;
+  /** القناة التي أُرسلت بها البيعة فعلاً (website/chat/phone_call/...). */
+  metaPurchaseActionSource: string | null;
+  /** Q-/W- المربوط — الزيارة التي جاءت منها الطلبية، إن عُرفت. */
+  originReference: string | null;
+  adConsent: string;
+  adConsentSource: string | null;
 };
 
 export type AdminOrderItem = {
@@ -284,6 +290,10 @@ export async function getAdminOrderById(id: number): Promise<AdminOrderDetail | 
       meta_purchase_accepted_at: string | null;
       meta_purchase_error: string | null;
       meta_purchase_attempts: number;
+      meta_purchase_action_source: string | null;
+      origin_reference: string | null;
+      ad_consent: string;
+      ad_consent_source: string | null;
     }[]
   >`
     select id, order_number, public_reference, status, customer_name,
@@ -291,7 +301,8 @@ export async function getAdminOrderById(id: number): Promise<AdminOrderDetail | 
       items_subtotal, carton_count, delivery_fee, actual_delivery_cost,
       final_total, created_at, source,
       attribution_first, attribution_last,
-      meta_purchase_accepted_at, meta_purchase_error, meta_purchase_attempts
+      meta_purchase_accepted_at, meta_purchase_error, meta_purchase_attempts,
+      meta_purchase_action_source, origin_reference, ad_consent, ad_consent_source
     from public.orders where id = ${id} limit 1
   `;
   const row = rows[0];
@@ -323,6 +334,10 @@ export async function getAdminOrderById(id: number): Promise<AdminOrderDetail | 
     metaPurchaseAcceptedAt: row.meta_purchase_accepted_at,
     metaPurchaseError: row.meta_purchase_error,
     metaPurchaseAttempts: row.meta_purchase_attempts,
+    metaPurchaseActionSource: row.meta_purchase_action_source,
+    originReference: row.origin_reference,
+    adConsent: row.ad_consent,
+    adConsentSource: row.ad_consent_source,
   };
 }
 

@@ -4,13 +4,16 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import type { Category } from "@/lib/types";
+import { WhatsAppInquiryLink } from "@/components/WhatsAppInquiryLink";
 
 export function MobileNav({
   categories,
-  whatsappLink,
+  whatsappNumber,
+  inquiryMessage,
 }: {
   categories: Category[];
-  whatsappLink: string;
+  whatsappNumber: string;
+  inquiryMessage: string;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -111,15 +114,15 @@ export function MobileNav({
               </nav>
             )}
 
-            <a
-              href={whatsappLink}
-              target="_blank"
-              rel="noopener noreferrer"
+            <WhatsAppInquiryLink
+              whatsappNumber={whatsappNumber}
+              message={inquiryMessage}
+              kind="general"
               onClick={() => setOpen(false)}
               className="mt-6 flex min-h-11 items-center justify-center gap-2 rounded-full bg-whatsapp px-4 py-2.5 text-sm font-semibold text-white"
             >
               تواصل عبر واتساب
-            </a>
+            </WhatsAppInquiryLink>
           </div>
           </div>,
           document.body

@@ -128,6 +128,7 @@ async function makeOrder(options: { withAd: boolean }): Promise<number> {
     idempotencyKey: randomUUID(),
     attribution: { first: touch, last: touch },
     requestContext: {
+      adConsent: "granted",
       clientIpAddress: CUSTOMER_IP,
       clientUserAgent: CUSTOMER_UA,
       fbp: CUSTOMER_FBP,
@@ -449,17 +450,16 @@ describe("الإلغاء يحفظ ولا يمحو", () => {
   });
 });
 
-describe("مبيعات الموقع وحدها", () => {
-  test("طلب يدوي (source ≠ website): لا شراء إطلاقاً", async () => {
-    // الطلب 177 في الإنتاج: طلب واتساب يدوي أرسل Purchase بلا fbp ولا fbc
-    // ولا IP ولا User-Agent. بيعةٌ حقيقية، لكن لا تُنسَب لإعلان ولا تُعلّم
-    // Meta شيئاً — وتُضخّم عدّاد التحويلات فتُفسد كل ROAS نحسبه بعدها.
+describe("كل القنوات، كلٌّ باسمه", () => {
+  test("بيعة واتساب والمفتاح مُطفأ: لا شيء قبل إذن CNDP، ولا حرس يُستهلك", async () => {
+    // الطلب 177 في الإنتاج: بيعة واتساب خرجت Purchase بـaction_source
+    // website. الآن لا تخرج إلا بقناتها، ولا تخرج أصلاً قبل المفتاح.
     const orderId = await makeOrder({ withAd: true });
     await sql`update public.orders set source = 'whatsapp' where id = ${orderId}`;
     sendCapiEventMock.mockClear();
 
     expect((await updateOrderStatus({ error: null }, statusForm(orderId, "confirmed"))).error).toBeNull();
-    expect(await sendDeferredPurchase(orderId)).toEqual({ sent: false, reason: "not_website" });
+    expect(await sendDeferredPurchase(orderId)).toEqual({ sent: false, reason: "offline_disabled" });
     expect(purchaseCalls()).toHaveLength(0);
 
     // ولا يُستهلك الحرس: الطلب لم يُرسَل عنه شيء، فلا شيء "أُرسل".

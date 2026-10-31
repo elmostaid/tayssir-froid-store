@@ -12,7 +12,8 @@ import { resolveProductImageUrl, resolveProductImageUrls } from "@/lib/storage/r
 import { ProductImage } from "@/components/ProductImage";
 import { THUMB_WIDTHS } from "@/lib/images/variants";
 import { formatMad } from "@/lib/format";
-import { buildProductWhatsAppLink } from "@/lib/whatsapp";
+import { productInquiryMessage } from "@/lib/whatsapp";
+import { WhatsAppInquiryLink } from "@/components/WhatsAppInquiryLink";
 import { DELIVERY_AVAILABILITY, DELIVERY_COST_TIMING } from "@/lib/delivery";
 import { safeQuery } from "@/lib/safeQuery";
 import { AddToCartForm } from "@/components/AddToCartForm";
@@ -89,7 +90,7 @@ export default async function ProductPage({ params }: Props) {
   const imageUrlByPath = await resolveProductImageUrls(images.map((img) => img.storage_path));
   const resolveGalleryUrl = (storagePath: string) => imageUrlByPath[storagePath] ?? resolveImageUrl(storagePath);
   const mainImageUrl = mainImage ? resolveGalleryUrl(mainImage.storage_path) : null;
-  const whatsappLink = buildProductWhatsAppLink(settings.whatsappNumber, product.name_ar, product.sku);
+  const inquiryMessage = productInquiryMessage(product.name_ar, product.sku);
   const isUnavailable = product.status === "out_of_stock" || product.stock_quantity <= 0;
   const statusLabel =
     product.status === "out_of_stock"
@@ -269,14 +270,15 @@ export default async function ProductPage({ params }: Props) {
             </div>
           )}
 
-          <a
-            href={whatsappLink}
-            target="_blank"
-            rel="noopener noreferrer"
+          <WhatsAppInquiryLink
+            whatsappNumber={settings.whatsappNumber}
+            message={inquiryMessage}
+            kind="product"
+            productSku={product.sku}
             className="mt-4 flex w-full items-center justify-center gap-2 rounded-full border border-whatsapp px-5 py-3 text-sm font-semibold text-whatsapp-dark transition-colors hover:bg-whatsapp hover:text-white"
           >
             استفسار عبر واتساب
-          </a>
+          </WhatsAppInquiryLink>
 
           <ul className="mt-4 flex flex-col gap-1.5 rounded-xl bg-neutral-100 p-4 text-xs text-neutral-600">
             <li>البيع بالجملة فقط</li>

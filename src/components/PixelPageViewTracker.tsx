@@ -1,28 +1,37 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { usePathname } from "next/navigation";
-import { trackPageView } from "@/lib/pixel/fbq";
+import { ensureMetaPixelLoaded, trackPageView } from "@/lib/pixel/fbq";
+import { readAdConsentFromDocument, subscribeAdConsent } from "@/lib/privacy/consent";
 
 /**
- * PageView بلا تكرار: سكريبت Pixel الأساسي (MetaPixel.tsx) يُهيّئ fbq فقط
- * (fbq('init', ...)) بلا أي fbq('track','PageView') تلقائي داخله — هذا
- * المكوّن وحده مسؤول عن إطلاق PageView، مرة واحدة فقط لكل عرض صفحة حقيقي:
- * التحميل الأول (mount)، وكل تنقّل لاحق بين الصفحات عبر next/link (App
- * Router لا يُعيد تحميل السكريبت أو الصفحة كاملة عند هذا التنقّل، فبدون هذا
- * المكوّن لن يُسجَّل PageView إطلاقاً لتلك الزيارات اللاحقة). usePathname()
- * كافٍ (بلا useSearchParams) — تغيّر querystring فقط بلا تغيّر المسار لا
- * يُعتبَر عرض صفحة جديداً هنا.
+ * تحميل Pixel وPageView — بعد الموافقة وحدها، ومرة واحدة لكل عرض صفحة.
+ *
+ * التحميل هنا لا في سكريبت مستقل لسببين: الموافقة تُقرأ في المتصفح فقط،
+ * وPageView يجب أن يأتي **بعد** `fbq('init')` لا قبله. فالمكوّن نفسه يُحمّل
+ * Pixel ثم يُطلق الحدث، بترتيب مضمون. وحين يوافق الزائر وهو في صفحة ما،
+ * يُطلَق PageView تلك الصفحة لحظتها — لا ينتظر التنقّل التالي.
+ *
+ * usePathname() كافٍ (بلا useSearchParams) — تغيّر querystring فقط بلا
+ * تغيّر المسار لا يُعتبَر عرض صفحة جديداً.
  */
-export function PixelPageViewTracker() {
+function getServerSnapshot() {
+  return "unknown" as const;
+}
+
+export function PixelPageViewTracker({ pixelId }: { pixelId: string }) {
   const pathname = usePathname();
+  const consent = useSyncExternalStore(subscribeAdConsent, readAdConsentFromDocument, getServerSnapshot);
   const lastTrackedPathname = useRef<string | null>(null);
 
   useEffect(() => {
+    if (consent !== "granted") return;
     if (lastTrackedPathname.current === pathname) return;
     lastTrackedPathname.current = pathname;
+    ensureMetaPixelLoaded(pixelId);
     trackPageView();
-  }, [pathname]);
+  }, [pathname, consent, pixelId]);
 
   return null;
 }

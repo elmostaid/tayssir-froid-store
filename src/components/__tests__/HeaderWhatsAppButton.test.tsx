@@ -8,7 +8,9 @@ vi.mock("next/navigation", () => ({
   usePathname: () => pathname.current,
 }));
 
-const HREF = "https://api.whatsapp.com/send/?phone=212600000000&text=%D8%B3%D8%A4%D8%A7%D9%84";
+const NUMBER = "0600000000";
+const MESSAGE = "سؤال";
+const HREF = "https://api.whatsapp.com/send/?phone=212600000000&text=%D8%B3%D8%A4%D8%A7%D9%84&type=phone_number&app_absent=0";
 
 beforeEach(() => {
   pathname.current = "/";
@@ -20,7 +22,7 @@ afterEach(() => {
 
 describe("HeaderWhatsAppButton", () => {
   test("يقول وظيفته صراحةً — استفسار، لا إتمام طلب", () => {
-    render(<HeaderWhatsAppButton href={HREF} />);
+    render(<HeaderWhatsAppButton whatsappNumber={NUMBER} inquiryMessage={MESSAGE} />);
 
     const link = screen.getByRole("link", { name: "واتساب للاستفسار" });
     expect(link.getAttribute("href")).toBe(HREF);
@@ -37,7 +39,7 @@ describe("HeaderWhatsAppButton", () => {
   // لا يكفي إخفاؤه بـCSS: ما لا يجب أن يُضغط لا يجب أن يوجد في الصفحة.
   test("يغيب تماماً من صفحة إتمام الطلب — ولا حتى في الـDOM", () => {
     pathname.current = "/checkout";
-    const { container } = render(<HeaderWhatsAppButton href={HREF} />);
+    const { container } = render(<HeaderWhatsAppButton whatsappNumber={NUMBER} inquiryMessage={MESSAGE} />);
 
     expect(container.querySelector("a")).toBeNull();
     expect(screen.queryByRole("link")).toBeNull();
@@ -46,7 +48,7 @@ describe("HeaderWhatsAppButton", () => {
   test("يبقى حاضراً في بقية صفحات المتجر، ومنها السلة", () => {
     for (const path of ["/", "/cart", "/product/door-lock", "/search"]) {
       pathname.current = path;
-      const { container } = render(<HeaderWhatsAppButton href={HREF} />);
+      const { container } = render(<HeaderWhatsAppButton whatsappNumber={NUMBER} inquiryMessage={MESSAGE} />);
       expect(container.querySelector("a")).not.toBeNull();
       cleanup();
     }

@@ -172,6 +172,31 @@ export function ManualOrderForm({
               </select>
             )}
           </label>
+          {!leadId && (
+            <label className="text-xs text-neutral-700">
+              <span className="mb-1 block font-semibold">مرجع المحادثة (اختياري)</span>
+              <input
+                key={`origin-${draftKey}`}
+                type="text"
+                name="originReference"
+                dir="ltr"
+                placeholder="Q-XXXXXXXXXX أو W-XXXXXXXX"
+                maxLength={2000}
+                className="min-h-11 w-full rounded-lg border border-neutral-300 px-3 text-sm"
+              />
+              <span className="mt-1 block text-[11px] text-neutral-500">
+                الصق المرجع (أو الرسالة كاملة) من محادثة واتساب. يربط الطلبية بالزيارة التي
+                جاءت منها؛ القناة تبقى كما اخترتها.
+              </span>
+            </label>
+          )}
+          <label className="flex items-start gap-2 text-xs text-neutral-700 sm:col-span-2">
+            <input type="checkbox" name="adConsentDeclared" className="mt-0.5 h-4 w-4" />
+            <span>
+              سألتُ الزبون ووافق صراحةً على مشاركة بيانات هذه البيعة (الهاتف مُشفَّراً) مع Meta
+              لقياس الإعلانات. اتركه فارغاً إن لم تسأل — لا يُرسَل شيء.
+            </span>
+          </label>
           <label className="text-xs text-neutral-700">
             <span className="mb-1 block font-semibold">ملاحظة (اختياري)</span>
             <input

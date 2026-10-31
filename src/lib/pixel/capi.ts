@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { getMetaPixelId } from "@/lib/pixel/config";
+import type { MetaActionSource } from "@/lib/pixel/actionSource";
 
 // Meta Conversions API — يُكمِّل Pixel (المتصفح) بإرسال نفس الأحداث من
 // الخادم مباشرة. عمداً بلا "import 'server-only'" هنا (خلافاً لـ
@@ -47,6 +48,8 @@ export type CapiUserData = {
   fbp?: string;
   /** كوكي _fbc من متصفح الزبون، أو مبنيّة من fbclid (lib/pixel/fbc.ts). */
   fbc?: string;
+  /** رمز البلد ISO-3166 من حرفين (مثلاً "ma") — يُجزَّأ هنا. */
+  country?: string;
   /**
    * مُعرّف ثابت للزبون عند المتجر — يُجزَّأ هنا، لا يُمرَّر مُجزَّأً.
    *
@@ -84,6 +87,11 @@ export type SendCapiEventParams = {
   /** نفس event_id المُستعمَل فحدث Pixel المطابق (من جهة المتصفح) — إلزامي لعمل deduplication بشكل صحيح. */
   eventId: string;
   eventSourceUrl?: string;
+  /**
+   * أين أُغلقت البيعة فعلاً — انظر lib/pixel/actionSource.ts. الافتراضي
+   * `website` لكل أحداث المتصفح (PageView/ViewContent/...) وحدها.
+   */
+  actionSource?: MetaActionSource;
   userData?: CapiUserData;
   customData: Record<string, unknown>;
 };
@@ -141,6 +149,7 @@ export async function sendCapiEvent(params: SendCapiEventParams): Promise<CapiSe
     if (params.userData?.externalId) {
       userData.external_id = [hashForCapi(params.userData.externalId)];
     }
+    if (params.userData?.country) userData.country = [hashForCapi(params.userData.country)];
 
     const testEventCode = getTestEventCode();
 
@@ -154,7 +163,7 @@ export async function sendCapiEvent(params: SendCapiEventParams): Promise<CapiSe
               : Date.now()) / 1000
           ),
           event_id: params.eventId,
-          action_source: "website",
+          action_source: params.actionSource ?? "website",
           event_source_url: params.eventSourceUrl,
           user_data: userData,
           custom_data: params.customData,

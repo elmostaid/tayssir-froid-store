@@ -18,7 +18,7 @@ import { getCategoryImage } from "@/lib/categoryImages";
 import { DELIVERY_AVAILABILITY } from "@/lib/delivery";
 import { resolveProductImageUrls } from "@/lib/storage/resolveProductImageUrl";
 import { TOP_DEMAND_SKUS } from "@/lib/catalog/topDemand";
-import { buildWhatsAppLink } from "@/lib/whatsapp";
+import { WhatsAppInquiryLink } from "@/components/WhatsAppInquiryLink";
 import { safeQuery } from "@/lib/safeQuery";
 
 // تُعرض هذه الصفحة ديناميكياً عند كل طلب (وليس عند البناء) لأن بيانات
@@ -140,10 +140,7 @@ export default async function HomePage() {
   // رسالة استفسار خالصة. كانت «أريد الاطلاع على منتجاتكم **بالجملة**» —
   // وهي تُناقض ما صارت الصفحة تقوله، وتضع في فم زائرٍ يبحث عن قطعة واحدة
   // كلمةً لا تعنيه. الرقم نفسه لم يتغيّر (من الإعدادات كما كان).
-  const whatsappLink = buildWhatsAppLink(
-    settings.whatsappNumber,
-    "مرحباً، عندي استفسار بخصوص منتجاتكم."
-  );
+  const inquiryMessage = "مرحباً، عندي استفسار بخصوص منتجاتكم.";
   const trustPoints = buildTrustPoints();
 
   return (
@@ -192,14 +189,14 @@ export default async function HomePage() {
             نفس القاعدة المطبَّقة في الترويسة: البرتقالي للشراء، والأخضر
             الخفيف للسؤال.
           */}
-          <a
-            href={whatsappLink}
-            target="_blank"
-            rel="noopener noreferrer"
+          <WhatsAppInquiryLink
+            whatsappNumber={settings.whatsappNumber}
+            message={inquiryMessage}
+            kind="general"
             className="flex min-h-11 items-center justify-center gap-2 rounded-full border border-whatsapp bg-white px-5 py-2.5 text-sm font-semibold text-whatsapp-dark transition-colors hover:bg-whatsapp hover:text-white"
           >
             استفسار عبر واتساب
-          </a>
+          </WhatsAppInquiryLink>
         </div>
       </section>
 

@@ -4,6 +4,12 @@ import { resolveFbc } from "@/lib/pixel/fbc";
 import { toInternationalDigits } from "@/lib/phone";
 import { SALE_CONFIRMED_STATUSES, type OrderStatus } from "@/lib/orders/orderStatus";
 import {
+  actionSourceForOrderSource,
+  isOfflinePurchaseSharingEnabled,
+  type MetaActionSource,
+} from "@/lib/pixel/actionSource";
+import { isAdConsentGranted } from "@/lib/privacy/consent";
+import {
   isGaMeasurementProtocolConfigured,
   sendGaPurchaseEvent,
 } from "@/lib/ga/measurementProtocol";
@@ -42,13 +48,18 @@ import {
  * المشحونة) وصل `shipped` دون أن يمرّ بـ`confirmed` قطّ. فأي حالة من
  * `SALE_CONFIRMED_STATUSES` اعترافٌ بأن البيعة تمّت.
  *
- * **4. مبيعات الموقع وحدها.** الطلب اليدوي (واتساب/هاتف/محل) لا يُرسل
- * شيئاً: أول بيعة مرّت على هذا المسار كانت طلباً يدوياً (177) فأرسلت
- * Purchase بلا `fbp` ولا `fbc` ولا IP ولا User-Agent — أي بيعةٌ لا تُنسَب
- * لإعلان ولا تُعلّم Meta شيئاً، لكنها تُضخّم عدّاد التحويلات وتُفسد كل ROAS
- * نحسبه بعدها. والطلب الذي **بدأ في الموقع وأُغلق في واتساب** يبقى داخل
- * المبيعات: `source` يُكتب 'website' لحظة إنشائه في الموقع، ولا يتغيّر بعدها
- * أبداً مهما تمّ الإغلاق على واتساب.
+ * **4. كل القنوات، كلٌّ باسمه.** كانت مبيعات الموقع وحدها تُرسَل، لأن أول
+ * بيعة يدوية (177) خرجت بـ`action_source: website` بلا أي هوية — بيعةُ
+ * محادثة متنكّرة في بيعة موقع، تُضخّم العدّاد وتُفسد كل ROAS بعدها. فصار
+ * الإغلاق حلّاً أسوأ من العطب: 42 بيعة واتساب مؤكَّدة في 13–31 أكتوبر لم
+ * تعرف Meta منها شيئاً. الآن كل بيعة تُرسَل **بقناتها الحقيقية**
+ * (`chat`/`phone_call`/`physical_store`، انظر lib/pixel/actionSource.ts)،
+ * فلا تُحسب أبداً «بيعة موقع»، ومعها `fbc` فقط إن ثبت من زيارة مربوطة
+ * بمرجع Q-/W-. والطلب الذي **بدأ في الموقع** يبقى `website` كما كان.
+ *
+ * **4b. بوّابتان قبل أي إرسال.** موافقة الزبون (`orders.ad_consent`) —
+ * بلاها لا شيء، أياً كانت القناة. ومبيعات خارج الموقع وراء
+ * `META_OFFLINE_PURCHASES_ENABLED` المُطفأ افتراضياً حتى إذن CNDP.
  *
  * **5. الحجز قبل الإرسال، والتحرير عند الفشل.** العمود يُطالَب به ذرّياً
  * (`where ... is null`) قبل أي نداء، فاستدعاءان متوازيان لا يُرسلان مرتين.
@@ -87,7 +98,9 @@ export type GaIdentitySnapshot = {
 export type DeferredPurchaseSkipReason =
   | "already_sent"
   | "not_a_sale"
-  | "not_website"
+  | "no_consent"
+  | "offline_disabled"
+  | "unknown_channel"
   | "order_not_found"
   | "nothing_to_send"
   | "attempts_exhausted"
@@ -117,6 +130,7 @@ type OrderRow = {
   public_reference: string;
   customer_phone: string | null;
   confirmed_at: Date | null;
+  ad_consent: string;
   capi_identity: CapiIdentitySnapshot | null;
   ga_identity: GaIdentitySnapshot | null;
   attribution_last: { fbclid?: string | null; at?: number | null } | null;
@@ -175,14 +189,12 @@ export async function sendDeferredPurchase(orderId: number): Promise<DeferredPur
   try {
     const [order] = await sql<OrderRow[]>`
       select id, status, source, items_subtotal, public_reference, customer_phone,
-             confirmed_at, capi_identity, ga_identity, attribution_last, attribution_first
+             confirmed_at, ad_consent, capi_identity, ga_identity, attribution_last,
+             attribution_first
       from public.orders
       where id = ${orderId}
     `;
     if (!order) return { sent: false, reason: "order_not_found" };
-
-    // مبيعات الموقع وحدها (القرار 4 أعلاه).
-    if (order.source !== "website") return { sent: false, reason: "not_website" };
 
     if (!SALE_CONFIRMED_STATUSES.includes(order.status)) {
       return { sent: false, reason: "not_a_sale" };
@@ -214,7 +226,10 @@ export async function sendDeferredPurchase(orderId: number): Promise<DeferredPur
       return { sent: false, reason: "nothing_to_send", error: why };
     }
 
-    const meta = await deliverMetaPurchase(order, items);
+    const gate = metaPurchaseGate(order);
+    const meta: MetaDelivery = gate.ok
+      ? await deliverMetaPurchase(order, items, gate.actionSource)
+      : { kind: "skipped", reason: gate.reason };
     // GA4 مستقلّة بحرسها: لو قُبلت Meta سابقاً وفشلت GA4، تُعاد هذه وحدها.
     const gaSent = await deliverGaPurchase(order, items);
 
@@ -232,9 +247,29 @@ export async function sendDeferredPurchase(orderId: number): Promise<DeferredPur
   }
 }
 
+/**
+ * هل يحقّ لهذه البيعة أن تصل Meta، وبأي قناة؟ قرارٌ نقيّ بلا قاعدة ولا
+ * شبكة، يسبق الحجز: ما لا يحقّ إرساله لا يستهلك محاولة ولا يكتب خطأً.
+ */
+export function metaPurchaseGate(order: {
+  source: string;
+  ad_consent: string;
+}):
+  | { ok: true; actionSource: MetaActionSource }
+  | { ok: false; reason: Extract<DeferredPurchaseSkipReason, "no_consent" | "offline_disabled" | "unknown_channel"> } {
+  const actionSource = actionSourceForOrderSource(order.source);
+  if (!actionSource) return { ok: false, reason: "unknown_channel" };
+  if (!isAdConsentGranted(order.ad_consent)) return { ok: false, reason: "no_consent" };
+  if (actionSource !== "website" && !isOfflinePurchaseSharingEnabled()) {
+    return { ok: false, reason: "offline_disabled" };
+  }
+  return { ok: true, actionSource };
+}
+
 async function deliverMetaPurchase(
   order: OrderRow,
-  items: ReservedLine[]
+  items: ReservedLine[],
+  actionSource: MetaActionSource
 ): Promise<MetaDelivery> {
   // الحجز الذرّي: من يفوز بهذا الصفّ وحده يُرسل.
   const claimed = await sql<{ id: number }[]>`
@@ -290,7 +325,9 @@ async function deliverMetaPurchase(
     // (actions.ts يكتبه في نفس المعاملة، وcreateManualOrder عند الإنشاء)،
     // والرجوع إلى الآن احتياط لا أكثر.
     eventTimeMs: order.confirmed_at ? new Date(order.confirmed_at).getTime() : Date.now(),
-    eventSourceUrl: identity.eventSourceUrl ?? undefined,
+    actionSource,
+    // رابط الصفحة يخصّ بيعة الموقع وحدها: بيعة المحادثة لم تقع على صفحة.
+    eventSourceUrl: actionSource === "website" ? identity.eventSourceUrl ?? undefined : undefined,
     userData: {
       phone,
       // المُعرّف الثابت هو الهاتف نفسه: ثابت عبر الجلسات والأجهزة،
@@ -300,6 +337,9 @@ async function deliverMetaPurchase(
       clientUserAgent: identity.clientUserAgent ?? undefined,
       fbp: identity.fbp ?? undefined,
       fbc: fbc ?? undefined,
+      // كل زبائن المتجر في المغرب (الهاتف نفسه مغربي إلزامياً، انظر
+      // isValidMoroccanPhone) — معلومة مؤكَّدة لا تخمين، وترفع المطابقة.
+      country: "ma",
     },
     customData: {
       content_ids: items.map((i) => i.sku_snapshot ?? ""),
@@ -319,7 +359,8 @@ async function deliverMetaPurchase(
   if (result.ok) {
     await sql`
       update public.orders
-      set meta_purchase_accepted_at = now(), meta_purchase_error = null
+      set meta_purchase_accepted_at = now(), meta_purchase_error = null,
+          meta_purchase_action_source = ${actionSource}
       where id = ${order.id}
     `;
     return { kind: "sent", eventId };

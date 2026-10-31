@@ -1,6 +1,11 @@
 "use client";
 
 import type { AttributionTouch, OrderAttribution } from "@/lib/attribution/types";
+import {
+  AD_CONSENT_EVENT,
+  isAdConsentGranted,
+  readAdConsentFromDocument,
+} from "@/lib/privacy/consent";
 
 /**
  * التقاط مصدر الزائر وحفظه حتى لحظة الطلب.
@@ -22,6 +27,58 @@ const LAST_KEY = "tf_attr_last";
 
 /** نافذة أول لمسة: بعدها تُعتبر متقادمة ويُعاد تأسيسها. */
 const FIRST_TOUCH_MAX_AGE_DAYS = 90;
+
+/**
+ * معرّفات النقر (`fbclid`/`gclid`/`ttclid`) لا تُكتب في المتصفح قبل الموافقة.
+ *
+ * هي مُعرّفات إشهار شخصية، والتخزين على جهاز الزائر «إيداع» تشترط له
+ * مداولة CNDP D-939-2025 موافقة مسبقة. لكن الزائر يصل عادةً من الإعلان
+ * ويرى شريط الموافقة **في نفس الصفحة**؛ لو أسقطنا المعرّف فوراً لضاع إسناد
+ * من يوافق بعد ثانيتين. فيبقى في الذاكرة وحدها (لا تخزين) حتى يُجيب: موافقة
+ * ⇒ يُكتب في اللمسة التي جاء معها، رفض أو مغادرة ⇒ يختفي مع الصفحة.
+ */
+type ClickIds = Pick<AttributionTouch, "fbclid" | "gclid" | "ttclid"> & { at: number };
+let pendingClickIds: ClickIds | null = null;
+
+function withoutClickIdsUnlessConsented(touch: AttributionTouch): AttributionTouch {
+  if (isAdConsentGranted(readAdConsentFromDocument())) return touch;
+  if (touch.fbclid || touch.gclid || touch.ttclid) {
+    pendingClickIds = { fbclid: touch.fbclid, gclid: touch.gclid, ttclid: touch.ttclid, at: touch.at };
+  }
+  return { ...touch, fbclid: null, gclid: null, ttclid: null };
+}
+
+/** عند الموافقة: معرّفات اللمسة المنتظرة تُكتب فيها هي وحدها (نفس `at`). */
+export function persistPendingClickIds(): void {
+  if (!pendingClickIds || !isAdConsentGranted(readAdConsentFromDocument())) return;
+  const pending = pendingClickIds;
+  pendingClickIds = null;
+  for (const key of [FIRST_KEY, LAST_KEY]) {
+    const stored = readStored(key);
+    if (stored && stored.at === pending.at) {
+      writeStored(key, { ...stored, fbclid: pending.fbclid, gclid: pending.gclid, ttclid: pending.ttclid });
+    }
+  }
+}
+
+/** عند الرفض أو السحب: لا معرّف نقرة يبقى على الجهاز. */
+export function clearStoredClickIds(): void {
+  pendingClickIds = null;
+  for (const key of [FIRST_KEY, LAST_KEY]) {
+    const stored = readStored(key);
+    if (stored && (stored.fbclid || stored.gclid || stored.ttclid)) {
+      writeStored(key, { ...stored, fbclid: null, gclid: null, ttclid: null });
+    }
+  }
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener(AD_CONSENT_EVENT, (event) => {
+    const value = (event as CustomEvent<string>).detail;
+    if (value === "granted") persistPendingClickIds();
+    else clearStoredClickIds();
+  });
+}
 
 function readStored(key: string): AttributionTouch | null {
   try {
@@ -123,8 +180,9 @@ export function captureAttribution(): void {
 
     if (!stored || expired) {
       // لا أول لمسة بعد (أو تقادمت): حتى الزيارة المباشرة تستحق التسجيل.
-      const touch = readTouchFromLocation(true);
-      if (touch) {
+      const raw = readTouchFromLocation(true);
+      if (raw) {
+        const touch = withoutClickIdsUnlessConsented(raw);
         writeStored(FIRST_KEY, touch);
         writeStored(LAST_KEY, touch);
       }
@@ -132,8 +190,8 @@ export function captureAttribution(): void {
     }
 
     // أول لمسة محفوظة ولا تُمسّ. آخر لمسة تتغيّر عند مصدر جديد وحده.
-    const touch = readTouchFromLocation(false);
-    if (touch) writeStored(LAST_KEY, touch);
+    const raw = readTouchFromLocation(false);
+    if (raw) writeStored(LAST_KEY, withoutClickIdsUnlessConsented(raw));
   } catch {
     // القياس لا يُسقط صفحة أبداً.
   }

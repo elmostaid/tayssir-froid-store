@@ -41,6 +41,10 @@ const fixtureOrder: AdminOrderDetail = {
   metaPurchaseAcceptedAt: null,
   metaPurchaseError: null,
   metaPurchaseAttempts: 0,
+  metaPurchaseActionSource: null,
+  originReference: null,
+  adConsent: "unknown",
+  adConsentSource: null,
 };
 
 const fixtureItems: AdminOrderItem[] = [

@@ -69,6 +69,7 @@ function baseInput(overrides: Partial<Parameters<typeof createOrder>[0]> = {}) {
     },
     idempotencyKey: randomUUID(),
     requestContext: {
+      adConsent: "granted",
       analyticsSessionId: randomUUID(),
       analyticsContext: sessionContext(),
       gaClientId: "1234567890.1700000000",
@@ -280,7 +281,7 @@ describe("الشراء يُسجَّل من الخادم، لا من المتصف
   test("بلا كوكي جلسة: الطلب يمرّ، والحدث الداخلي وحده يُتخطّى بلا ضجيج", async () => {
     const input = baseInput();
     input.items = [{ productId: inStockProductId, variantId: null, quantity: 1 }];
-    input.requestContext = { gaClientId: "1234567890.1700000000" };
+    input.requestContext = { gaClientId: "1234567890.1700000000", adConsent: "granted" };
 
     const result = await createOrder(input);
     expect(result.ok).toBe(true);

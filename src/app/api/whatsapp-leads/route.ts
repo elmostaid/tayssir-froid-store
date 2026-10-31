@@ -42,6 +42,7 @@ export async function POST(request: Request) {
     idempotencyKey: String(body.idempotencyKey ?? ""),
     attribution: sanitizeAttribution(body.attribution),
     analyticsSessionId: requestContext?.analyticsSessionId,
+    requestContext,
   });
 
   return NextResponse.json(result);

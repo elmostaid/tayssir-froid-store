@@ -68,6 +68,10 @@ export async function convertWhatsappLeadToOrder(
       actualDeliveryCost: input.actualDeliveryCost,
       createdByEmail: input.createdByEmail,
       acknowledgeBelowCost: input.acknowledgeBelowCost,
+      // الـlead نفسه هو الزيارة: إسناده وهويته وموافقته تنتقل للطلبية داخل
+      // معاملة الإنشاء (originReference.ts). كانت تسقط هنا كاملة.
+      origin: { leadId: input.leadId },
+      adConsentDeclared: input.adConsentDeclared,
     });
   } catch (error) {
     // فشل غير متوقّع — نُعيد الحالة كما كانت قبل رفع الاستثناء، فلا يبقى

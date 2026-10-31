@@ -6,6 +6,7 @@ import { AttributionTracker } from "@/components/AttributionTracker";
 import { MobileCartBar } from "@/components/MobileCartBar";
 import { EARLY_ADD_SCRIPT } from "@/lib/cart/earlyAdd";
 import { ImageFallbackScript } from "@/components/ImageFallbackScript";
+import { ConsentBanner } from "@/components/ConsentBanner";
 
 export default function StorefrontLayout({
   children,
@@ -40,6 +41,8 @@ export default function StorefrontLayout({
             مساحة فارغة أسفل صفحة لا شريط فيها. */}
         <MobileCartBar />
       </div>
+      {/* لا Pixel قبل الاختيار — انظر ConsentBanner وlib/privacy/consent.ts. */}
+      <ConsentBanner />
     </CartProvider>
   );
 }

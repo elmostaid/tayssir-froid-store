@@ -2,7 +2,14 @@ import { sql } from "@/lib/db";
 import { resolveOrderLines, WHATSAPP_LEAD_LINE_RULES } from "@/lib/orders/resolveLines";
 import { orderReferenceFromKey } from "@/lib/orders/orderMessage";
 import { sanitizeAttribution } from "@/lib/attribution/types";
-import type { CartItemInput, CreateOrderFieldError } from "@/lib/orders/types";
+import type {
+  CartItemInput,
+  CreateOrderFieldError,
+  CreateOrderRequestContext,
+} from "@/lib/orders/types";
+import { parseAdConsent } from "@/lib/privacy/consent";
+import { attributionForConsent } from "@/lib/privacy/attribution";
+import { capiIdentityFromRequest } from "@/lib/pixel/identity";
 import type { OrderAttribution } from "@/lib/attribution/types";
 
 /**
@@ -23,6 +30,11 @@ export type CreateWhatsappLeadInput = {
   idempotencyKey: string;
   attribution?: OrderAttribution | null;
   analyticsSessionId?: string;
+  /**
+   * كوكيز الزائر لحظة الضغط: الموافقة، وهوية المتصفح إن وافق. تُحفظ مع
+   * الـlead لأن الطلبية تُنشأ لاحقاً من لوحة الإدارة — بمتصفح المدير.
+   */
+  requestContext?: CreateOrderRequestContext;
 };
 
 export type CreateWhatsappLeadResult =
@@ -74,17 +86,24 @@ export async function createWhatsappLead(
       lineTotal: line.lineTotal,
     }));
 
-    const attribution = sanitizeAttribution(input.attribution);
+    const adConsent = parseAdConsent(input.requestContext?.adConsent);
+    const attribution = attributionForConsent(sanitizeAttribution(input.attribution), adConsent);
+    const identity = capiIdentityFromRequest(
+      input.requestContext,
+      attribution?.last ?? attribution?.first ?? null
+    );
     const attributionFirst = attribution?.first ? sql.json(attribution.first) : null;
     const attributionLast = attribution?.last ? sql.json(attribution.last) : null;
 
     const inserted = await sql<{ id: number }[]>`
       insert into public.whatsapp_leads (
         reference, idempotency_key, items, items_subtotal,
-        attribution_first, attribution_last, analytics_session_id
+        attribution_first, attribution_last, analytics_session_id,
+        capi_identity, ad_consent
       ) values (
         ${reference}, ${input.idempotencyKey}, ${sql.json(itemsSnapshot)}, ${subtotal},
-        ${attributionFirst}, ${attributionLast}, ${input.analyticsSessionId ?? null}
+        ${attributionFirst}, ${attributionLast}, ${input.analyticsSessionId ?? null},
+        ${identity ? sql.json(identity) : null}, ${adConsent}
       )
       on conflict (idempotency_key) do nothing
       returning id

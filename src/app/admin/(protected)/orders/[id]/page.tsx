@@ -189,11 +189,43 @@ export default async function AdminOrderDetailPage({ params }: Props) {
         </div>
       )}
 
-      {/* تسليم البيعة إلى Meta — يظهر لطلبات الموقع وحدها، لأنها وحدها
-          تُرسِل Purchase. فشل التسليم صامت بطبعه: لا الزبون يراه ولا
-          المدير، ولا يظهر إلا كنقص في تقارير الحملة بعد أيام. */}
-      {order.source === "website" &&
-        (order.metaPurchaseAcceptedAt || order.metaPurchaseError) && (
+      {/* المصدر والموافقة وتسليم البيعة إلى Meta — لكل القنوات. فشل التسليم
+          صامت بطبعه: لا الزبون يراه ولا المدير، ولا يظهر إلا كنقص في تقارير
+          الحملة بعد أيام. والموافقة تُعرض لأنها سبب «لم تُرسَل» الأكثر شيوعاً
+          بعد اليوم، ولا يجوز أن يُقرأ غيابها عطلاً. */}
+      <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-4 text-sm">
+        <h2 className="text-sm font-semibold text-neutral-800">القياس</h2>
+        <dl className="mt-2 grid gap-1 text-xs text-neutral-700">
+          <div>
+            <dt className="inline font-semibold">مرجع الزيارة: </dt>
+            <dd className="inline" dir="ltr">{order.originReference ?? "—"}</dd>
+          </div>
+          <div>
+            <dt className="inline font-semibold">موافقة المشاركة مع Meta: </dt>
+            <dd className="inline">
+              {order.adConsent === "granted"
+                ? `نعم (${order.adConsentSource === "admin_declared" ? "صرّح بها المدير" : order.adConsentSource === "inherited" ? "من زيارة الموقع" : "شريط الموقع"})`
+                : order.adConsent === "denied"
+                  ? "رفض"
+                  : "غير معروفة — لا يُرسَل شيء"}
+            </dd>
+          </div>
+          {order.metaPurchaseActionSource && (
+            <div>
+              <dt className="inline font-semibold">أُرسلت كـ: </dt>
+              <dd className="inline" dir="ltr">{order.metaPurchaseActionSource}</dd>
+            </div>
+          )}
+        </dl>
+        {order.status === "cancelled" && order.metaPurchaseAcceptedAt && (
+          <p className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            ⚠ أُلغيت هذه الطلبية بعد أن قبلت Meta بيعتها. Meta لا تتيح سحب حدث شراء، فهي
+            تبقى في تقاريرها — احسبها عند مقارنة أرقام Meta بالمبيعات الفعلية.
+          </p>
+        )}
+      </div>
+
+      {(order.metaPurchaseAcceptedAt || order.metaPurchaseError) && (
           <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-4">
             <h2 className="text-sm font-semibold text-neutral-800">تسليم البيعة إلى Meta</h2>
             {order.metaPurchaseAcceptedAt ? (

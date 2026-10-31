@@ -1,5 +1,6 @@
 import type { OrderAttribution } from "@/lib/attribution/types";
 import type { AnalyticsSessionContext } from "@/lib/analytics/events";
+import type { AdConsent } from "@/lib/privacy/consent";
 
 export type CartItemInput = {
   productId: number;
@@ -36,6 +37,11 @@ export type CreateOrderRequestContext = {
   gaClientId?: string;
   /** من كوكي `_ga_<container>` — يربطه بجلسته وحملتها. */
   gaSessionId?: string;
+  /**
+   * اختيار الزائر في شريط الموافقة (كوكي `tf_ad_consent`). غيابه = `unknown`،
+   * أي لا هوية متصفح تُحفظ ولا حدث يُرسَل إلى Meta — انظر lib/privacy/consent.ts.
+   */
+  adConsent?: AdConsent;
 };
 
 export type CreateOrderInput = {

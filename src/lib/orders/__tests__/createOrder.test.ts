@@ -412,6 +412,7 @@ describe("createOrder — Meta Conversions API: OrderSubmitted لا Purchase", (
       items: [{ productId: demoCapi.id, variantId: null, quantity: 60 }], // 60*20=1200 >= 1000
       customer,
       idempotencyKey,
+      requestContext: { adConsent: "granted" },
     };
 
     const result = await createOrder(input);
@@ -457,6 +458,7 @@ describe("createOrder — Meta Conversions API: OrderSubmitted لا Purchase", (
       items: [{ productId: demoCapi.id, variantId: null, quantity: 60 }],
       customer: baseCustomer(),
       idempotencyKey,
+      requestContext: { adConsent: "granted" },
     };
 
     const first = await createOrder(input);
@@ -476,6 +478,7 @@ describe("createOrder — Meta Conversions API: OrderSubmitted لا Purchase", (
       items: [{ productId: demoCapi.id, variantId: null, quantity: 60 }],
       customer: { ...baseCustomer(), phone },
       idempotencyKey: randomUUID(),
+      requestContext: { adConsent: "granted" },
     };
 
     const result = await createOrder(input);
@@ -483,5 +486,36 @@ describe("createOrder — Meta Conversions API: OrderSubmitted لا Purchase", (
 
     const call = sendCapiEventMock.mock.calls[0][0];
     expect(call.userData.phone).toBe(`212${phone.slice(1)}`);
+  });
+
+  test("بلا موافقة: الطلب يُنشأ كاملاً، ولا شيء يصل Meta، ولا هوية متصفح تُحفظ", async () => {
+    sendCapiEventMock.mockClear();
+    const demoCapi = await getRawProduct("TEST-FIXTURE-CAPI");
+    const result = await createOrder({
+      items: [{ productId: demoCapi.id, variantId: null, quantity: 60 }],
+      customer: baseCustomer(),
+      idempotencyKey: randomUUID(),
+      attribution: {
+        first: null,
+        last: {
+          utmSource: "facebook", utmMedium: "paid", utmCampaign: "TF_TEST", utmContent: null,
+          utmTerm: null, fbclid: "IwAR-test-click", gclid: null, ttclid: null,
+          landingPath: "/water-heaters", referrerHost: null, at: Date.now(),
+        },
+      },
+      requestContext: { clientIpAddress: "41.1.1.1", clientUserAgent: "UA", fbp: "fb.1.1.1" },
+    });
+    expect(result.ok).toBe(true);
+    expect(sendCapiEventMock).not.toHaveBeenCalled();
+
+    const [row] = await sql<{ capi_identity: unknown; ad_consent: string; attribution_last: Record<string, unknown> }[]>`
+      select capi_identity, ad_consent, attribution_last from public.orders
+      where public_reference = ${result.ok ? result.publicReference : ""}
+    `;
+    expect(row.ad_consent).toBe("unknown");
+    expect(row.capi_identity).toBeNull();
+    // الحملة تبقى (إحصاء)، ومعرّف النقرة الشخصي لا يُخزَّن.
+    expect(row.attribution_last.utmCampaign).toBe("TF_TEST");
+    expect(row.attribution_last.fbclid).toBeNull();
   });
 });

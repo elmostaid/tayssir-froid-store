@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { sendCapiEvent } from "@/lib/pixel/capi";
 import { resolveFbc } from "@/lib/pixel/fbc";
+import { AD_CONSENT_COOKIE, isAdConsentGranted } from "@/lib/privacy/consent";
 
 // رابط خاص داخلي: fbq.ts (طبقة Pixel من المتصفح) يستدعيه مباشرة بعد كل
 // PageView/ViewContent/AddToCart/InitiateCheckout — يُعيد إرسال نفس الحدث
@@ -70,6 +71,12 @@ export async function POST(request: NextRequest) {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "invalid JSON" }, { status: 400 });
+  }
+
+  // بلا موافقة لا شيء يصل Meta — مهما أرسل المتصفح. 204 لا خطأ: المتصفح
+  // لا يُعيد المحاولة، ولا شيء في الواجهة ينتظر هذا الجواب.
+  if (!isAdConsentGranted(request.cookies.get(AD_CONSENT_COOKIE)?.value)) {
+    return new NextResponse(null, { status: 204 });
   }
 
   const eventName = typeof body.eventName === "string" ? body.eventName : "";

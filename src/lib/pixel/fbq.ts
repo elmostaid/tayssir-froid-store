@@ -3,6 +3,7 @@
 // بصمت إذا لم يُحمَّل سكريبت Pixel بعد (NEXT_PUBLIC_META_PIXEL_ID غير مضبوط،
 // أو حاجب إعلانات، أو السكريبت لم يُنفَّذ بعد) — بلا أي استثناء يُسقط الصفحة.
 import { getOrderAttribution } from "@/lib/attribution/capture";
+import { isAdConsentGranted, readAdConsentFromDocument } from "@/lib/privacy/consent";
 
 declare global {
   interface Window {
@@ -48,8 +49,45 @@ function newEventId(): string {
     : `evt-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+/**
+ * تحميل Pixel — يُستدعى بعد الموافقة وحدها (PixelPageViewTracker).
+ *
+ * نفس شيفرة Meta الرسمية حرفياً، منقولة من سكريبت مضمَّن إلى دالة: تعرّف
+ * `fbq` طابوراً فوراً (فالأحداث قبل وصول fbevents.js لا تضيع) ثم تُنزّل
+ * المكتبة. مرة واحدة: وجود `window.fbq` يعني أنها حُمّلت.
+ */
+export function ensureMetaPixelLoaded(pixelId: string): void {
+  if (typeof window === "undefined" || typeof document === "undefined") return;
+  if (typeof window.fbq === "function") return;
+  if (!isAdConsentGranted(readAdConsentFromDocument())) return;
+  type FbqStub = ((...args: unknown[]) => void) & {
+    callMethod?: (...args: unknown[]) => void;
+    queue: unknown[][];
+    push: FbqStub;
+    loaded: boolean;
+    version: string;
+  };
+  const stub = function (...args: unknown[]) {
+    if (stub.callMethod) stub.callMethod(...args);
+    else stub.queue.push(args);
+  } as FbqStub;
+  stub.push = stub;
+  stub.loaded = true;
+  stub.version = "2.0";
+  stub.queue = [];
+  window.fbq = stub;
+  (window as unknown as { _fbq?: FbqStub })._fbq ??= stub;
+  const script = document.createElement("script");
+  script.async = true;
+  script.src = "https://connect.facebook.net/en_US/fbevents.js";
+  document.head.appendChild(script);
+  stub("init", pixelId);
+}
+
 function callFbq(eventName: string, params: Record<string, unknown>, eventId: string): void {
   if (typeof window === "undefined" || typeof window.fbq !== "function") return;
+  // من سحب موافقته في نفس الصفحة: Pixel محمَّل، لكن لا حدث بعد السحب.
+  if (!isAdConsentGranted(readAdConsentFromDocument())) return;
   window.fbq("track", eventName, params, { eventID: eventId });
 }
 
@@ -58,6 +96,8 @@ function callFbq(eventName: string, params: Record<string, unknown>, eventId: st
 // لا يظهر للزبون إطلاقاً ولا يؤثِّر على fbq() نفسها (نُفِّذت أصلاً قبله).
 function relayToCapi(eventName: string, eventId: string, customData: Record<string, unknown>): void {
   if (typeof window === "undefined" || typeof fetch !== "function") return;
+  // الخادم يرفض بلا موافقة على أي حال (api/pixel-events)؛ هنا نتفادى الطلب.
+  if (!isAdConsentGranted(readAdConsentFromDocument())) return;
   // الـfbclid يُمرَّر مع كل حدث لسبب واحد: `fbc` على الخادم كان يُقرأ من
   // كوكي `_fbc` فقط، وهي كوكي تكتبها Meta Pixel نفسها. فإذا حُجبت الـPixel
   // وصل الحدث بلا إسناد لأي إعلان ولم يظهر في تقارير الحملة. والقيمة محفوظة

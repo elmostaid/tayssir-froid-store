@@ -4,7 +4,6 @@ import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 import { safeQuery } from "@/lib/safeQuery";
 import { ProductImage } from "@/components/ProductImage";
 import { THUMB_WIDTHS } from "@/lib/images/variants";
-import { buildWhatsAppLink } from "@/lib/whatsapp";
 import { CartBadge } from "@/components/CartBadge";
 import { HeaderWhatsAppButton } from "@/components/HeaderWhatsAppButton";
 import { MobileNav } from "@/components/MobileNav";
@@ -17,10 +16,8 @@ export async function SiteHeader() {
     safeQuery(() => getSettings(), FALLBACK_SETTINGS, "SiteHeader.getSettings"),
   ]);
 
-  const whatsappLink = buildWhatsAppLink(
-    settings.whatsappNumber,
-    `مرحباً، عندي سؤال بخصوص منتجات ${settings.storeName}.`
-  );
+  // الرابط نفسه يُبنى في المتصفح لحظة الضغط، بمرجع Q- — انظر WhatsAppInquiryLink.
+  const inquiryMessage = `مرحباً، عندي سؤال بخصوص منتجات ${settings.storeName}.`;
 
   return (
     <header className="sticky top-0 z-40 border-b border-neutral-200 bg-white/95 backdrop-blur">
@@ -30,7 +27,11 @@ export async function SiteHeader() {
           المُحرَّرة هي ما يجعل نصّي «لإتمام الطلب» و«استفسار» يُضافان بلا
           أن يخسر الشعار أو البحث أو القائمة شيئاً. */}
       <div className="mx-auto flex max-w-6xl items-center gap-2 px-3 py-2 sm:gap-3 sm:px-4 sm:py-2.5">
-        <MobileNav categories={categories} whatsappLink={whatsappLink} />
+        <MobileNav
+          categories={categories}
+          whatsappNumber={settings.whatsappNumber}
+          inquiryMessage={inquiryMessage}
+        />
 
         <Link href="/" className="flex min-w-0 flex-col items-start gap-0.5">
           {/*
@@ -93,7 +94,10 @@ export async function SiteHeader() {
           <CartBadge />
           {/* الاستفسار، لا إتمام الطلب — ويغيب في /checkout. التفاصيل في
               components/HeaderWhatsAppButton.tsx. */}
-          <HeaderWhatsAppButton href={whatsappLink} />
+          <HeaderWhatsAppButton
+            whatsappNumber={settings.whatsappNumber}
+            inquiryMessage={inquiryMessage}
+          />
         </div>
       </div>
 
