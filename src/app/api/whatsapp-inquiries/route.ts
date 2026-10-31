@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createWhatsappInquiry } from "@/lib/orders/createWhatsappInquiry";
 import { readOrderRequestContext } from "@/lib/orders/requestContext";
+import { isInquiryRateLimited } from "@/lib/orders/rateLimit";
 
 export const dynamic = "force-dynamic";
 
@@ -19,13 +20,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
   }
 
+  const requestContext = await readOrderRequestContext();
+  // سكربت يملأ الجدول لا يمرّ؛ والزبون لا يرى شيئاً (واتساب فُتح أصلاً).
+  if (isInquiryRateLimited(requestContext?.clientIpAddress)) {
+    return NextResponse.json({ ok: false, error: "rate_limited" }, { status: 429 });
+  }
+
   const result = await createWhatsappInquiry({
     idempotencyKey: body.idempotencyKey,
     kind: body.kind,
     productSku: body.productSku,
     pagePath: body.pagePath,
     attribution: body.attribution,
-    requestContext: await readOrderRequestContext(),
+    requestContext,
   });
 
   const status = result.ok

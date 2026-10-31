@@ -425,6 +425,24 @@ describe("7. تأكيد ثم إلغاء", () => {
 });
 
 describe("الاستفسار نفسه", () => {
+  test("لائحة الإدارة: المرجع والحملة والموافقة، ورقم الطلبية بعد الربط", async () => {
+    const { listRecentWhatsappInquiries } = await import("@/lib/queries/whatsappLeads");
+    const { reference } = await inquiry({ consent: "granted", withAd: true });
+    const result = await createManualOrder(manualInput({ origin: { reference } }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const row = (await listRecentWhatsappInquiries(200)).find((q) => q.reference === reference);
+    expect(row).toMatchObject({
+      kind: "product",
+      productSku: SKU,
+      utmCampaign: "TF_WATER_HEATERS_OCT2026",
+      adConsent: "granted",
+      convertedOrderId: result.orderId,
+      convertedOrderNumber: result.orderNumber,
+    });
+  });
+
   test("ضغطتان بنفس المفتاح: استفسار واحد ونفس المرجع", async () => {
     const key = randomUUID();
     const input = { idempotencyKey: key, kind: "general", requestContext: { adConsent: "unknown" as const } };

@@ -3,7 +3,11 @@
 // بصمت إذا لم يُحمَّل سكريبت Pixel بعد (NEXT_PUBLIC_META_PIXEL_ID غير مضبوط،
 // أو حاجب إعلانات، أو السكريبت لم يُنفَّذ بعد) — بلا أي استثناء يُسقط الصفحة.
 import { getOrderAttribution } from "@/lib/attribution/capture";
-import { isAdConsentGranted, readAdConsentFromDocument } from "@/lib/privacy/consent";
+import {
+  AD_CONSENT_EVENT,
+  isAdConsentGranted,
+  readAdConsentFromDocument,
+} from "@/lib/privacy/consent";
 
 declare global {
   interface Window {
@@ -82,6 +86,15 @@ export function ensureMetaPixelLoaded(pixelId: string): void {
   script.src = "https://connect.facebook.net/en_US/fbevents.js";
   document.head.appendChild(script);
   stub("init", pixelId);
+}
+
+// سحب الموافقة في نفس الصفحة: Pixel المحمَّل يُبلَّغ بالسحب أيضاً (واجهة
+// Meta الرسمية `fbq('consent', 'revoke')`)، لا الصمت من جهتنا وحده.
+if (typeof window !== "undefined") {
+  window.addEventListener(AD_CONSENT_EVENT, (event) => {
+    if ((event as CustomEvent<string>).detail === "granted") return;
+    if (typeof window.fbq === "function") window.fbq("consent", "revoke");
+  });
 }
 
 function callFbq(eventName: string, params: Record<string, unknown>, eventId: string): void {

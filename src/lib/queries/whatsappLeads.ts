@@ -107,3 +107,55 @@ export async function getWhatsappLeadById(id: number): Promise<WhatsappLeadDetai
     attributionLast: row.attribution_last,
   };
 }
+
+export type WhatsappInquiryListItem = {
+  reference: string;
+  kind: "general" | "product";
+  productSku: string | null;
+  pagePath: string | null;
+  utmCampaign: string | null;
+  adConsent: string;
+  convertedOrderId: number | null;
+  convertedOrderNumber: string | null;
+  createdAt: string;
+};
+
+/**
+ * آخر الاستفسارات (Q-) — ليجد المدير المرجع حتى لو حذفه الزبون من رسالته:
+ * الوقت والصفحة والمنتج تكفي لمطابقة محادثة. لا هاتف ولا اسم هنا: الاستفسار
+ * لا يحملهما أصلاً.
+ */
+export async function listRecentWhatsappInquiries(limit = 50): Promise<WhatsappInquiryListItem[]> {
+  const rows = await sql<
+    {
+      reference: string;
+      kind: "general" | "product";
+      product_sku: string | null;
+      page_path: string | null;
+      utm_campaign: string | null;
+      ad_consent: string;
+      converted_order_id: number | null;
+      order_number: string | null;
+      created_at: string;
+    }[]
+  >`
+    select q.reference, q.kind, q.product_sku, q.page_path,
+           coalesce(q.attribution_last->>'utmCampaign', q.attribution_first->>'utmCampaign') as utm_campaign,
+           q.ad_consent, q.converted_order_id, o.order_number, q.created_at
+    from public.whatsapp_inquiries q
+    left join public.orders o on o.id = q.converted_order_id
+    order by q.created_at desc
+    limit ${limit}
+  `;
+  return rows.map((r) => ({
+    reference: r.reference,
+    kind: r.kind,
+    productSku: r.product_sku,
+    pagePath: r.page_path,
+    utmCampaign: r.utm_campaign,
+    adConsent: r.ad_consent,
+    convertedOrderId: r.converted_order_id,
+    convertedOrderNumber: r.order_number,
+    createdAt: r.created_at,
+  }));
+}

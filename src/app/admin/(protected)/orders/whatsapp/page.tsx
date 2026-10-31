@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAdminUser } from "@/lib/auth/requireAdmin";
-import { listWhatsappLeads, type WhatsappLeadStatus } from "@/lib/queries/whatsappLeads";
+import {
+  listRecentWhatsappInquiries,
+  listWhatsappLeads,
+  type WhatsappLeadStatus,
+} from "@/lib/queries/whatsappLeads";
 import { formatMad } from "@/lib/format";
 import { ORDER_SOURCE_BADGE_CLASSES } from "@/lib/orders/orderSource";
 
@@ -41,7 +45,10 @@ export default async function WhatsappLeadsPage({ searchParams }: Props) {
       ? status
       : undefined;
 
-  const leads = await listWhatsappLeads({ status: validStatus });
+  const [leads, inquiries] = await Promise.all([
+    listWhatsappLeads({ status: validStatus }),
+    listRecentWhatsappInquiries(),
+  ]);
 
   return (
     <div>
@@ -132,6 +139,59 @@ export default async function WhatsappLeadsPage({ searchParams }: Props) {
               </div>
             </Link>
           ))}
+        </div>
+      )}
+
+      {/* استفسارات «استفسار» وأيقونات المنتجات (Q-). المرجع يُلصق في خانة
+          «مرجع المحادثة» عند إنشاء الطلبية اليدوية؛ هذه اللائحة لمن حذف
+          الزبون المرجع من رسالته: الوقت والصفحة والمنتج تكفي للمطابقة. */}
+      <h2 className="mt-8 text-base font-bold text-neutral-800">استفسارات واتساب</h2>
+      <p className="mt-1 text-xs text-neutral-500">
+        آخر {inquiries.length} استفساراً. الصق المرجع في «مرجع المحادثة» عند تسجيل الطلبية — القناة
+        تبقى واتساب، والمرجع يربطها بالزيارة التي جاءت منها.
+      </p>
+      {inquiries.length === 0 ? (
+        <p className="mt-3 text-sm text-neutral-500">لا استفسارات بعد.</p>
+      ) : (
+        <div className="mt-3 overflow-x-auto rounded-xl border border-neutral-200 bg-white">
+          <table className="w-full text-xs">
+            <thead className="bg-neutral-50 text-neutral-600">
+              <tr>
+                <th className="p-2 text-right">المرجع</th>
+                <th className="p-2 text-right">الوقت</th>
+                <th className="p-2 text-right">الصفحة / المنتج</th>
+                <th className="p-2 text-right">الحملة</th>
+                <th className="p-2 text-right">موافقة</th>
+                <th className="p-2 text-right">الطلبية</th>
+              </tr>
+            </thead>
+            <tbody>
+              {inquiries.map((q) => (
+                <tr key={q.reference} className="border-t border-neutral-100">
+                  <td className="p-2 font-mono" dir="ltr">
+                    {q.reference}
+                  </td>
+                  <td className="p-2 whitespace-nowrap">{new Date(q.createdAt).toLocaleString("ar-MA")}</td>
+                  <td className="p-2" dir="ltr">
+                    {q.productSku ?? q.pagePath ?? "—"}
+                  </td>
+                  <td className="p-2" dir="ltr">
+                    {q.utmCampaign ?? "—"}
+                  </td>
+                  <td className="p-2">{q.adConsent === "granted" ? "نعم" : q.adConsent === "denied" ? "رفض" : "—"}</td>
+                  <td className="p-2">
+                    {q.convertedOrderId ? (
+                      <Link href={`/admin/orders/${q.convertedOrderId}`} prefetch={false} className="font-mono underline" dir="ltr">
+                        {q.convertedOrderNumber ?? `#${q.convertedOrderId}`}
+                      </Link>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

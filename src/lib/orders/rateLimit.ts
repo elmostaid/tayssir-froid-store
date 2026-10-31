@@ -24,3 +24,23 @@ export function isRateLimited(normalizedPhone: string): boolean {
   attemptsByPhone.set(normalizedPhone, attempts);
   return false;
 }
+
+// استفسارات واتساب: لا هاتف بعد، فالمفتاح عنوان IP. السقف واسع عمداً (زائر
+// يسأل عن عشرين قطعة في ربع ساعة سلوكٌ حقيقي)، ويوقف فقط سكربتاً يملأ
+// الجدول. ونفس حدود الذاكرة أعلاه: best-effort لكل نسخة خادم.
+const INQUIRY_WINDOW_MS = 15 * 60 * 1000;
+const MAX_INQUIRIES_PER_WINDOW = 30;
+const inquiriesByIp = new Map<string, number[]>();
+
+export function isInquiryRateLimited(clientIp: string | undefined): boolean {
+  if (!clientIp) return false;
+  const now = Date.now();
+  const recent = (inquiriesByIp.get(clientIp) ?? []).filter((t) => now - t < INQUIRY_WINDOW_MS);
+  if (recent.length >= MAX_INQUIRIES_PER_WINDOW) {
+    inquiriesByIp.set(clientIp, recent);
+    return true;
+  }
+  recent.push(now);
+  inquiriesByIp.set(clientIp, recent);
+  return false;
+}
