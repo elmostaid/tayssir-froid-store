@@ -88,3 +88,14 @@
   - زرّ «استفسار»: الرسالة تحمل `مرجع الاستفسار: Q-XXXXXXXXXX`، والصفّ مسجَّل بـ`ad_consent=unknown` وبلا هوية.
   - بعد «موافق»: كوكي `tf_ad_consent=granted` لـ180 يوماً، طلب `fbevents.js` (محجوب)، و`fbclid` المنتظر يُكتب في لمسته؛ الاستفسار التالي مسجَّل بـ`fbc` مبني من النقرة الحقيقية.
   - `/privacy` تُعرض.
+
+## 7. معاينة Vercel على قاعدة المعاينة وحدها
+
+- الـmigration طُبِّقت على **قاعدة المعاينة** (`tayssir-froid-preview`) وحدها، بإذن صريح. قاعدة الإنتاج: لا جدول `whatsapp_inquiries` ولا عمود `ad_consent` (تحقّق بقراءة فقط).
+- متغيّرات Preview: `DATABASE_URL` خاصّ بالمعاينة، ولا `NEXT_PUBLIC_META_PIXEL_ID` ولا توكن CAPI ولا `META_OFFLINE_PURCHASES_ENABLED` — المعاينة لا تستطيع إرسال شيء إلى Meta أصلاً.
+- نشر `64098e6` (dpl_3prrQVoNVTXZuaefbLNnj6p7PnrX)، Chromium مع حجب نطاقات Facebook:
+  - الشريط ظاهر؛ صفر طلب نحو Meta.
+  - «استفسار» في الترويسة ⇒ `Q-FF91BFBCD7` في الرسالة، مسجَّل في قاعدة المعاينة بـ`unknown`، بلا fbclid ولا هوية.
+  - بعد «موافق»، أيقونة بطاقة منتج ⇒ `Q-06E9410B19` بـ`kind=product`، `TF-GWH-001`، `granted`، و`fbc` مبني من النقرة.
+  - `/api/whatsapp-inquiries` ⇒ 200 مرتين؛ `/privacy` تُعرض.
+- سجلّ الأخطاء: انقطاع اتصال واحد بقاعدة المعاينة (`CONNECT_TIMEOUT`) أثناء تحديث ذاكرة منتج في `/cart` — مسار قائم لا علاقة له بهذا الإصلاح.
