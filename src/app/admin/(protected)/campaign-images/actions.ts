@@ -106,7 +106,7 @@ export async function commitCampaignImage(
   const entry = { [slot.key]: { path: url, updatedAt: new Date().toISOString() } };
   await sql`
     insert into public.settings (key, value)
-    values (${CAMPAIGN_IMAGES_SETTINGS_KEY}, ${JSON.stringify(entry)}::jsonb)
+    values (${CAMPAIGN_IMAGES_SETTINGS_KEY}, ${sql.json(entry)})
     on conflict (key) do update set value = public.settings.value || excluded.value
   `;
 
