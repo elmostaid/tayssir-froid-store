@@ -92,6 +92,48 @@ describe("WhatsAppInquiryLink", () => {
   });
 });
 
+describe("WhatsAppInquiryLink: عطب التسجيل لا يمنع التواصل أبداً", () => {
+  function linkFor(onClick?: () => void) {
+    render(
+      <WhatsAppInquiryLink whatsappNumber="0722083458" message="سؤال" kind="general" onClick={onClick}>
+        استفسار
+      </WhatsAppInquiryLink>
+    );
+    return screen.getByRole("link", { name: "استفسار" }) as HTMLAnchorElement;
+  }
+
+  test.each([
+    ["الخادم يرفض (500)", () => vi.fn().mockResolvedValue({ ok: false, status: 500 })],
+    ["الشبكة مقطوعة", () => vi.fn().mockRejectedValue(new TypeError("Failed to fetch"))],
+    ["fetch يرمي فوراً (keepalive غير مدعوم)", () => vi.fn(() => { throw new TypeError("keepalive"); })],
+  ])("%s: الضغطة لا تُلغى، والرابط واتساب صالح", (_label, makeFetch) => {
+    vi.stubGlobal("fetch", makeFetch());
+    const link = linkFor();
+    const notCancelled = fireEvent.click(link);
+    expect(notCancelled).toBe(true);
+    expect(link.href.startsWith("https://api.whatsapp.com/send/?")).toBe(true);
+  });
+
+  test("حتى لو رمى onClick المُمرَّر نفسه: الضغطة لا تُلغى والرسالة الأصلية تبقى", () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
+    const link = linkFor(() => {
+      throw new Error("boom");
+    });
+    expect(fireEvent.click(link)).toBe(true);
+    expect(new URL(link.href).searchParams.get("text")).toBe("سؤال");
+  });
+
+  test("بلا مصدر عشوائية (crypto غائب): لا مرجع، والرابط الأصلي يعمل", () => {
+    vi.stubGlobal("crypto", undefined);
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const link = linkFor();
+    expect(fireEvent.click(link)).toBe(true);
+    expect(new URL(link.href).searchParams.get("text")).toBe("سؤال");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("معرّف النقرة لا يُكتب على الجهاز قبل الموافقة", () => {
   function landFromAd() {
     window.history.replaceState(null, "", "/water-heaters?utm_source=facebook&fbclid=IwAR-landing");

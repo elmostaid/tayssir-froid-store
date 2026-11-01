@@ -70,6 +70,7 @@ export default async function PrivacyPage() {
           تلقائياً.
         </li>
         <li>اختيارك في شريط الكوكيز: {AD_CONSENT_MAX_AGE_DAYS} يوماً، ثم نسألك من جديد.</li>
+        <li>كوكي Google Analytics (<span dir="ltr">_ga</span>): {AD_CONSENT_MAX_AGE_DAYS} يوماً.</li>
         <li>بيانات الطلبية: المدة التي يفرضها القانون لحفظ الوثائق التجارية والمحاسبية.</li>
       </ul>
 

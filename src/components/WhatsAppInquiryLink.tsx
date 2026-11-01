@@ -65,6 +65,17 @@ export function WhatsAppInquiryLink({
   const keyRef = useRef<string | null>(null);
 
   function handleClick(event: MouseEvent<HTMLAnchorElement>) {
+    // أي عطب هنا — في المرجع أو التسجيل أو حتى في onClick المُمرَّر — لا
+    // يجوز أن يمنع فتح المحادثة. لا preventDefault في أي مسار، والمعالج كله
+    // داخل try: في أسوأ حال يُفتح واتساب بالرسالة الأصلية بلا مرجع.
+    try {
+      registerInquiry(event);
+    } catch {
+      // الرابط الأصلي (بلا مرجع) يبقى، وسلوك <a> الافتراضي يكمل.
+    }
+  }
+
+  function registerInquiry(event: MouseEvent<HTMLAnchorElement>) {
     onClick?.();
 
     keyRef.current ??= newInquiryKey();

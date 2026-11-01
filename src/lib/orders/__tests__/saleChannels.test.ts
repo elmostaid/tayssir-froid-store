@@ -314,6 +314,28 @@ describe("2. بدأت من الإعلان وأُغلقت في واتساب (مر
     expect(purchaseCalls()).toHaveLength(1);
   });
 
+  test("جدول الاستفسارات معطوب (عطل قاعدة): الطلبية اليدوية تُسجَّل مؤكَّدة رغم ذلك", async () => {
+    // أسوأ حال ممكن: الربط نفسه يرمي خطأ قاعدة لا خطأ مرجع. الـSAVEPOINT
+    // يحصره، والطلبية — وهي ما يهمّ المحل — تمرّ.
+    await sql`alter table public.whatsapp_inquiries rename to whatsapp_inquiries_broken`;
+    try {
+      const result = await createManualOrder(manualInput({ origin: { reference: "Q-0123456789" } }));
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.originWarning).toContain("لسبب تقني");
+      const row = await orderRow(result.orderId);
+      expect(row.status).toBe("confirmed");
+      expect(row.origin_reference).toBeNull();
+
+      // والتأكيد اللاحق يعمل كالمعتاد.
+      const shipped = await updateOrderStatus({ error: null }, statusForm(result.orderId, "shipped"));
+      expect(shipped.error).toBeNull();
+      expect((await orderRow(result.orderId)).status).toBe("shipped");
+    } finally {
+      await sql`alter table public.whatsapp_inquiries_broken rename to whatsapp_inquiries`;
+    }
+  });
+
   test("سلة واتساب (W-) عبر النموذج اليدوي: تتحوّل وتنقل إسنادها وهويتها", async () => {
     const lead = await createWhatsappLead({
       items: [{ productId, variantId: null, quantity: 5 }],

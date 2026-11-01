@@ -28,6 +28,10 @@ export const ANALYTICS_EVENT_NAMES = [
   "order_submitted",
   "confirm_on_whatsapp",
   "purchase",
+  // اختيار الزائر في شريط الموافقة — وحده ما يقيس نسبة الموافقة، أي كم
+  // بيعةً لن تصل Meta بسبب الرفض لا بسبب عطل.
+  "ad_consent_granted",
+  "ad_consent_denied",
 ] as const;
 
 export type AnalyticsEventName = (typeof ANALYTICS_EVENT_NAMES)[number];

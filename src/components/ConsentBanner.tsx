@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
+import { trackAnalyticsEvent } from "@/lib/analytics/track";
 import {
   readAdConsentFromDocument,
   subscribeAdConsent,
@@ -49,6 +50,9 @@ export function ConsentBanner() {
   function choose(value: "granted" | "denied") {
     writeAdConsent(value);
     setReopened(false);
+    // القياس الداخلي (أول طرف، بلا معرّف إعلاني): كم وافق وكم رفض.
+    // `immediate`: الزائر قد يغادر بعد الضغط مباشرة.
+    trackAnalyticsEvent(value === "granted" ? "ad_consent_granted" : "ad_consent_denied", {}, { immediate: true });
   }
 
   return (

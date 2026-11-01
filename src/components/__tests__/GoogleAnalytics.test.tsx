@@ -26,6 +26,9 @@ describe("GoogleAnalytics — وسم GA4 الأساسي فقط، مرة واحد
     expect(source).toContain("ad_storage: 'denied'");
     expect(source).toContain("ad_user_data: 'denied'");
     expect(source).toContain("ad_personalization: 'denied'");
+    // `_ga` تعيش سنتين افتراضياً؛ الحدّ ستة أشهر (CNDP D-939-2025، الفقرة 5).
+    expect(source).toContain("cookie_expires: ${GA_COOKIE_MAX_AGE_SECONDS}");
+    expect(source).toMatch(/GA_COOKIE_MAX_AGE_SECONDS = AD_CONSENT_MAX_AGE_DAYS \* 86_400/);
     // وضع الموافقة قبل `config` — وإلا أرسل الوسم أول page_view بالإعدادات الافتراضية.
     expect(source.indexOf("gtag('consent', 'default'")).toBeLessThan(
       source.indexOf("gtag('config', '${GA_MEASUREMENT_ID}'")

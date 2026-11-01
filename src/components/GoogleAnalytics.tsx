@@ -1,5 +1,9 @@
 import Script from "next/script";
 import { GA_MEASUREMENT_ID, isAnalyticsEnabled } from "@/lib/analytics/config";
+import { AD_CONSENT_MAX_AGE_DAYS } from "@/lib/privacy/consent";
+
+/** ستة أشهر بالثواني — نفس حدّ CNDP المطبَّق على كوكي الموافقة. */
+const GA_COOKIE_MAX_AGE_SECONDS = AD_CONSENT_MAX_AGE_DAYS * 86_400;
 
 /**
  * «وسم Google» الأساسي (gtag.js) لـGoogle Analytics 4 — هو نفسه المقتطف
@@ -29,6 +33,9 @@ import { GA_MEASUREMENT_ID, isAnalyticsEnabled } from "@/lib/analytics/config";
  * فـGA4 هنا مقيَّد بما يبقيه داخل الإعفاء: إشارات Google (ربط الحسابات عبر
  * الأجهزة) مُطفأة، وتخصيص الإعلانات مُطفأ، ووضع الموافقة يرفض افتراضياً كل
  * تخزين إشهاري. وما عدا ذلك (Meta) وراء شريط الموافقة.
+ *
+ * و`cookie_expires`: كوكي `_ga` تعيش سنتين افتراضياً، والمداولة نفسها
+ * (الفقرة 5) تحدّ بيانات الكوكيز بستة أشهر.
  */
 export function GoogleAnalytics() {
   // الإنتاج وحده. في المعاينة لا يُحمَّل السكريبت ولا يُرسَل أي حدث، فلا
@@ -55,7 +62,8 @@ gtag('consent', 'default', {
 gtag('js', new Date());
 gtag('config', '${GA_MEASUREMENT_ID}', {
   allow_google_signals: false,
-  allow_ad_personalization_signals: false
+  allow_ad_personalization_signals: false,
+  cookie_expires: ${GA_COOKIE_MAX_AGE_SECONDS}
 });
         `}
       </Script>
