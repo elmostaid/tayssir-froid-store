@@ -18,8 +18,8 @@ const BASE_PATH = "/water-heaters";
  * بطاقتان بصورتين بنفس الحجم من أول الشاشة.
  *
  * `?type=gas` و`?type=electric` يبقيان كما هما حرفياً (روابط الإعلانات).
- * `coverSku`: القطعة الأكثر طلباً في كل نوع (دويت الغاز 53 طلباً، لنود
- * الكهرباء) — صورة البطاقة ما لم تُرفع صورة يدوية من لوحة الإدارة.
+ * `coverSku`: قطعةٌ صورتُها تُعرَف بالعين — صمّام الغاز (إلكتروفان) وترموستا
+ * الكهرباء — صورة البطاقة ما لم تُرفع صورة يدوية من لوحة الإدارة.
  */
 export const HEATER_TABS: CampaignTab[] = [
   {
@@ -27,14 +27,14 @@ export const HEATER_TABS: CampaignTab[] = [
     label: "الشوفو الغازي",
     fullLabel: "الشوفو بالغاز",
     categorySlug: "gas-water-heater-parts",
-    coverSku: "TF-GWH-017",
+    coverSku: "TF-GWH-015",
   },
   {
     key: "electric",
     label: "الشوفو الكهربائي",
     fullLabel: "الشوفو بالكهرباء",
     categorySlug: "electric-water-heater-parts",
-    coverSku: "TF-EWH-001",
+    coverSku: "TF-EWH-008",
   },
 ];
 

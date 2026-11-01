@@ -84,7 +84,7 @@ describe("الوجه المحايد لصفحة مكينات الصابون", () 
     expect(resolveLandingView(HEATER_TABS, "electric")).toEqual({ mode: "tab", tab: HEATER_TABS[1] });
     expect(HEATER_TABS.map((tab) => tab.fullLabel)).toEqual(["الشوفو بالغاز", "الشوفو بالكهرباء"]);
     // صورة البطاقة التلقائية: منتجٌ من نفس التصنيف (بادئة SKU التصنيف).
-    expect(HEATER_TABS.map((tab) => tab.coverSku)).toEqual(["TF-GWH-017", "TF-EWH-001"]);
+    expect(HEATER_TABS.map((tab) => tab.coverSku)).toEqual(["TF-GWH-015", "TF-EWH-008"]);
   });
 
   /**
