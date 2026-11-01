@@ -104,6 +104,17 @@ export const getCampaignImageOverrides = cache(async (): Promise<CampaignImageOv
   return parseCampaignImageOverrides(row?.value);
 });
 
+/**
+ * نفس القراءة بلا أي كاش — للوحة الإدارة وحدها: بعد الحفظ يجب أن يرى
+ * المدير الصورة الجديدة فوراً، لا بعد دقيقة.
+ */
+export async function getCampaignImageOverridesFresh(): Promise<CampaignImageOverrides> {
+  const [row] = await sql<{ value: unknown }[]>`
+    select value from public.settings where key = ${CAMPAIGN_IMAGES_SETTINGS_KEY}
+  `;
+  return parseCampaignImageOverrides(row?.value);
+}
+
 export const getSettings = cache(async (): Promise<StoreSettings> => {
   const rows = await querySettings();
   const map = new Map(rows.map((row) => [row.key, row.value]));

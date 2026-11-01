@@ -2,7 +2,7 @@ import { getProducts, getProductsBySkus } from "@/lib/queries/catalog";
 import { getCampaignImageOverrides } from "@/lib/queries/settings";
 import { safeQuery } from "@/lib/safeQuery";
 import { resolveProductImageUrls } from "@/lib/storage/resolveProductImageUrl";
-import { campaignSlotKey } from "@/lib/campaignImages";
+import { campaignSlotKey, type CampaignImageOverrides } from "@/lib/campaignImages";
 import type { CatalogProduct } from "@/lib/types";
 import type { CampaignTab } from "@/app/(storefront)/campaignLanding";
 
@@ -25,11 +25,13 @@ export type CampaignCardImage = {
 export async function resolveCampaignCardImages(
   pageKey: string,
   tabs: CampaignTab[],
-  firstProducts?: (CatalogProduct | null)[]
+  firstProducts?: (CatalogProduct | null)[],
+  /** لوحة الإدارة تمرّر قراءة بلا كاش؛ الصفحة العامة تستعمل الكاش. */
+  overridesLoader: () => Promise<CampaignImageOverrides> = getCampaignImageOverrides
 ): Promise<CampaignCardImage[]> {
   const coverSkus = tabs.map((tab) => tab.coverSku).filter((sku): sku is string => Boolean(sku));
   const [overrides, coverProducts, firsts] = await Promise.all([
-    safeQuery(() => getCampaignImageOverrides(), {}, "campaignCardImages.overrides"),
+    safeQuery(overridesLoader, {} as CampaignImageOverrides, "campaignCardImages.overrides"),
     coverSkus.length
       ? safeQuery(() => getProductsBySkus(coverSkus), [] as CatalogProduct[], "campaignCardImages.covers")
       : Promise.resolve([] as CatalogProduct[]),

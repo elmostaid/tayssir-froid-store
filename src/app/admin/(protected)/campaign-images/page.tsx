@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import { canWriteProductImages } from "@/lib/storage/productImages";
 import { resolveCampaignCardImages } from "@/lib/campaignCardImages";
+import { getCampaignImageOverridesFresh } from "@/lib/queries/settings";
 import { campaignSlotKey } from "@/lib/campaignImages";
 import { WASHING_TABS } from "@/app/(storefront)/washing-machines/page";
 import { HEATER_TABS } from "@/app/(storefront)/water-heaters/page";
@@ -23,7 +24,12 @@ export default async function AdminCampaignImagesPage() {
 
   const groups = await Promise.all(
     PAGES.map(async (page) => {
-      const images = await resolveCampaignCardImages(page.pageKey, [...page.tabs]);
+      const images = await resolveCampaignCardImages(
+        page.pageKey,
+        [...page.tabs],
+        undefined,
+        getCampaignImageOverridesFresh
+      );
       const rows: CampaignImageRow[] = page.tabs.map((tab, index) => ({
         slotKey: campaignSlotKey(page.pageKey, tab.key),
         label: tab.fullLabel ?? tab.label,
