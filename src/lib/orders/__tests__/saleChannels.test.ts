@@ -616,3 +616,74 @@ describe("الاحتفاظ: 180 يوماً ثم المحو", () => {
     expect(after[1].attribution_last.fbclid).toBe(FBCLID);
   });
 });
+
+describe("المصلحة المشروعة: كل بيعة جديدة مؤكَّدة، بلا شريط ولا كوكي", () => {
+  const since = () => new Date(Date.now() - 60_000).toISOString();
+
+  test("طلبية واتساب يدوية بلا أي موافقة: Purchase واحدة chat، بالطلبية وحدها", async () => {
+    vi.stubEnv("META_PURCHASE_LEGITIMATE_INTEREST_SINCE", since());
+    const result = await createManualOrder(manualInput());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const calls = purchaseCalls();
+    expect(calls).toHaveLength(1);
+    expect(calls[0].actionSource).toBe("chat");
+    expect(calls[0].userData?.phone).toMatch(/^2126/);
+    expect(calls[0].userData?.fbp).toBeUndefined();
+    expect(calls[0].userData?.fbc).toBeUndefined();
+    expect(calls[0].userData?.clientIpAddress).toBeUndefined();
+    expect(calls[0].userData?.clientUserAgent).toBeUndefined();
+    expect(calls[0].eventSourceUrl).toBeUndefined();
+    // مرة واحدة فقط مهما تغيّرت الحالة.
+    await updateOrderStatus({ error: null }, statusForm(result.orderId, "shipped"));
+    expect(await sendDeferredPurchase(result.orderId)).toEqual({ sent: false, reason: "already_sent" });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(purchaseCalls()).toHaveLength(1);
+  });
+
+  test("طلبية أُنشئت قبل لحظة التشغيل: لا تُرسَل أبداً", async () => {
+    const result = await createManualOrder(manualInput());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    vi.stubEnv("META_PURCHASE_LEGITIMATE_INTEREST_SINCE", new Date(Date.now() + 1000).toISOString());
+    expect(await sendDeferredPurchase(result.orderId)).toEqual({ sent: false, reason: "no_consent" });
+    expect(sendCapiEventMock).not.toHaveBeenCalled();
+  });
+
+  test("زبون اعترض (denied): لا إرسال", async () => {
+    vi.stubEnv("META_PURCHASE_LEGITIMATE_INTEREST_SINCE", since());
+    vi.stubEnv("META_OFFLINE_PURCHASES_ENABLED", "");
+    const result = await createManualOrder(manualInput());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    vi.stubEnv("META_OFFLINE_PURCHASES_ENABLED", "true");
+    await sql`update public.orders set ad_consent = 'denied' where id = ${result.orderId}`;
+    expect(await sendDeferredPurchase(result.orderId)).toEqual({ sent: false, reason: "no_consent" });
+    expect(sendCapiEventMock).not.toHaveBeenCalled();
+  });
+
+  test("بيعة الموقع: website، وهوية المتصفح المخزَّنة لا تُستعمل بلا موافقة", async () => {
+    vi.stubEnv("META_PURCHASE_LEGITIMATE_INTEREST_SINCE", since());
+    vi.stubEnv("META_OFFLINE_PURCHASES_ENABLED", "");
+    const result = await createManualOrder(manualInput());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    await sql`
+      update public.orders set source = 'website', meta_purchase_sent_at = null,
+        attribution_last = '{"fbclid":"leak","at":1}'::jsonb
+      where id = ${result.orderId}
+    `;
+    sendCapiEventMock.mockClear();
+    const outcome = await sendDeferredPurchase(result.orderId);
+    expect(outcome).toMatchObject({ sent: true });
+    const [call] = purchaseCalls();
+    expect(call.actionSource).toBe("website");
+    expect(call.userData?.fbc).toBeUndefined();
+  });
+
+  test("مُطفأ (بلا تاريخ): القاعدة القديمة — لا موافقة ⇒ لا إرسال", async () => {
+    const result = await createManualOrder(manualInput());
+    expect(result.ok).toBe(true);
+    expect(sendCapiEventMock).not.toHaveBeenCalled();
+  });
+});

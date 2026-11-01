@@ -5,6 +5,7 @@ import { toInternationalDigits } from "@/lib/phone";
 import { SALE_CONFIRMED_STATUSES, type OrderStatus } from "@/lib/orders/orderStatus";
 import {
   actionSourceForOrderSource,
+  legitimateInterestPurchasesSince,
   MAX_PURCHASE_AGE_MS,
   offlinePurchaseSharingSince,
   type MetaActionSource,
@@ -132,6 +133,7 @@ type OrderRow = {
   public_reference: string;
   customer_phone: string | null;
   confirmed_at: Date | null;
+  created_at: Date | null;
   ad_consent: string;
   capi_identity: CapiIdentitySnapshot | null;
   ga_identity: GaIdentitySnapshot | null;
@@ -191,7 +193,7 @@ export async function sendDeferredPurchase(orderId: number): Promise<DeferredPur
   try {
     const [order] = await sql<OrderRow[]>`
       select id, status, source, items_subtotal, public_reference, customer_phone,
-             confirmed_at, ad_consent, capi_identity, ga_identity, attribution_last,
+             confirmed_at, created_at, ad_consent, capi_identity, ga_identity, attribution_last,
              attribution_first
       from public.orders
       where id = ${orderId}
@@ -230,7 +232,7 @@ export async function sendDeferredPurchase(orderId: number): Promise<DeferredPur
 
     const gate = metaPurchaseGate(order);
     const meta: MetaDelivery = gate.ok
-      ? await deliverMetaPurchase(order, items, gate.actionSource)
+      ? await deliverMetaPurchase(order, items, gate.actionSource, gate.minimal)
       : { kind: "skipped", reason: gate.reason };
     // GA4 مستقلّة بحرسها: لو قُبلت Meta سابقاً وفشلت GA4، تُعاد هذه وحدها.
     const gaSent = await deliverGaPurchase(order, items);
@@ -254,10 +256,10 @@ export async function sendDeferredPurchase(orderId: number): Promise<DeferredPur
  * شبكة، يسبق الحجز: ما لا يحقّ إرساله لا يستهلك محاولة ولا يكتب خطأً.
  */
 export function metaPurchaseGate(
-  order: { source: string; ad_consent: string; confirmed_at: Date | null },
+  order: { source: string; ad_consent: string; confirmed_at: Date | null; created_at?: Date | null },
   now: number = Date.now()
 ):
-  | { ok: true; actionSource: MetaActionSource }
+  | { ok: true; actionSource: MetaActionSource; minimal: boolean }
   | {
       ok: false;
       reason: Extract<
@@ -267,7 +269,14 @@ export function metaPurchaseGate(
     } {
   const actionSource = actionSourceForOrderSource(order.source);
   if (!actionSource) return { ok: false, reason: "unknown_channel" };
-  if (!isAdConsentGranted(order.ad_consent)) return { ok: false, reason: "no_consent" };
+  const granted = isAdConsentGranted(order.ad_consent);
+  if (!granted) {
+    // بلا موافقة: المصلحة المشروعة وحدها، بشروطها (انظر actionSource.ts).
+    const liSince = legitimateInterestPurchasesSince();
+    if (!liSince || order.ad_consent === "denied") return { ok: false, reason: "no_consent" };
+    const createdAt = order.created_at ? new Date(order.created_at).getTime() : null;
+    if (createdAt === null || createdAt < liSince.getTime()) return { ok: false, reason: "no_consent" };
+  }
 
   const confirmedAt = order.confirmed_at ? new Date(order.confirmed_at).getTime() : null;
   // لا إرسال بأثر رجعي: بيعة تأكّدت قبل أسبوع لا تصل Meta، أياً كانت قناتها.
@@ -283,13 +292,15 @@ export function metaPurchaseGate(
       return { ok: false, reason: "offline_disabled" };
     }
   }
-  return { ok: true, actionSource };
+  return { ok: true, actionSource, minimal: !granted };
 }
 
 async function deliverMetaPurchase(
   order: OrderRow,
   items: ReservedLine[],
-  actionSource: MetaActionSource
+  actionSource: MetaActionSource,
+  /** بلا موافقة: لا معرّف من المتصفح ولا من النقرة — الطلبية وحدها. */
+  minimal: boolean = false
 ): Promise<MetaDelivery> {
   // الحجز الذرّي: من يفوز بهذا الصفّ وحده يُرسل.
   const claimed = await sql<{ id: number }[]>`
@@ -314,8 +325,8 @@ async function deliverMetaPurchase(
 
   // الـfbclid من اللقطة أولاً، ثم من إسناد الطلب — الأخير يبقى حتى لو لم
   // تُكتب اللقطة (طلبات أُنشئت قبل هذا العمود).
-  const identity = order.capi_identity ?? {};
-  const touch = order.attribution_last ?? order.attribution_first ?? null;
+  const identity: CapiIdentitySnapshot = minimal ? {} : order.capi_identity ?? {};
+  const touch = minimal ? null : order.attribution_last ?? order.attribution_first ?? null;
   const fbc = resolveFbc({
     cookieFbc: identity.fbc,
     fbclid: identity.fbclid ?? touch?.fbclid,
