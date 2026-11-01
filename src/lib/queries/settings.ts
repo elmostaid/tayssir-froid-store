@@ -2,6 +2,11 @@ import { cache } from "react";
 import { unstable_cache } from "next/cache";
 import { dbGuard, sql } from "@/lib/db";
 import {
+  CAMPAIGN_IMAGES_SETTINGS_KEY,
+  parseCampaignImageOverrides,
+  type CampaignImageOverrides,
+} from "@/lib/campaignImages";
+import {
   CATALOG_TAG,
   CATALOG_REVALIDATE_SECONDS,
   isMissingCacheContext,
@@ -88,6 +93,16 @@ async function querySettings() {
     throw error;
   }
 }
+
+/**
+ * صور بطاقات الحملات اليدوية — من نفس صفوف `settings` المخزَّنة مؤقتاً،
+ * فلا استعلام إضافي على زيارة صفحة الحملة.
+ */
+export const getCampaignImageOverrides = cache(async (): Promise<CampaignImageOverrides> => {
+  const rows = await querySettings();
+  const row = rows.find((candidate) => candidate.key === CAMPAIGN_IMAGES_SETTINGS_KEY);
+  return parseCampaignImageOverrides(row?.value);
+});
 
 export const getSettings = cache(async (): Promise<StoreSettings> => {
   const rows = await querySettings();

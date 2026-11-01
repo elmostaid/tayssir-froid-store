@@ -77,6 +77,8 @@ export default async function WashingMachinesPage({
         hint="اختر نوع المكينة ديالك وشوف القطع المناسبة ليها."
         basePath={BASE_PATH}
         tabs={WASHING_TABS}
+        pageKey="washing-machines"
+        typesLabel="أنواع مكينات الصابون"
       />
     );
   }

@@ -77,10 +77,14 @@ describe("الوجه المحايد لصفحة مكينات الصابون", () 
    * موقوفة، والتعديل يخصّ صفحة هبوط واحدة. الاختبار يمنع أن يُسحب سلوكها
    * معنا بالسهو.
    */
-  test("تبويبات الشوفو لم تُمسّ: لا أسماء كاملة ولا ترتيب مختلف", () => {
+  test("الشوفو صار محايداً هو أيضاً: بطاقتا الغاز والكهرباء متساويتان، وروابط ?type= القديمة تعمل", () => {
     expect(HEATER_TABS.map((tab) => tab.key)).toEqual(["gas", "electric"]);
-    expect(HEATER_TABS.every((tab) => tab.fullLabel === undefined)).toBe(true);
-    expect(resolveTab(HEATER_TABS).categorySlug).toBe("gas-water-heater-parts");
+    expect(resolveLandingView(HEATER_TABS, undefined)).toEqual({ mode: "overview" });
+    expect(resolveLandingView(HEATER_TABS, "gas")).toEqual({ mode: "tab", tab: HEATER_TABS[0] });
+    expect(resolveLandingView(HEATER_TABS, "electric")).toEqual({ mode: "tab", tab: HEATER_TABS[1] });
+    expect(HEATER_TABS.map((tab) => tab.fullLabel)).toEqual(["الشوفو بالغاز", "الشوفو بالكهرباء"]);
+    // صورة البطاقة التلقائية: منتجٌ من نفس التصنيف (بادئة SKU التصنيف).
+    expect(HEATER_TABS.map((tab) => tab.coverSku)).toEqual(["TF-GWH-017", "TF-EWH-001"]);
   });
 
   /**
@@ -101,7 +105,7 @@ describe("الوجه المحايد لصفحة مكينات الصابون", () 
     });
 
     test("الزرّ يقع بعد شبكة المنتجات، وداخل نفس القسم", () => {
-      const grid = source.indexOf("products.map((product, index)");
+      const grid = source.indexOf("products.map((product) =>");
       const button = source.indexOf("عرض جميع قطع غيار");
       const sectionEnd = source.indexOf("</section>", grid);
       expect(grid).toBeGreaterThan(-1);

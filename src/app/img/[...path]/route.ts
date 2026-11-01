@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { CAMPAIGN_OBJECT_PATH_RE } from "@/lib/campaignImages";
 
 /**
  * تقديم صور المنتجات المرفوعة من نطاق الموقع نفسه بدل رابط Supabase المباشر.
@@ -24,6 +25,11 @@ export const runtime = "nodejs";
 const OBJECT_PATH_RE =
   /^\d+\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|jpeg|png|webp)$/i;
 
+/** وصور بطاقات الحملات: `campaign/{page}-{type}/{UUID}.ext` (lib/campaignImages.ts). */
+function isAllowedObjectPath(objectPath: string): boolean {
+  return OBJECT_PATH_RE.test(objectPath) || CAMPAIGN_OBJECT_PATH_RE.test(objectPath);
+}
+
 const CONTENT_TYPES: Record<string, string> = {
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
@@ -40,7 +46,7 @@ export async function GET(
 
   // فحص صارم بقائمة بيضاء: هذا المسار لا يجلب إلا كائناً يطابق اتفاقية
   // الرفع داخل bucket واحد معروف — فلا يمكن استعماله لجلب أي عنوان آخر.
-  if (!OBJECT_PATH_RE.test(objectPath)) {
+  if (!isAllowedObjectPath(objectPath)) {
     return new NextResponse(null, { status: 404 });
   }
 

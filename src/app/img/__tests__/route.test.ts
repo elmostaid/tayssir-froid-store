@@ -117,3 +117,23 @@ describe("GET /img/[...path] — الاحتياطي للمعاينة وحدها"
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe("GET /img — صور بطاقات الحملات", () => {
+  test("campaign/{page}-{type}/{UUID}.jpg يُخدَم من نفس الـbucket", async () => {
+    fetchMock.mockResolvedValueOnce(okResponse());
+    const path = "campaign/water-heaters-gas/141883e0-0f97-479d-aea9-560cc8b6dac2.jpg";
+    const res = await GET(request(), params(path));
+    expect(res.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledWith(`${PROD}/storage/v1/object/public/product-images/${path}`, expect.anything());
+  });
+
+  test.each([
+    "campaign/other-page/141883e0-0f97-479d-aea9-560cc8b6dac2.jpg",
+    "campaign/water-heaters-gas/not-a-uuid.jpg",
+    "campaign/water-heaters-gas/../../141883e0-0f97-479d-aea9-560cc8b6dac2.jpg",
+  ])("مسار حملة خارج الاتفاقية (%s): 404 بلا طلب", async (path) => {
+    const res = await GET(request(), params(path));
+    expect(res.status).toBe(404);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

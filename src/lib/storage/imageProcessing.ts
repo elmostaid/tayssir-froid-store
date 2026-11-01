@@ -220,7 +220,17 @@ function canvasToBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob 
  * يحوّل ملفاً مختاراً من الهاتف إلى JPEG جاهز للرفع.
  * يُرجع رسالة عربية واضحة بدل رمي استثناء عند أي رفض.
  */
-export async function processImageForUpload(file: File): Promise<ProcessResult> {
+export async function processImageForUpload(
+  file: File,
+  /**
+   * صور بطاقات الحملات تُعرض أصغر من صور المنتجات (≤ 430px عرضاً على
+   * الهاتف)، ولا نسخ WebP لها — فتُحفظ أصغر من البداية بدل 1600px.
+   * الافتراضي = سلوك صور المنتجات حرفياً.
+   */
+  options: { maxLongEdge?: number; targetBytes?: number } = {}
+): Promise<ProcessResult> {
+  const maxLongEdge = options.maxLongEdge ?? MAX_LONG_EDGE;
+  const targetBytes = options.targetBytes ?? TARGET_OUTPUT_BYTES;
   if (file.size === 0) return { ok: false, error: "الملف فارغ." };
   if (file.size > MAX_UPLOAD_INPUT_BYTES) {
     return { ok: false, error: "حجم الصورة كبير جداً (12 ميغابايت كحد أقصى)." };
@@ -252,7 +262,7 @@ export async function processImageForUpload(file: File): Promise<ProcessResult> 
   // الأبعاد بعد الدوران هي ما يجب أن يُقاس عليه التصغير.
   const orientedWidth = orientationSwapsAxes(orientation) ? rawHeight : rawWidth;
   const orientedHeight = orientationSwapsAxes(orientation) ? rawWidth : rawHeight;
-  const target = fitWithinLongEdge(orientedWidth, orientedHeight);
+  const target = fitWithinLongEdge(orientedWidth, orientedHeight, maxLongEdge);
 
   const canvas = document.createElement("canvas");
   canvas.width = target.width;
@@ -276,7 +286,7 @@ export async function processImageForUpload(file: File): Promise<ProcessResult> 
   // لا نتجاوز السقف الصلب أبداً.
   let blob = await canvasToBlob(canvas, BASE_QUALITY);
   for (const quality of [0.72, 0.62, 0.52]) {
-    if (blob && blob.size <= TARGET_OUTPUT_BYTES) break;
+    if (blob && blob.size <= targetBytes) break;
     blob = await canvasToBlob(canvas, quality);
   }
   if (blob && blob.size > HARD_OUTPUT_LIMIT_BYTES) {

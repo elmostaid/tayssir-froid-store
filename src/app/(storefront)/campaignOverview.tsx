@@ -2,6 +2,8 @@ import Link from "next/link";
 import { getProducts, getProductIdsWithVariants } from "@/lib/queries/catalog";
 import type { CatalogProduct } from "@/lib/types";
 import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
+import { resolveCampaignCardImages } from "@/lib/campaignCardImages";
+import { CampaignTypeCards, type CampaignTypeCard } from "@/app/(storefront)/campaignTypeCards";
 import { ProductCard } from "@/components/ProductCard";
 import { safeQuery } from "@/lib/safeQuery";
 import { ServiceUnavailableError } from "@/lib/serviceUnavailable";
@@ -81,6 +83,10 @@ export async function CampaignOverview({
   hint,
   basePath,
   tabs,
+  pageKey,
+  typesLabel,
+  audience,
+  otherCategories = OVERVIEW_OTHER_CATEGORIES,
 }: {
   title: string;
   subtitle: string;
@@ -88,6 +94,13 @@ export async function CampaignOverview({
   /** مسار الصفحة نفسه، لبناء روابط الأنواع. */
   basePath: string;
   tabs: CampaignTab[];
+  /** مفتاح الصفحة لصور البطاقات اليدوية (lib/campaignImages.ts). */
+  pageKey: "washing-machines" | "water-heaters";
+  /** وصف شريط الأنواع لقارئ الشاشة. */
+  typesLabel: string;
+  /** سطر الجمهور (مثلاً: للتجار والحرفيين) — اختياري. */
+  audience?: string;
+  otherCategories?: { href: string; label: string }[];
 }) {
   // استعلام لكل نوع، متوازية. الحارس لكل واحد على حدة مقصود: عطل تصنيف
   // واحد لا يجوز أن يُخفي النوعين الآخرين — صفحة فيها نوعان أنفع لزائر
@@ -114,38 +127,36 @@ export async function CampaignOverview({
     throw new ServiceUnavailableError("campaign-overview");
   }
 
+  // صورة كل بطاقة: اليدوية من لوحة الإدارة، وإلا صورة المنتج الممثِّل،
+  // وإلا صورة أول منتج في النوع (المنتجات المجلوبة أعلاه، بلا استعلام زائد).
+  const cardImages = await resolveCampaignCardImages(
+    pageKey,
+    tabs,
+    previews.map((preview) => (preview === "SERVICE_UNAVAILABLE" ? null : preview[0] ?? null))
+  );
+  const cards: CampaignTypeCard[] = tabs.map((tab, index) => ({
+    tab,
+    href: `${basePath}?type=${tab.key}`,
+    imagePath: cardImages[index].path,
+    imageSrc: cardImages[index].src,
+    isManual: cardImages[index].isManual,
+  }));
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-4 sm:py-6">
       <h1 className="border-r-4 border-brand-turquoise pr-3 text-xl font-bold text-neutral-800">
         {title}
       </h1>
       <p className="mt-1 text-sm text-neutral-600">{subtitle}</p>
-      <p className="mt-1 text-xs text-neutral-500">{hint}</p>
+      {audience && (
+        <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-brand-turquoise-tint px-3 py-1 text-xs font-bold text-brand-turquoise-dark">
+          {audience}
+        </p>
+      )}
+      <p className="mt-2 text-xs text-neutral-500">{hint}</p>
 
-      {/* الاختيارات الثلاثة: عمود واحد على الهاتف وثلاثة أعمدة من sm.
-          العمود على الهاتف ليس تنازلاً عن التساوي بل شرطه — «نصف
-          أوتوماتيك» في ثلث عرض شاشة 360px يُقصّ أو يصغر خطّه، فيبدو
-          الاختيار الأوسط أضعف من جاره. وبالعمود تأخذ الثلاثة نفس العرض
-          الكامل ونفس الخط.
-
-          ولا نوع «نشط» هنا: الثلاثة بنفس الحدود ونفس الخلفية، فلا شيء
-          بصريٌّ يقول للزائر إن أحدها هو المقصود. */}
-      <nav aria-label="أنواع مكينات الصابون" className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
-        {tabs.map((tab) => (
-          <Link
-            key={tab.key}
-            href={`${basePath}?type=${tab.key}`}
-            prefetch={false}
-            className="flex min-h-12 items-center justify-between gap-2 rounded-xl border-2 border-brand-turquoise bg-white px-4 text-sm font-bold text-neutral-800 transition-colors hover:bg-brand-turquoise-tint active:bg-brand-turquoise-tint sm:justify-center sm:text-center"
-          >
-            <span>{tab.fullLabel ?? tab.label}</span>
-            {/* سهم لجهة اليسار: الصفحة RTL، فاتجاه التقدّم يساراً. */}
-            <span aria-hidden="true" className="text-brand-turquoise-dark sm:hidden">
-              ←
-            </span>
-          </Link>
-        ))}
-      </nav>
+      {/* الأنواع بصورها، متساوية ولا واحد «نشط» — انظر campaignTypeCards.tsx. */}
+      <CampaignTypeCards cards={cards} ariaLabel={typesLabel} />
 
       {/* قسم لكل نوع، بنفس الترتيب ونفس العدد. */}
       {tabs.map((tab, tabIndex) => {
@@ -186,17 +197,16 @@ export async function CampaignOverview({
               </p>
             ) : (
               <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-                {products.map((product, index) => (
+                {products.map((product) => (
                   <ProductCard
                     key={product.id}
                     product={product}
                     imageUrl={product.primary_image_path}
                     hasVariants={variantProductIds.has(product.id)}
                     whatsappNumber={settings.whatsappNumber}
-                    // أول بطاقتين من أول نوع وحدهما فوق الطيّة. لو أعطينا
-                    // الأولوية لأول بطاقتين من كل نوع لصارت ست صور بأولوية،
-                    // فتتزاحم على نفس الحزمة وتتأخّر كلها.
-                    priority={tabIndex === 0 && index < 2}
+                    // فوق الطيّة الآن بطاقات الأنواع بصورها (بأولوية)، فصور
+                    // المنتجات كلها كسولة — لا تتزاحم معها على أول حزمة.
+                    priority={false}
                   />
                 ))}
               </div>
@@ -236,7 +246,7 @@ export async function CampaignOverview({
           كلشي كيتزاد لنفس السلة، وتقدر تكمل طلبية وحدة فيها كل اللي اخترتي.
         </p>
         <div className="mt-2 flex flex-wrap gap-1.5">
-          {OVERVIEW_OTHER_CATEGORIES.map((category) => (
+          {otherCategories.map((category) => (
             <Link
               key={category.href}
               href={category.href}
