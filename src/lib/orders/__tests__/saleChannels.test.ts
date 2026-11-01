@@ -164,7 +164,10 @@ beforeAll(async () => {
 
 beforeEach(() => {
   sendCapiEventMock.mockClear();
+  // هذه الاختبارات تصف المفتاح **مُشغَّلاً** لتختبر مسار chat/phone_call.
+  // في الإنتاج يبقى مُطفأ — انظر اختبارات «المفتاح» أدناه.
   vi.stubEnv("META_OFFLINE_PURCHASES_ENABLED", "true");
+  vi.stubEnv("META_OFFLINE_PURCHASES_SINCE", new Date(Date.now() - 60_000).toISOString());
 });
 
 afterEach(() => {
@@ -280,20 +283,34 @@ describe("2. بدأت من الإعلان وأُغلقت في واتساب (مر
     expect(sendCapiEventMock).not.toHaveBeenCalled();
   });
 
-  test("مرجع مستعمل أو غير مسجَّل: الطلبية تُرفض كاملة — لا رقم، ولا مخزون، ولا ربط بزيارة غيرها", async () => {
+  test("المرجع لا يعرقل أبداً: مستعمل أو غير مسجَّل أو مشوَّه ⇒ الطلبية تُسجَّل بلا ربط، والسبب في سجلّها", async () => {
     const { reference } = await inquiry({ consent: "granted", withAd: true });
     const first = await createManualOrder(manualInput({ origin: { reference } }));
     expect(first.ok).toBe(true);
+    expect(purchaseCalls()).toHaveLength(1);
 
-    const [{ stock: before }] = await sql<{ stock: number }[]>`select stock_quantity as stock from public.products where id = ${productId}`;
-    const second = await createManualOrder(manualInput({ origin: { reference } }));
-    expect(second).toMatchObject({ ok: false, errors: [{ field: "originReference" }] });
+    for (const bad of [reference, "Q-0123456789", "مرجع غير مفهوم 123"]) {
+      const result = await createManualOrder(manualInput({ origin: { reference: bad } }));
+      expect(result.ok).toBe(true);
+      if (!result.ok) continue;
+      expect(result.originWarning).toBeTruthy();
 
-    const unknown = await createManualOrder(manualInput({ origin: { reference: "Q-0123456789" } }));
-    expect(unknown).toMatchObject({ ok: false, errors: [{ field: "originReference" }] });
-
-    const [{ stock: after }] = await sql<{ stock: number }[]>`select stock_quantity as stock from public.products where id = ${productId}`;
-    expect(after).toBe(before);
+      const row = await orderRow(result.orderId);
+      // لا ربط بزيارة غيرها، ولا موافقة ولا هوية موروثة منها.
+      expect(row.status).toBe("confirmed");
+      expect(row.origin_reference).toBeNull();
+      expect(row.ad_consent).toBe("unknown");
+      expect(row.capi_identity).toBeNull();
+      const [history] = await sql<{ note: string }[]>`
+        select note from public.order_status_history where order_id = ${result.orderId}
+      `;
+      expect(history.note).toContain("المرجع لم يُربط");
+    }
+    // الاستفسار ما زال مربوطاً بطلبيته الأولى وحدها، ولا بيعة إضافية.
+    const [linked] = await sql<{ converted_order_id: number }[]>`
+      select converted_order_id from public.whatsapp_inquiries where reference = ${reference}
+    `;
+    expect(first.ok && linked.converted_order_id).toBe(first.ok ? first.orderId : -1);
     expect(purchaseCalls()).toHaveLength(1);
   });
 
@@ -466,7 +483,89 @@ describe("الاستفسار نفسه", () => {
   });
 });
 
+describe("المفتاح: لا مبيعات خارج الموقع، ولا شيء بأثر رجعي", () => {
+  test("المفتاح وحده بلا تاريخ بدء: مُطفأ", async () => {
+    vi.stubEnv("META_OFFLINE_PURCHASES_SINCE", "");
+    const result = await createManualOrder(manualInput({ adConsentDeclared: true }));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(await sendDeferredPurchase(result.orderId)).toEqual({ sent: false, reason: "offline_disabled" });
+    expect(sendCapiEventMock).not.toHaveBeenCalled();
+  });
+
+  test("بيعة تأكّدت قبل لحظة التشغيل: لا تُرسَل ولو بعد تشغيل المفتاح وتغيّر حالتها", async () => {
+    vi.stubEnv("META_OFFLINE_PURCHASES_ENABLED", "");
+    const result = await createManualOrder(manualInput({ adConsentDeclared: true }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    vi.stubEnv("META_OFFLINE_PURCHASES_ENABLED", "true");
+    vi.stubEnv("META_OFFLINE_PURCHASES_SINCE", new Date(Date.now() + 1000).toISOString());
+    await updateOrderStatus({ error: null }, statusForm(result.orderId, "shipped"));
+    expect(await sendDeferredPurchase(result.orderId)).toEqual({ sent: false, reason: "offline_disabled" });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(sendCapiEventMock).not.toHaveBeenCalled();
+  });
+
+  test("بيعة موقع تأكّدت قبل أكثر من سبعة أيام: too_old، ولا نداء", async () => {
+    const result = await createManualOrder(manualInput({ adConsentDeclared: true, source: "whatsapp" }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    await sql`
+      update public.orders set source = 'website', meta_purchase_sent_at = null, meta_purchase_accepted_at = null,
+        confirmed_at = now() - interval '8 days'
+      where id = ${result.orderId}
+    `;
+    sendCapiEventMock.mockClear();
+    expect(await sendDeferredPurchase(result.orderId)).toEqual({ sent: false, reason: "too_old" });
+    expect(sendCapiEventMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("الاحتفاظ: 180 يوماً ثم المحو", () => {
+  test("لا يمسّ الطلبية: الحالة والمبالغ والطوابع الزمنية والسطور وسجلّ الحالات والمخزون كما هي", async () => {
+    const result = await createManualOrder(manualInput({ adConsentDeclared: true }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    await sql`
+      update public.orders set created_at = now() - interval '200 days', updated_at = now() - interval '199 days',
+        capi_identity = ${sql.json({ fbp: VISITOR.fbp })}, attribution_last = ${sql.json(AD_TOUCH)}
+      where id = ${result.orderId}
+    `;
+    const snapshot = async () => ({
+      order: await sql`
+        select status, source, items_subtotal, delivery_fee, actual_delivery_cost, final_total, confirmed_at,
+               created_at, updated_at, order_number, customer_phone, meta_purchase_accepted_at, ad_consent
+        from public.orders where id = ${result.orderId}`,
+      items: await sql`select * from public.order_items where order_id = ${result.orderId} order by id`,
+      history: await sql`select * from public.order_status_history where order_id = ${result.orderId} order by id`,
+      stock: await sql`select * from public.stock_movements where order_id = ${result.orderId} order by id`,
+      product: await sql`select stock_quantity, updated_at from public.products where id = ${productId}`,
+    });
+
+    const before = await snapshot();
+    await sql`select * from public.purge_expired_tracking_identity(180)`;
+    const after = await snapshot();
+
+    expect(after).toEqual(before);
+    const [purged] = await sql<{ capi_identity: unknown; attribution_last: Record<string, unknown> }[]>`
+      select capi_identity, attribution_last from public.orders where id = ${result.orderId}
+    `;
+    expect(purged.capi_identity).toBeNull();
+    expect(purged.attribution_last.fbclid).toBeUndefined();
+  });
+
+  test("خارج المحو: مُشغّل updated_at يعمل كما كان لكل تحديث عادي", async () => {
+    const result = await createManualOrder(manualInput());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    await sql`update public.orders set updated_at = now() - interval '3 days' where id = ${result.orderId}`;
+    await updateOrderStatus({ error: null }, statusForm(result.orderId, "shipped"));
+    const [row] = await sql<{ fresh: boolean }[]>`
+      select updated_at > now() - interval '1 minute' as fresh from public.orders where id = ${result.orderId}
+    `;
+    expect(row.fresh).toBe(true);
+  });
+
   test("تُمحى الهوية ومعرّفات النقر من الأقدم وحده؛ الطلبية والحملة تبقيان", async () => {
     const phone = nextPhone();
     const touch = sql.json(AD_TOUCH);

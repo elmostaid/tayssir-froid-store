@@ -16,7 +16,20 @@ describe("GoogleAnalytics — وسم GA4 الأساسي فقط، مرة واحد
     const source = await readFile(componentPath, "utf-8");
     expect(source).toContain("https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}");
     expect(source).toContain("gtag('js', new Date());");
-    expect(source).toContain("gtag('config', '${GA_MEASUREMENT_ID}');");
+    expect(source).toContain("gtag('config', '${GA_MEASUREMENT_ID}', {");
+  });
+
+  test("إحصاء فقط (إعفاء CNDP من الموافقة): لا إشارات Google ولا تخصيص إعلانات، والتخزين الإشهاري مرفوض افتراضياً", async () => {
+    const source = await readFile(componentPath, "utf-8");
+    expect(source).toContain("allow_google_signals: false");
+    expect(source).toContain("allow_ad_personalization_signals: false");
+    expect(source).toContain("ad_storage: 'denied'");
+    expect(source).toContain("ad_user_data: 'denied'");
+    expect(source).toContain("ad_personalization: 'denied'");
+    // وضع الموافقة قبل `config` — وإلا أرسل الوسم أول page_view بالإعدادات الافتراضية.
+    expect(source.indexOf("gtag('consent', 'default'")).toBeLessThan(
+      source.indexOf("gtag('config', '${GA_MEASUREMENT_ID}'")
+    );
     // الاستراتيجية التي يوصي بها توثيق Next للتحليلات.
     expect(source).toContain('strategy="afterInteractive"');
   });

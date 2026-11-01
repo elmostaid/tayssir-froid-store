@@ -44,5 +44,27 @@ export function actionSourceForOrderSource(source: string | null | undefined): M
  * المداولة D-939-2025). الكود جاهز؛ القرار ليس قراراً تقنياً.
  */
 export function isOfflinePurchaseSharingEnabled(): boolean {
-  return process.env.META_OFFLINE_PURCHASES_ENABLED?.trim() === "true";
+  return offlinePurchaseSharingSince() !== null;
 }
+
+/**
+ * لحظة بدء المشاركة: مبيعات خارج الموقع المؤكَّدة **قبلها** لا تُرسَل أبداً.
+ *
+ * بدونها، تشغيل المفتاح كان سيُرسل كل بيعة يدوية قديمة عند أول تغيير حالة
+ * لاحق لها (شحن، تسليم) — إرسالٌ بأثر رجعي لم يقرّره أحد. فالمفتاح وحده لا
+ * يكفي: `META_OFFLINE_PURCHASES_SINCE` (ISO) شرطٌ معه، وغيابها أو فسادها ⇒
+ * مُطفأ.
+ */
+export function offlinePurchaseSharingSince(): Date | null {
+  if (process.env.META_OFFLINE_PURCHASES_ENABLED?.trim() !== "true") return null;
+  const raw = process.env.META_OFFLINE_PURCHASES_SINCE?.trim();
+  if (!raw) return null;
+  const since = new Date(raw);
+  return Number.isFinite(since.getTime()) ? since : null;
+}
+
+/**
+ * Meta ترفض حدثاً أقدم من سبعة أيام، ونحن لا نحاول: بيعةٌ تأكّدت قبل ذلك
+ * (زرّ إعادة على طلب قديم، أو تغيير حالة متأخّر) لا تُرسَل.
+ */
+export const MAX_PURCHASE_AGE_MS = 7 * 86_400_000;

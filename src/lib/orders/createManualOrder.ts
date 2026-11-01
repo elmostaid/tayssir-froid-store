@@ -15,6 +15,7 @@ import {
   linkOriginByReference,
   manualOrderConsent,
   OriginReferenceError,
+  type OrderOrigin,
 } from "@/lib/orders/originReference";
 import { sendDeferredPurchase } from "@/lib/pixel/sendDeferredPurchase";
 import { CLICK_ID_KEYS } from "@/lib/privacy/attribution";
@@ -79,7 +80,14 @@ export type ManualOrderInput = {
 };
 
 export type ManualOrderResult =
-  | { ok: true; orderId: number; orderNumber: string; publicReference: string }
+  | {
+      ok: true;
+      orderId: number;
+      orderNumber: string;
+      publicReference: string;
+      /** المرجع المُدخَل لم يُربط (والطلبية سُجِّلت رغم ذلك) — السبب للمدير. */
+      originWarning?: string | null;
+    }
   | { ok: false; errors: CreateOrderFieldError[] };
 
 function validateCustomer(input: ManualOrderInput): CreateOrderFieldError[] {
@@ -172,11 +180,29 @@ export async function createManualOrder(input: ManualOrderInput): Promise<Manual
 
       await writeNewOrderLines(trx, order.id, lines);
 
-      // الربط بالزيارة داخل نفس المعاملة: مرجع خاطئ يُلغي الطلبية كاملة
-      // (لا مخزون محجوز ولا رقم مستهلك) بدل طلبية بإسناد ناقص.
-      const origin = input.origin?.leadId
-        ? await linkOriginByLeadId(trx, order.id, input.origin.leadId)
-        : await linkOriginByReference(trx, order.id, input.origin?.reference);
+      // الربط بالزيارة **يساعد ولا يعرقل**: مرجع خاطئ أو مستعمل أو غير مسجَّل
+      // لا يمنع تسجيل بيعة وقعت. الطلبية تُنشأ بلا ربط، والسبب يُكتب في سجلّ
+      // حالتها ليراه المدير. ولا يُنسب أبداً لزيارة غيرها: الربط إمّا صحيح
+      // كاملاً وإمّا لا ربط.
+      //
+      // داخل SAVEPOINT: أي خطأ في الربط (حتى خطأ قاعدة غير متوقَّع) يُلغي
+      // الربط وحده، لا المعاملة ولا الطلبية.
+      let origin: OrderOrigin | null = null;
+      let originWarning: string | null = null;
+      try {
+        origin = await trx.savepoint((sp) =>
+          input.origin?.leadId
+            ? linkOriginByLeadId(sp, order.id, input.origin.leadId)
+            : linkOriginByReference(sp, order.id, input.origin?.reference)
+        );
+      } catch (error) {
+        if (error instanceof OriginReferenceError) {
+          originWarning = error.message;
+        } else {
+          console.error("createManualOrder: تعذّر ربط المرجع — الطلبية تُنشأ بلا ربط", error);
+          originWarning = "تعذّر ربط المرجع لسبب تقني — سُجِّلت الطلبية بلا ربط.";
+        }
+      }
       const consent = manualOrderConsent(origin, input.adConsentDeclared === true);
       // بلا موافقة موروثة: لا هوية، ولا معرّفات نقر — تبقى UTM وحدها.
       const stripClickIds = (value: unknown) =>
@@ -204,12 +230,13 @@ export async function createManualOrder(input: ManualOrderInput): Promise<Manual
         insert into public.order_status_history (order_id, status, note, changed_by)
         values (
           ${order.id}, 'confirmed',
-          ${`طلب مسجَّل يدوياً — المصدر: ${ORDER_SOURCE_LABELS[input.source]}`},
+          ${`طلب مسجَّل يدوياً — المصدر: ${ORDER_SOURCE_LABELS[input.source]}` +
+            (originWarning ? ` — ⚠ المرجع لم يُربط: ${originWarning}` : "")},
           ${input.createdByEmail}
         )
       `;
 
-      return order;
+      return { ...order, originWarning };
     });
 
     // البيعة مؤكَّدة منذ إنشائها: تُرسَل الآن — أو تُرفض بسببها (لا موافقة،
@@ -222,11 +249,9 @@ export async function createManualOrder(input: ManualOrderInput): Promise<Manual
       orderId: created.id,
       orderNumber: created.order_number,
       publicReference: created.public_reference,
+      originWarning: created.originWarning,
     };
   } catch (error) {
-    if (error instanceof OriginReferenceError) {
-      return { ok: false, errors: [{ field: "originReference", message: error.message }] };
-    }
     if (error instanceof StockConflictError) {
       return {
         ok: false,

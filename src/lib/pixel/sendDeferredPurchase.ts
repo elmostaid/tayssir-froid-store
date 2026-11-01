@@ -5,7 +5,8 @@ import { toInternationalDigits } from "@/lib/phone";
 import { SALE_CONFIRMED_STATUSES, type OrderStatus } from "@/lib/orders/orderStatus";
 import {
   actionSourceForOrderSource,
-  isOfflinePurchaseSharingEnabled,
+  MAX_PURCHASE_AGE_MS,
+  offlinePurchaseSharingSince,
   type MetaActionSource,
 } from "@/lib/pixel/actionSource";
 import { isAdConsentGranted } from "@/lib/privacy/consent";
@@ -101,6 +102,7 @@ export type DeferredPurchaseSkipReason =
   | "no_consent"
   | "offline_disabled"
   | "unknown_channel"
+  | "too_old"
   | "order_not_found"
   | "nothing_to_send"
   | "attempts_exhausted"
@@ -251,17 +253,35 @@ export async function sendDeferredPurchase(orderId: number): Promise<DeferredPur
  * هل يحقّ لهذه البيعة أن تصل Meta، وبأي قناة؟ قرارٌ نقيّ بلا قاعدة ولا
  * شبكة، يسبق الحجز: ما لا يحقّ إرساله لا يستهلك محاولة ولا يكتب خطأً.
  */
-export function metaPurchaseGate(order: {
-  source: string;
-  ad_consent: string;
-}):
+export function metaPurchaseGate(
+  order: { source: string; ad_consent: string; confirmed_at: Date | null },
+  now: number = Date.now()
+):
   | { ok: true; actionSource: MetaActionSource }
-  | { ok: false; reason: Extract<DeferredPurchaseSkipReason, "no_consent" | "offline_disabled" | "unknown_channel"> } {
+  | {
+      ok: false;
+      reason: Extract<
+        DeferredPurchaseSkipReason,
+        "no_consent" | "offline_disabled" | "unknown_channel" | "too_old"
+      >;
+    } {
   const actionSource = actionSourceForOrderSource(order.source);
   if (!actionSource) return { ok: false, reason: "unknown_channel" };
   if (!isAdConsentGranted(order.ad_consent)) return { ok: false, reason: "no_consent" };
-  if (actionSource !== "website" && !isOfflinePurchaseSharingEnabled()) {
-    return { ok: false, reason: "offline_disabled" };
+
+  const confirmedAt = order.confirmed_at ? new Date(order.confirmed_at).getTime() : null;
+  // لا إرسال بأثر رجعي: بيعة تأكّدت قبل أسبوع لا تصل Meta، أياً كانت قناتها.
+  if (confirmedAt !== null && now - confirmedAt > MAX_PURCHASE_AGE_MS) {
+    return { ok: false, reason: "too_old" };
+  }
+
+  if (actionSource !== "website") {
+    const since = offlinePurchaseSharingSince();
+    if (!since) return { ok: false, reason: "offline_disabled" };
+    // ما تأكّد قبل لحظة التشغيل يبقى خارجها — ولو كان عمره ساعة.
+    if (confirmedAt === null || confirmedAt < since.getTime()) {
+      return { ok: false, reason: "offline_disabled" };
+    }
   }
   return { ok: true, actionSource };
 }

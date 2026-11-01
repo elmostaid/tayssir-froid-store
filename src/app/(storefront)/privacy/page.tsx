@@ -53,7 +53,9 @@ export default async function PrivacyPage() {
       <ul className="list-inside list-disc">
         <li>شركات التوصيل: الاسم والهاتف والعنوان، لتسليم الطلبية.</li>
         <li>Meta Platforms Ireland: بموافقتك فقط، كما وُصف أعلاه.</li>
-        <li>Google (Google Analytics): إحصاء الزيارات.</li>
+        <li>
+          Google (Google Analytics): إحصاء الزيارات وحده — إشارات Google وتخصيص الإعلانات مُعطَّلان.
+        </li>
         <li>مزوّدو الاستضافة: Vercel (الموقع) وSupabase (قاعدة البيانات).</li>
       </ul>
       <p className="mt-2">

@@ -161,6 +161,7 @@ export async function retryDeferredPurchase(orderId: number): Promise<OrderActio
     offline_disabled:
       "مبيعات خارج الموقع لا تُرسَل إلى Meta بعد (META_OFFLINE_PURCHASES_ENABLED مُطفأ حتى إذن CNDP).",
     unknown_channel: "قناة الطلب غير معروفة — لا نخمّن قناة لـMeta.",
+    too_old: "البيعة تأكّدت قبل أكثر من سبعة أيام — Meta لا تقبلها، ولا نرسل بأثر رجعي.",
     not_a_sale: "الطلب ليس في حالة بيعة مؤكَّدة.",
     nothing_to_send: "لا سطر محجوز في هذا الطلب.",
     order_not_found: "الطلب غير موجود.",

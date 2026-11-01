@@ -21,6 +21,15 @@ import { GA_MEASUREMENT_ID, isAnalyticsEnabled } from "@/lib/analytics/config";
  * (dataLayer/gtag من جهة، fbq من جهة أخرى)، فوجود أحدهما لا يؤثِّر إطلاقاً
  * على الآخر.
  */
+/**
+ * إحصاء زيارات فقط — لا إشهار ولا ملف شخصي.
+ *
+ * مداولة CNDP D-939-2025 تُعفي من الموافقة المسبقة «إعداد إحصاءات التصفّح
+ * وقياس الجمهور **دون إنشاء ملف شخصي**»، وتستثني صراحةً الإشهار المخصَّص.
+ * فـGA4 هنا مقيَّد بما يبقيه داخل الإعفاء: إشارات Google (ربط الحسابات عبر
+ * الأجهزة) مُطفأة، وتخصيص الإعلانات مُطفأ، ووضع الموافقة يرفض افتراضياً كل
+ * تخزين إشهاري. وما عدا ذلك (Meta) وراء شريط الموافقة.
+ */
 export function GoogleAnalytics() {
   // الإنتاج وحده. في المعاينة لا يُحمَّل السكريبت ولا يُرسَل أي حدث، فلا
   // تختلط حركة الاختبار بأرقام الموقع الحقيقي. راجع isAnalyticsEnabled.
@@ -37,8 +46,17 @@ export function GoogleAnalytics() {
         {`
 window.dataLayer = window.dataLayer || [];
 function gtag(){dataLayer.push(arguments);}
+gtag('consent', 'default', {
+  ad_storage: 'denied',
+  ad_user_data: 'denied',
+  ad_personalization: 'denied',
+  analytics_storage: 'granted'
+});
 gtag('js', new Date());
-gtag('config', '${GA_MEASUREMENT_ID}');
+gtag('config', '${GA_MEASUREMENT_ID}', {
+  allow_google_signals: false,
+  allow_ad_personalization_signals: false
+});
         `}
       </Script>
     </>

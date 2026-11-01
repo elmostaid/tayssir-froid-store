@@ -32,9 +32,19 @@ const INQUIRY_WINDOW_MS = 15 * 60 * 1000;
 const MAX_INQUIRIES_PER_WINDOW = 30;
 const inquiriesByIp = new Map<string, number[]>();
 
+/** حدّ الذاكرة: نسخة خادم تعيش طويلاً لا يجوز أن تتراكم فيها عناوين لا تنتهي. */
+const MAX_TRACKED_IPS = 5000;
+
 export function isInquiryRateLimited(clientIp: string | undefined): boolean {
   if (!clientIp) return false;
   const now = Date.now();
+  if (inquiriesByIp.size >= MAX_TRACKED_IPS) {
+    for (const [ip, times] of inquiriesByIp) {
+      if (times.every((t) => now - t >= INQUIRY_WINDOW_MS)) inquiriesByIp.delete(ip);
+    }
+    // كلها نشطة (هجوم موزَّع): نبدأ من جديد بدل النموّ بلا حدّ.
+    if (inquiriesByIp.size >= MAX_TRACKED_IPS) inquiriesByIp.clear();
+  }
   const recent = (inquiriesByIp.get(clientIp) ?? []).filter((t) => now - t < INQUIRY_WINDOW_MS);
   if (recent.length >= MAX_INQUIRIES_PER_WINDOW) {
     inquiriesByIp.set(clientIp, recent);
