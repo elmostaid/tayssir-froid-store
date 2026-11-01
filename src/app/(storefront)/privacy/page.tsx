@@ -15,11 +15,20 @@ export const metadata: Metadata = {
  * المُتلقّون بما فيه النقل للخارج، طريقة ممارسة الحقوق، ومراجع وصولات CNDP.
  *
  * ⚠ النصّ مسودّة تقنية دقيقة لما يفعله الكود فعلاً، لا رأي قانوني. يحتاج
- * مراجعة مستشار قبل النشر، ووصولات CNDP تُضاف في `CNDP_RECEIPT_NUMBERS`.
+ * مراجعة مستشار قبل النشر.
+ *
+ * ## قاعدة: لا معلومة قانونية غير مؤكَّدة على صفحة عامة
+ *
+ * لا رقم وصل CNDP ولا إذن نقل ولا اسم شركة يُعرض ما لم يوجد فعلاً:
+ * - قسم «مراجع CNDP» لا يُرسم أصلاً حتى يُضبط `CNDP_RECEIPT_NUMBERS`.
+ * - النشاط يسيّره شخص ذاتي بلا شركة مسجَّلة: لا اسم تجاري قانوني ولا رقم
+ *   سجلّ يُخترع. البريد يظهر فقط إن ضُبط `PRIVACY_CONTACT_EMAIL`.
+ * - النقل للخارج يُذكر كحقيقة (أين تُعالَج البيانات)، لا كإذن مُنح.
  */
 export default async function PrivacyPage() {
   const settings = await safeQuery(() => getSettings(), FALLBACK_SETTINGS, "PrivacyPage.getSettings");
-  const receipts = process.env.CNDP_RECEIPT_NUMBERS?.trim();
+  const receipts = process.env.CNDP_RECEIPT_NUMBERS?.trim() || null;
+  const contactEmail = process.env.PRIVACY_CONTACT_EMAIL?.trim() || null;
 
   return (
     <article className="mx-auto max-w-3xl px-4 py-8 text-sm leading-7 text-neutral-700">
@@ -27,8 +36,15 @@ export default async function PrivacyPage() {
 
       <h2 className="mt-6 font-bold text-neutral-900">المسؤول عن المعالجة</h2>
       <p>
-        {settings.storeName} — {settings.storeCity}. للتواصل بخصوص بياناتك: واتساب{" "}
-        <span dir="ltr">{settings.whatsappNumber}</span>.
+        {settings.storeName}، نشاط تجاري يسيّره شخص ذاتي — {settings.storeCity}. للتواصل بخصوص
+        بياناتك: واتساب <span dir="ltr">{settings.whatsappNumber}</span>
+        {contactEmail && (
+          <>
+            {" "}
+            أو البريد <span dir="ltr">{contactEmail}</span>
+          </>
+        )}
+        .
       </p>
 
       <h2 className="mt-6 font-bold text-neutral-900">ما نجمعه ولماذا</h2>
@@ -52,16 +68,13 @@ export default async function PrivacyPage() {
       <h2 className="mt-6 font-bold text-neutral-900">المُتلقّون والنقل إلى الخارج</h2>
       <ul className="list-inside list-disc">
         <li>شركات التوصيل: الاسم والهاتف والعنوان، لتسليم الطلبية.</li>
-        <li>Meta Platforms Ireland: بموافقتك فقط، كما وُصف أعلاه.</li>
+        <li>Meta (فيسبوك وإنستغرام): بموافقتك فقط، كما وُصف أعلاه.</li>
         <li>
           Google (Google Analytics): إحصاء الزيارات وحده — إشارات Google وتخصيص الإعلانات مُعطَّلان.
         </li>
         <li>مزوّدو الاستضافة: Vercel (الموقع) وSupabase (قاعدة البيانات).</li>
       </ul>
-      <p className="mt-2">
-        بعض هؤلاء خارج المغرب. النقل إلى الخارج يخضع لإذن اللجنة الوطنية لمراقبة حماية المعطيات ذات
-        الطابع الشخصي (CNDP).
-      </p>
+      <p className="mt-2">بعض هؤلاء المزوّدين يعالجون البيانات خارج المغرب.</p>
 
       <h2 className="mt-6 font-bold text-neutral-900">مدة الاحتفاظ</h2>
       <ul className="list-inside list-disc">
@@ -80,8 +93,12 @@ export default async function PrivacyPage() {
         راسلنا على واتساب أعلاه. ويمكنك سحب موافقتك على كوكيز Meta في أي وقت: <PrivacySettingsLink />.
       </p>
 
-      <h2 className="mt-6 font-bold text-neutral-900">مراجع CNDP</h2>
-      <p dir={receipts ? "ltr" : undefined}>{receipts ?? "(لم تُضَف بعد)"}</p>
+      {receipts && (
+        <>
+          <h2 className="mt-6 font-bold text-neutral-900">مراجع CNDP</h2>
+          <p dir="ltr">{receipts}</p>
+        </>
+      )}
     </article>
   );
 }

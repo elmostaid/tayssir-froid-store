@@ -8,6 +8,9 @@ import {
 } from "@/lib/whatsappInquiry";
 import { captureAttribution, getOrderAttribution } from "@/lib/attribution/capture";
 import { WhatsAppInquiryLink } from "@/components/WhatsAppInquiryLink";
+import { ConsentBanner } from "@/components/ConsentBanner";
+
+vi.mock("@/lib/analytics/track", () => ({ trackAnalyticsEvent: vi.fn() }));
 
 afterEach(() => {
   cleanup();
@@ -161,5 +164,21 @@ describe("معرّف النقرة لا يُكتب على الجهاز قبل ا�
     expect(getOrderAttribution()?.last?.fbclid).toBe("IwAR-landing");
     writeAdConsent("denied");
     expect(getOrderAttribution()?.last?.fbclid).toBeNull();
+  });
+});
+
+describe("شريط الموافقة: القبول والرفض بنفس السهولة", () => {
+  test("الزرّان بنفس المظهر حرفياً، وكلاهما يحفظ الاختيار ويُخفي الشريط", () => {
+    for (const [label, expected] of [["موافق", "granted"], ["رفض", "denied"]] as const) {
+      document.cookie = "tf_ad_consent=; Max-Age=0; path=/";
+      render(<ConsentBanner />);
+      const accept = screen.getByRole("button", { name: "موافق" });
+      const refuse = screen.getByRole("button", { name: "رفض" });
+      expect(accept.className).toBe(refuse.className);
+      fireEvent.click(screen.getByRole("button", { name: label }));
+      expect(document.cookie).toContain(`tf_ad_consent=${expected}`);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      cleanup();
+    }
   });
 });

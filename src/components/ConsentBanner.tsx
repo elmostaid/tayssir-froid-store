@@ -23,7 +23,9 @@ import {
  *
  * ## ما لا يفعله
  *
- * لا يحجب الصفحة ولا يمنع الشراء: الرفض لا يكلّف الزائر شيئاً. ولا يظهر
+ * لا يحجب الصفحة ولا يمنع الشراء: الرفض لا يكلّف الزائر شيئاً، والسلة
+ * وواتساب وإتمام الطلب تعمل دون أن يجيب. على الهاتف يقف **فوق** شريط
+ * السلة حين يظهر، لا فوقه (globals.css، `[data-consent-banner]`). ولا يظهر
  * قبل الترطيب (لقطة الخادم `null`): الخادم لا يعرف الاختيار، ورسمه ثم
  * إخفاؤه يُومض أمام كل من اختار سابقاً.
  */
@@ -55,36 +57,32 @@ export function ConsentBanner() {
     trackAnalyticsEvent(value === "granted" ? "ad_consent_granted" : "ad_consent_denied", {}, { immediate: true });
   }
 
+  // الزرّان بنفس الصنف حرفياً: لا لون يدفع نحو «موافق». اختبار يقارنهما.
+  const buttonClass =
+    "min-h-11 flex-1 rounded-full border border-neutral-800 bg-white px-4 font-semibold text-neutral-800 sm:flex-none sm:px-8";
+
   return (
     <div
       role="dialog"
       aria-live="polite"
       aria-label="الموافقة على كوكيز الإشهار"
-      className="fixed inset-x-0 bottom-0 z-50 border-t border-neutral-200 bg-white p-4 shadow-lg"
+      data-consent-banner
+      className="fixed inset-x-0 bottom-0 z-50 border-t border-neutral-200 bg-white px-3 py-2.5 shadow-lg sm:p-4"
     >
-      <div className="mx-auto flex max-w-3xl flex-col gap-3 text-sm text-neutral-700">
-        <p>
-          نستعمل كوكيز <strong>Meta</strong> (فيسبوك وإنستغرام) لقياس نتائج إعلاناتنا وعرض
-          إعلانات تناسبك. تُنقل هذه البيانات إلى Meta خارج المغرب، ولا نُفعّلها إلا
-          بموافقتك. الرفض لا يمنعك من الطلب، ويمكنك تغيير اختيارك في أي وقت من أسفل
-          الصفحة.{" "}
+      <div className="mx-auto flex max-w-3xl flex-col gap-2 text-[13px] leading-5 text-neutral-700 sm:flex-row sm:items-center sm:gap-4 sm:text-sm">
+        <p className="sm:flex-1">
+          نستعمل كوكيز <strong>Meta</strong> (فيسبوك وإنستغرام) لقياس إعلاناتنا وتخصيصها، وتُنقل
+          بياناتها خارج المغرب — بموافقتك فقط. الرفض لا يمنعك من الطلب، وتغيّر اختيارك متى شئت من
+          أسفل الصفحة.{" "}
           <Link href="/privacy" className="font-medium underline">
-            سياسة الخصوصية
+            التفاصيل
           </Link>
         </p>
         <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => choose("granted")}
-            className="min-h-11 flex-1 rounded-full border border-neutral-800 bg-neutral-800 px-4 font-semibold text-white"
-          >
+          <button type="button" onClick={() => choose("granted")} className={buttonClass}>
             موافق
           </button>
-          <button
-            type="button"
-            onClick={() => choose("denied")}
-            className="min-h-11 flex-1 rounded-full border border-neutral-800 bg-white px-4 font-semibold text-neutral-800"
-          >
+          <button type="button" onClick={() => choose("denied")} className={buttonClass}>
             رفض
           </button>
         </div>

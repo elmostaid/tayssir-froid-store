@@ -5,8 +5,9 @@
 # تلقائية** (تبدأ من Pro). فإن لم نأخذ نسخة بأنفسنا، لا نسخة.
 #
 # الاستعمال (من جهاز صاحب المشروع، لا من خادم مشترك):
-#   export PROD_DATABASE_URL='postgresql://...'   # من Supabase ← Connect ← Session pooler
 #   ./ops/tracking-rollout/backup-production-db.sh [مجلد_الحفظ]
+# يطلب رابط الاتصال **مخفياً** (لا يظهر على الشاشة ولا في تاريخ الأوامر).
+# الرابط من Supabase ← Project ← Connect ← Session pooler، بكلمة سرّ القاعدة.
 #
 # الضمانات:
 #   - الرابط لا يُطبع أبداً، ولا يُكتب في أي ملف.
@@ -18,7 +19,13 @@
 #     git)، ويُنقل إلى مكان آمن خارج هذا الجهاز.
 set -euo pipefail
 
-: "${PROD_DATABASE_URL:?اضبط PROD_DATABASE_URL أولاً (لا يُطبع)}"
+if [[ -z "${PROD_DATABASE_URL:-}" ]]; then
+  # `read -s`: لا صدى على الشاشة، ولا يدخل history لأنه ليس جزءاً من الأمر.
+  read -rsp "رابط قاعدة الإنتاج (مخفي): " PROD_DATABASE_URL
+  echo
+fi
+[[ -n "$PROD_DATABASE_URL" ]] || { echo "لا رابط — توقّف." >&2; exit 1; }
+export PGCONNECT_TIMEOUT=15
 OUT_DIR="${1:-backups}"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 FILE="${OUT_DIR}/tayssir-prod-${STAMP}.dump"
@@ -52,6 +59,25 @@ entries="$(pg_restore --list "$FILE" | grep -c 'TABLE DATA' || true)"
 echo "    جداول ببيانات في النسخة: ${entries}"
 (( entries > 0 )) || { echo "النسخة بلا بيانات — توقّف." >&2; exit 1; }
 
+# التحقّق بالاسترجاع: قاعدة محلية فارغة إن أُعطيت، وإلا حاوية Postgres مؤقتة
+# بنفس إصدار الإنتاج إن وُجد Docker — تُحذف بعد المقارنة.
+TEMP_CONTAINER=""
+cleanup() { [[ -n "$TEMP_CONTAINER" ]] && docker rm -f "$TEMP_CONTAINER" >/dev/null 2>&1 || true; }
+trap cleanup EXIT
+if [[ -z "${VERIFY_DATABASE_URL:-}" ]] && command -v docker >/dev/null 2>&1; then
+  echo "==> حاوية Postgres ${server_major} مؤقتة للتحقّق بالاسترجاع"
+  TEMP_CONTAINER="tf-backup-verify-$$"
+  docker run -d --rm --name "$TEMP_CONTAINER" -e POSTGRES_PASSWORD=verify -p 127.0.0.1::5432 "postgres:${server_major}" >/dev/null
+  port="$(docker port "$TEMP_CONTAINER" 5432/tcp | head -1 | sed 's/.*://')"
+  for _ in $(seq 1 30); do pg_isready -h 127.0.0.1 -p "$port" >/dev/null 2>&1 && break; sleep 1; done
+  # أدوار Supabase التي تشير إليها الصلاحيات — بلا تسجيل دخول، للاسترجاع فقط.
+  for role in anon authenticated service_role supabase_admin supabase_auth_admin; do
+    psql "postgresql://postgres:verify@127.0.0.1:${port}/postgres" -qc "create role ${role} nologin" >/dev/null 2>&1 || true
+  done
+  psql "postgresql://postgres:verify@127.0.0.1:${port}/postgres" -qc "create schema if not exists auth" >/dev/null
+  VERIFY_DATABASE_URL="postgresql://postgres:verify@127.0.0.1:${port}/postgres"
+fi
+
 if [[ -n "${VERIFY_DATABASE_URL:-}" ]]; then
   echo "==> استرجاع تجريبي في VERIFY_DATABASE_URL ومقارنة العدّ"
   pg_restore --no-owner --no-privileges --schema=public --dbname="$VERIFY_DATABASE_URL" "$FILE" 2>/dev/null || true
@@ -65,5 +91,9 @@ if [[ -n "${VERIFY_DATABASE_URL:-}" ]]; then
   done
 fi
 
-sha256sum "$FILE" | tee "${FILE}.sha256"
+if [[ -z "${VERIFY_DATABASE_URL:-}" ]]; then
+  echo "⚠ لا Docker ولا VERIFY_DATABASE_URL: النسخة مقروءة لكن الاسترجاع لم يُجرَّب." >&2
+fi
+
+(command -v sha256sum >/dev/null && sha256sum "$FILE" || shasum -a 256 "$FILE") | tee "${FILE}.sha256"
 echo "==> جاهزة: ${FILE} ($(du -h "$FILE" | cut -f1)). انقلها إلى مكان آمن خارج هذا الجهاز."
