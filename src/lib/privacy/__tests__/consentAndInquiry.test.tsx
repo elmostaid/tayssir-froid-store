@@ -182,3 +182,13 @@ describe("شريط الموافقة: القبول والرفض بنفس السه
     }
   });
 });
+
+describe("الإنتاج بلا شريط: لا موافقة تُقرأ أبداً", () => {
+  test("كوكي granted قديمة ⇒ unknown حين الجمع مطفأ", async () => {
+    vi.stubEnv("NEXT_PUBLIC_AD_CONSENT_ENABLED", "");
+    const { adConsentFromCookie, readAdConsentFromDocument } = await import("@/lib/privacy/consent");
+    document.cookie = "tf_ad_consent=granted; path=/";
+    expect(adConsentFromCookie("granted")).toBe("unknown");
+    expect(readAdConsentFromDocument()).toBe("unknown");
+  });
+});

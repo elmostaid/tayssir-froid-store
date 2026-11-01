@@ -31,6 +31,22 @@ export const AD_CONSENT_EVENT = "tf:ad-consent";
 
 export type AdConsent = "granted" | "denied" | "unknown";
 
+/**
+ * هل يُجمَع اختيار الزائر أصلاً؟ **مطفأ في الإنتاج** (قرار صاحب المشروع،
+ * 2026-11-01: لا شريط ولا نافذة). وبلا آلية موافقة لا أساس لكوكيز Meta:
+ * كل كوكي `tf_ad_consent` قديمة تُقرأ `unknown`، فلا Pixel، ولا هوية
+ * إعلانية، ولا Purchase إلى Meta. يُعاد تشغيله بـ
+ * `NEXT_PUBLIC_AD_CONSENT_ENABLED=on` (وقت البناء) مع إعادة الشريط.
+ */
+export function isAdConsentCollectionEnabled(): boolean {
+  return process.env.NEXT_PUBLIC_AD_CONSENT_ENABLED === "on";
+}
+
+/** الاختيار كما تحمله كوكي الزائر — `unknown` دائماً ما دام الجمع مطفأً. */
+export function adConsentFromCookie(raw: unknown): AdConsent {
+  return isAdConsentCollectionEnabled() ? parseAdConsent(raw) : "unknown";
+}
+
 /** أي قيمة غير معروفة (كوكي تالفة، قديمة، مزوّرة) ⇒ `unknown`، لا موافقة. */
 export function parseAdConsent(raw: unknown): AdConsent {
   return raw === "granted" || raw === "denied" ? raw : "unknown";
@@ -48,7 +64,7 @@ export function readAdConsentFromDocument(): AdConsent {
       .split(";")
       .map((part) => part.trim())
       .find((part) => part.startsWith(`${AD_CONSENT_COOKIE}=`));
-    return parseAdConsent(match ? decodeURIComponent(match.slice(AD_CONSENT_COOKIE.length + 1)) : null);
+    return adConsentFromCookie(match ? decodeURIComponent(match.slice(AD_CONSENT_COOKIE.length + 1)) : null);
   } catch {
     return "unknown";
   }

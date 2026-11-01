@@ -6,6 +6,8 @@ export default defineConfig({
   plugins: [tsconfigPaths(), react()],
   test: {
     environment: "jsdom",
+    // المسار المُفعَّل للموافقة يبقى مُختبَراً؛ المسار المطفأ (الإنتاج) له اختباره الخاص.
+    env: { NEXT_PUBLIC_AD_CONSENT_ENABLED: "on" },
     // اختبارات التكامل (createOrder.test.ts، adminDashboardStats.test.ts...)
     // تكتب فعلياً على نفس قاعدة Postgres المحلية المشتركة. أغلبها معزول
     // بأسماء اختبار فريدة (SKU/هاتف)، لكن أي اختبار يتحقق من مجموع عالمي

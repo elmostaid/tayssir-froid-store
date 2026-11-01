@@ -3,7 +3,7 @@ import { SESSION_COOKIE, CONTEXT_COOKIE } from "@/lib/analytics/session";
 import { parseSessionContextJson } from "@/lib/analytics/sessionContext";
 import { GA_MEASUREMENT_ID } from "@/lib/analytics/config";
 import type { CreateOrderRequestContext } from "@/lib/orders/types";
-import { AD_CONSENT_COOKIE, parseAdConsent } from "@/lib/privacy/consent";
+import { AD_CONSENT_COOKIE, adConsentFromCookie } from "@/lib/privacy/consent";
 
 /**
  * سياق الطلب كما يُقرأ من ترويسات المتصفح وكوكيّاته.
@@ -71,7 +71,7 @@ export async function readOrderRequestContext(): Promise<
         parseSessionContextJson(cookieStore.get(CONTEXT_COOKIE)?.value) ?? undefined,
       gaClientId: gaClientIdFromCookie(cookieStore.get("_ga")?.value) ?? undefined,
       gaSessionId: gaSessionIdFromCookie(cookieStore.get(GA_SESSION_COOKIE)?.value) ?? undefined,
-      adConsent: parseAdConsent(cookieStore.get(AD_CONSENT_COOKIE)?.value),
+      adConsent: adConsentFromCookie(cookieStore.get(AD_CONSENT_COOKIE)?.value),
     };
   } catch {
     return undefined;

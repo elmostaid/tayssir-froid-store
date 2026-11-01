@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 import { safeQuery } from "@/lib/safeQuery";
 import { AD_CONSENT_MAX_AGE_DAYS } from "@/lib/privacy/consent";
-import { PrivacySettingsLink } from "@/components/ConsentBanner";
 
 export const metadata: Metadata = {
   title: "سياسة الخصوصية",
@@ -58,7 +57,7 @@ export default async function PrivacyPage() {
           أداء الموقع، بلا ملف شخصي عنك.
         </li>
         <li>
-          <strong>بموافقتك فقط — كوكيز Meta:</strong> معرّفات Meta Pixel (<span dir="ltr">_fbp</span>،{" "}
+          <strong>كوكيز Meta (غير مفعّلة حالياً، ولا تُفعَّل إلا بموافقتك):</strong> معرّفات Meta Pixel (<span dir="ltr">_fbp</span>،{" "}
           <span dir="ltr">_fbc</span>)، ومعرّف النقر على الإعلان، وعنوان IP ونوع المتصفح — لقياس
           نتائج إعلاناتنا على فيسبوك وإنستغرام. وعند تأكيد طلبيتك نُرسل إلى Meta قيمتها
           ومنتجاتها، ورقم هاتفك <strong>مُشفَّراً</strong> (SHA-256) لا كما هو.
@@ -82,7 +81,6 @@ export default async function PrivacyPage() {
           معرّفات Meta وعنوان IP ونوع المتصفح ومعرّفات النقر: {AD_CONSENT_MAX_AGE_DAYS} يوماً ثم تُمحى
           تلقائياً.
         </li>
-        <li>اختيارك في شريط الكوكيز: {AD_CONSENT_MAX_AGE_DAYS} يوماً، ثم نسألك من جديد.</li>
         <li>كوكي Google Analytics (<span dir="ltr">_ga</span>): {AD_CONSENT_MAX_AGE_DAYS} يوماً.</li>
         <li>بيانات الطلبية: المدة التي يفرضها القانون لحفظ الوثائق التجارية والمحاسبية.</li>
       </ul>
@@ -90,7 +88,7 @@ export default async function PrivacyPage() {
       <h2 className="mt-6 font-bold text-neutral-900">حقوقك</h2>
       <p>
         لك حق الولوج إلى بياناتك وتصحيحها والاعتراض على معالجتها (المواد 7 و8 و9 من القانون 09-08).
-        راسلنا على واتساب أعلاه. ويمكنك سحب موافقتك على كوكيز Meta في أي وقت: <PrivacySettingsLink />.
+        راسلنا على واتساب أعلاه.
       </p>
 
       {receipts && (
