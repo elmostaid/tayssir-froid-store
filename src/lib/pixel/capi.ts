@@ -94,6 +94,11 @@ export type SendCapiEventParams = {
   actionSource?: MetaActionSource;
   userData?: CapiUserData;
   customData: Record<string, unknown>;
+  /**
+   * رمز Test Events لهذا الحدث وحده (أداة الاختبار الداخلية). يتقدّم على
+   * META_TEST_EVENT_CODE. غيابه = السلوك المعتاد حرفياً.
+   */
+  testEventCode?: string;
 };
 
 /**
@@ -151,7 +156,7 @@ export async function sendCapiEvent(params: SendCapiEventParams): Promise<CapiSe
     }
     if (params.userData?.country) userData.country = [hashForCapi(params.userData.country)];
 
-    const testEventCode = getTestEventCode();
+    const testEventCode = params.testEventCode?.trim() || getTestEventCode();
 
     const body = {
       data: [
