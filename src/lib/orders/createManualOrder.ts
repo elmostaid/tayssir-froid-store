@@ -170,7 +170,7 @@ export async function createManualOrder(input: ManualOrderInput): Promise<Manual
   // قامت به هي نفسها، ولا طلبية ثانية.
   if (idempotencyKey) {
     const existing = await findByIdempotencyKey(idempotencyKey);
-    if (existing) return existingResult(existing);
+    if (existing) return existingOrderResult(existing);
   }
 
   const structuralErrors = validateCustomer(input);
@@ -291,7 +291,7 @@ export async function createManualOrder(input: ManualOrderInput): Promise<Manual
       return { ...order, originWarning, duplicate: false as const };
     });
 
-    if (created.duplicate) return existingResult(created);
+    if (created.duplicate) return existingOrderResult(created);
 
     // البيعة مؤكَّدة منذ إنشائها: تُرسَل الآن — أو تُرفض بسببها (لا موافقة،
     // المفتاح مُطفأ) دون أي أثر. `await` لا `void`: دالة serverless قد
@@ -323,6 +323,17 @@ export async function createManualOrder(input: ManualOrderInput): Promise<Manual
       errors: [{ field: "general", message: "تعذّر حفظ الطلب بسبب مشكلة تقنية. حاول مرة أخرى." }],
     };
   }
+}
+
+/**
+ * نفس المحاولة حُفظت من قبل. إن ضاع جوابها في انقطاعٍ وقع **بعد** COMMIT،
+ * فالمحاولة الأولى لم تبلغ إرسال البيعة أصلاً — فتُرسَل الآن لتلك الطلبية
+ * نفسها. وهذا لا يُرسل مرّتين أبداً: `sendDeferredPurchase` يحجز الإرسال
+ * ذرّياً (`meta_purchase_sent_at is null`)، فإن كان قد أُرسل لا يحدث شيء.
+ */
+async function existingOrderResult(order: ExistingOrder): Promise<ManualOrderResult> {
+  await sendDeferredPurchase(order.id);
+  return existingResult(order);
 }
 
 function existingResult(order: ExistingOrder): ManualOrderResult {

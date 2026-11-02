@@ -2,8 +2,17 @@ import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { randomUUID } from "crypto";
 import { sql } from "@/lib/db";
 
-// لا Meta في الاختبار: البيعة اليدوية لا تمرّ إلى CAPI هنا أصلاً.
-vi.mock("@/lib/pixel/capi", () => ({ sendCapiEvent: vi.fn() }));
+// Meta مُلفَّق: نعدّ كم مرة تُرسَل البيعة فعلاً. الإرسال مفعَّل للطلبات
+// اليدوية في هذا الملف (كما في الإنتاج)، فالعدّ يقيس السلوك الحقيقي.
+const sendCapiEventMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => ({ ok: true })));
+vi.mock("@/lib/pixel/capi", () => ({ sendCapiEvent: sendCapiEventMock }));
+vi.mock("@/lib/ga/measurementProtocol", () => ({
+  sendGaPurchaseEvent: vi.fn(async () => false),
+  isGaMeasurementProtocolConfigured: () => false,
+}));
+process.env.META_OFFLINE_PURCHASES_ENABLED = "true";
+process.env.META_OFFLINE_PURCHASES_SINCE = "2026-01-01T00:00:00Z";
+process.env.META_PURCHASE_LEGITIMATE_INTEREST_SINCE = "2026-01-01T00:00:00Z";
 
 const { createManualOrder, manualIdempotencyKey } = await import("@/lib/orders/createManualOrder");
 
@@ -152,5 +161,47 @@ describe("مفتاح منع التكرار للطلب اليدوي", () => {
     const [{ n }] = await sql<{ n: number }[]>`
       select count(*)::int as n from public.order_status_history where order_id = ${first.orderId}`;
     expect(n).toBe(1);
+  });
+
+  test("Purchase يُرسَل مرّة واحدة بالضبط مهما أُعيد الإرسال", async () => {
+    await sql`update public.products set stock_quantity = 10 where sku = ${SKU}`;
+    const key = randomUUID();
+    sendCapiEventMock.mockClear();
+    const first = await createManualOrder(input(key, 1));
+    await createManualOrder(input(key, 1));
+    await createManualOrder(input(key, 1));
+    if (!first.ok) throw new Error("expected ok");
+    const purchases = sendCapiEventMock.mock.calls.filter(
+      (call) => (call[0] as { eventName?: string } | undefined)?.eventName === "Purchase"
+    );
+    expect(purchases).toHaveLength(1);
+    const [row] = await sql<{ sent: boolean; attempts: number }[]>`
+      select meta_purchase_sent_at is not null as sent, meta_purchase_attempts as attempts
+      from public.orders where id = ${first.orderId}`;
+    expect(row).toEqual({ sent: true, attempts: 1 });
+  });
+
+  test("حُفظت والجواب ضاع قبل إرسال البيعة ⇒ إعادة الإرسال تُرسلها مرّة واحدة، لا صفراً ولا مرّتين", async () => {
+    await sql`update public.products set stock_quantity = 10 where sku = ${SKU}`;
+    const key = randomUUID();
+    sendCapiEventMock.mockClear();
+    // المحاولة الأولى كما وقعت في الانقطاع: الطلبية مُلتزَمة، ولم تبلغ مرحلة
+    // إرسال البيعة. نحاكي «لم يُرسَل شيء» بإطفاء الإرسال لحظتها فقط.
+    process.env.META_OFFLINE_PURCHASES_ENABLED = "false";
+    const first = await createManualOrder(input(key, 1));
+    process.env.META_OFFLINE_PURCHASES_ENABLED = "true";
+    if (!first.ok) throw new Error("expected ok");
+    expect(sendCapiEventMock).toHaveBeenCalledTimes(0);
+
+    const retry = await createManualOrder(input(key, 1));
+    expect(retry).toMatchObject({ ok: true, duplicate: true, orderId: first.orderId });
+    expect(sendCapiEventMock).toHaveBeenCalledTimes(1);
+
+    await createManualOrder(input(key, 1));
+    expect(sendCapiEventMock).toHaveBeenCalledTimes(1);
+    const [row] = await sql<{ sent: boolean; attempts: number }[]>`
+      select meta_purchase_sent_at is not null as sent, meta_purchase_attempts as attempts
+      from public.orders where id = ${first.orderId}`;
+    expect(row).toEqual({ sent: true, attempts: 1 });
   });
 });
