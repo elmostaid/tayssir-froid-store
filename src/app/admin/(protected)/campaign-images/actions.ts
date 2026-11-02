@@ -5,7 +5,7 @@ import { randomUUID } from "crypto";
 import { sql } from "@/lib/db";
 import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import { ALLOWED_IMAGE_TYPES, EXT_BY_TYPE } from "@/lib/storage/imageValidation";
-import { isRemoteStorageConfigured } from "@/lib/storage/productImages";
+import { isRemoteStorageConfigured } from "@/lib/storage/remoteStorage";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/serviceRole";
 import { revalidateCatalog } from "@/lib/queries/catalogCache";
 import {

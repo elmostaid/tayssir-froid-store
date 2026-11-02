@@ -5,7 +5,7 @@ import { HOME_FEATURED_LIMIT } from "@/lib/queries/catalog";
 import { resolveProductImageUrls } from "@/lib/storage/resolveProductImageUrl";
 import { FeaturedManager } from "@/components/admin/FeaturedManager";
 import { getFeaturedDisplayImagesFresh } from "@/lib/queries/settings";
-import { canWriteProductImages } from "@/lib/storage/productImages";
+import { canWriteProductImages } from "@/lib/storage/remoteStorage";
 
 export const dynamic = "force-dynamic";
 

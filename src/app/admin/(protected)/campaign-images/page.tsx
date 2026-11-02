@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
-import { canWriteProductImages } from "@/lib/storage/productImages";
+import { canWriteProductImages } from "@/lib/storage/remoteStorage";
 import { resolveCampaignCardImages } from "@/lib/campaignCardImages";
 import { getCampaignImageOverridesFresh } from "@/lib/queries/settings";
 import { campaignSlotKey } from "@/lib/campaignImages";

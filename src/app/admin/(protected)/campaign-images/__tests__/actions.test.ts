@@ -7,7 +7,7 @@ vi.mock("@/lib/auth/requireAdmin", async () => {
   return { ...actual, getAdminUser: getAdminUserMock };
 });
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), updateTag: vi.fn(), revalidateTag: vi.fn(), unstable_cache: (fn: unknown) => fn }));
-vi.mock("@/lib/storage/productImages", () => ({ isRemoteStorageConfigured: () => true }));
+vi.mock("@/lib/storage/remoteStorage", () => ({ isRemoteStorageConfigured: () => true, canWriteProductImages: () => true }));
 
 const BASE = "https://proj.supabase.co/storage/v1/object/public/product-images/";
 const listMock = vi.fn();
