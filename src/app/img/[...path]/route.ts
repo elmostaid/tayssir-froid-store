@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { CAMPAIGN_OBJECT_PATH_RE } from "@/lib/campaignImages";
 import { FEATURED_OBJECT_PATH_RE } from "@/lib/featuredDisplayImages";
+import { SECTION_IMAGE_PATH_RE } from "@/lib/campaignSections";
 
 /**
  * تقديم صور المنتجات المرفوعة من نطاق الموقع نفسه بدل رابط Supabase المباشر.
@@ -28,13 +29,15 @@ const OBJECT_PATH_RE =
 
 /**
  * وصور بطاقات الحملات `campaign/{page}-{type}/{UUID}.ext` (lib/campaignImages.ts)،
- * وصور العرض في «الأكثر طلباً» `featured/{productId}/{UUID}.ext`.
+ * وصور العرض في «الأكثر طلباً» `featured/{productId}/{UUID}.ext`،
+ * وصور عرض أقسام مكينات الصابون `campaign-products/{page}-{type}/{productId}/{UUID}.ext`.
  */
 function isAllowedObjectPath(objectPath: string): boolean {
   return (
     OBJECT_PATH_RE.test(objectPath) ||
     CAMPAIGN_OBJECT_PATH_RE.test(objectPath) ||
-    FEATURED_OBJECT_PATH_RE.test(objectPath)
+    FEATURED_OBJECT_PATH_RE.test(objectPath) ||
+    SECTION_IMAGE_PATH_RE.test(objectPath)
   );
 }
 

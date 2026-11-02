@@ -1,7 +1,9 @@
 import Link from "next/link";
-import { getProducts, getProductIdsWithVariants } from "@/lib/queries/catalog";
+import { getProducts, getProductIdsWithVariants, getCategoryProductsByDemand } from "@/lib/queries/catalog";
 import type { CatalogProduct } from "@/lib/types";
-import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
+import { getSettings, getCampaignSections, FALLBACK_SETTINGS } from "@/lib/queries/settings";
+import { campaignSlotKey } from "@/lib/campaignImages";
+import { findSectionSlot, selectSectionProducts, type SectionConfig } from "@/lib/campaignSections";
 import { resolveCampaignCardImages } from "@/lib/campaignCardImages";
 import { CampaignTypeCards, type CampaignTypeCard } from "@/app/(storefront)/campaignTypeCards";
 import { ProductCard } from "@/components/ProductCard";
@@ -105,11 +107,19 @@ export async function CampaignOverview({
   // استعلام لكل نوع، متوازية. الحارس لكل واحد على حدة مقصود: عطل تصنيف
   // واحد لا يجوز أن يُخفي النوعين الآخرين — صفحة فيها نوعان أنفع لزائر
   // مدفوع من صفحة عطل كاملة. ونرمي فقط إذا سقطت الثلاثة.
-  const [previews, variantProductIds, settings] = await Promise.all([
+  //
+  // صفحة مكينات الصابون: الأقسام «مُنتقاة» — اختيار المدير أولاً ثم الأكثر
+  // طلباً بقطعة واحدة من كل صنف (lib/campaignSections.ts). صفحة الشوفو تبقى
+  // على سلوكها: أول أربعة بترتيب الكتالوج.
+  const curated = Boolean(findSectionSlot(campaignSlotKey(pageKey, tabs[0]?.key ?? "")));
+  const [ranked, variantProductIds, settings, sections] = await Promise.all([
     Promise.all(
       tabs.map((tab) =>
         safeQuery<CatalogProduct[] | "SERVICE_UNAVAILABLE">(
-          () => getProducts({ categorySlug: tab.categorySlug, limit: OVERVIEW_PREVIEW_SIZE }),
+          () =>
+            curated
+              ? getCategoryProductsByDemand(tab.categorySlug)
+              : getProducts({ categorySlug: tab.categorySlug, limit: OVERVIEW_PREVIEW_SIZE }),
           "SERVICE_UNAVAILABLE",
           `campaignOverview.getProducts(${tab.key})`
         )
@@ -121,7 +131,19 @@ export async function CampaignOverview({
       "campaignOverview.getProductIdsWithVariants"
     ),
     safeQuery(() => getSettings(), FALLBACK_SETTINGS, "campaignOverview.getSettings"),
+    curated
+      ? safeQuery(() => getCampaignSections(), {} as SectionConfig, "campaignOverview.getCampaignSections")
+      : Promise.resolve({} as SectionConfig),
   ]);
+
+  // صورة العرض الخاصة لكل منتج في قسمه (إن اختارها المدير).
+  const displayImages: Map<number, string>[] = tabs.map(() => new Map());
+  const previews = ranked.map((list, index) => {
+    if (list === "SERVICE_UNAVAILABLE" || !curated) return list;
+    const items = selectSectionProducts(list, sections[campaignSlotKey(pageKey, tabs[index].key)]);
+    for (const item of items) if (item.displayImage) displayImages[index].set(item.product.id, item.displayImage);
+    return items.map((item) => item.product);
+  });
 
   if (previews.every((preview) => preview === "SERVICE_UNAVAILABLE")) {
     throw new ServiceUnavailableError("campaign-overview");
@@ -129,10 +151,14 @@ export async function CampaignOverview({
 
   // صورة كل بطاقة: اليدوية من لوحة الإدارة، وإلا صورة المنتج الممثِّل،
   // وإلا صورة أول منتج في النوع (المنتجات المجلوبة أعلاه، بلا استعلام زائد).
+  //
+  // في الصفحة المنتقاة لم يعد أول منتج في القسم هو أول منتج في التصنيف،
+  // فالبطاقات تجلب صورتها التلقائية بنفسها (أول منتج بترتيب الكتالوج) —
+  // فلا تتغيّر صورة أي بطاقة بسبب اختيار منتجات القسم.
   const cardImages = await resolveCampaignCardImages(
     pageKey,
     tabs,
-    previews.map((preview) => (preview === "SERVICE_UNAVAILABLE" ? null : preview[0] ?? null))
+    curated ? undefined : previews.map((preview) => (preview === "SERVICE_UNAVAILABLE" ? null : preview[0] ?? null))
   );
   const cards: CampaignTypeCard[] = tabs.map((tab, index) => ({
     tab,
@@ -202,6 +228,7 @@ export async function CampaignOverview({
                     key={product.id}
                     product={product}
                     imageUrl={product.primary_image_path}
+                    displayImageUrl={displayImages[tabIndex].get(product.id) ?? null}
                     hasVariants={variantProductIds.has(product.id)}
                     whatsappNumber={settings.whatsappNumber}
                     // فوق الطيّة الآن بطاقات الأنواع بصورها (بأولوية)، فصور

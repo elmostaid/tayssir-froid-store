@@ -451,6 +451,43 @@ export async function getProducts(
   }
 }
 
+/**
+ * منتجات تصنيف ظاهرة، مرتّبة بالطلب: الوحدات المطلوبة في الطلبيات غير
+ * الملغاة/المرتجعة، ثم ترتيب المدير. لأقسام صفحة مكينات الصابون
+ * (lib/campaignSections.ts) — منها تُكمَل الخانات التي لم يخترها المدير.
+ *
+ * التصنيف الأكبر 115 منتجاً، فالحدّ 200 يغطّي التصنيف كاملاً، وتحت نفس
+ * كاش الكتالوج (60 ثانية بوسم catalog) فلا تلمس الزيارات المتتالية القاعدة.
+ */
+const queryCategoryProductsByDemand = cachedCatalogQuery(
+  ["catalog-category-products-by-demand"],
+  async (categorySlug: string) => sql<(CatalogProduct & { demand_units: number })[]>`
+    select p.*, coalesce(d.units, 0)::int as demand_units
+    from public.catalog_products p
+    left join (
+      select oi.product_id, sum(oi.quantity) as units
+      from public.order_items oi
+      join public.orders o on o.id = oi.order_id
+      where o.status not in ('cancelled', 'returned')
+      group by oi.product_id
+    ) d on d.product_id = p.id
+    where p.category_slug = ${categorySlug}
+    order by coalesce(d.units, 0) desc, p.sort_order asc, p.created_at desc
+    limit 200
+  `
+);
+
+export async function getCategoryProductsByDemand(
+  categorySlug: string
+): Promise<(CatalogProduct & { demand_units: number })[]> {
+  if (!hasDatabase) return (await getPreviewProducts({ categorySlug, limit: 200, sort: "newest" })).map((p) => ({ ...p, demand_units: 0 }));
+  try {
+    return await queryCategoryProductsByDemand(categorySlug);
+  } catch (error) {
+    failQuery("getCategoryProductsByDemand", error);
+  }
+}
+
 const queryProductBySlug = cachedCatalogQuery(
   ["catalog-product-by-slug"],
   async (slug: string) => sql<CatalogProduct[]>`

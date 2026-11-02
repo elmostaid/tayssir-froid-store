@@ -137,3 +137,29 @@ describe("الوجه المحايد لصفحة مكينات الصابون", () 
     });
   });
 });
+
+/**
+ * أقسام مكينات الصابون «مُنتقاة» (اختيار المدير + الأكثر طلباً بقطعة من كل
+ * صنف)، وصفحة الشوفو تبقى على أول أربعة بترتيب الكتالوج. وصور بطاقات
+ * الأنواع لا تأخذ صورتها من المنتجات المنتقاة — فلا تتغيّر البطاقات.
+ */
+describe("أقسام مكينات الصابون المنتقاة", () => {
+  const source = readFileSync("src/app/(storefront)/campaignOverview.tsx", "utf8");
+
+  test("الأقسام المنتقاة تخصّ مكينات الصابون وحدها", async () => {
+    const { findSectionSlot } = await import("@/lib/campaignSections");
+    for (const tab of WASHING_TABS) {
+      const slot = findSectionSlot(`washing-machines:${tab.key}`);
+      expect(slot?.categorySlug).toBe(tab.categorySlug);
+    }
+    for (const tab of HEATER_TABS) expect(findSectionSlot(`water-heaters:${tab.key}`)).toBeNull();
+  });
+
+  test("صفحة الشوفو تبقى على getProducts بحدّ 4", () => {
+    expect(source).toMatch(/getProducts\(\{ categorySlug: tab\.categorySlug, limit: OVERVIEW_PREVIEW_SIZE \}\)/);
+  });
+
+  test("صور البطاقات في الصفحة المنتقاة لا تُبنى من المنتجات المختارة", () => {
+    expect(source).toMatch(/resolveCampaignCardImages\(\s*pageKey,\s*tabs,\s*curated \? undefined :/);
+  });
+});

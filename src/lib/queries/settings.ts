@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { unstable_cache } from "next/cache";
 import { dbGuard, sql } from "@/lib/db";
+import { SECTION_SETTINGS_KEY, parseSectionConfig, type SectionConfig } from "@/lib/campaignSections";
 import {
   FEATURED_IMAGES_SETTINGS_KEY,
   parseFeaturedDisplayImages,
@@ -118,6 +119,21 @@ export async function getCampaignImageOverridesFresh(): Promise<CampaignImageOve
     select value from public.settings where key = ${CAMPAIGN_IMAGES_SETTINGS_KEY}
   `;
   return parseCampaignImageOverrides(row?.value);
+}
+
+/** منتجات أقسام صفحة مكينات الصابون — من صفوف الإعدادات المخزَّنة مؤقتاً. */
+export const getCampaignSections = cache(async (): Promise<SectionConfig> => {
+  const rows = await querySettings();
+  const row = rows.find((candidate) => candidate.key === SECTION_SETTINGS_KEY);
+  return parseSectionConfig(row?.value);
+});
+
+/** نفس القراءة بلا كاش — للوحة الإدارة. */
+export async function getCampaignSectionsFresh(): Promise<SectionConfig> {
+  const [row] = await sql<{ value: unknown }[]>`
+    select value from public.settings where key = ${SECTION_SETTINGS_KEY}
+  `;
+  return parseSectionConfig(row?.value);
 }
 
 /** صور العرض في «الأكثر طلباً» — من صفوف الإعدادات المخزَّنة مؤقتاً. */

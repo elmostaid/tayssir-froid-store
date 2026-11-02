@@ -151,3 +151,26 @@ describe("GET /img — صور العرض في «الأكثر طلباً»", () =
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe("GET /img — صور العرض في أقسام /washing-machines", () => {
+  test("campaign-products/washing-machines-{type}/{productId}/{UUID}.jpg يُخدَم", async () => {
+    fetchMock.mockResolvedValueOnce(okResponse());
+    const res = await GET(
+      request(),
+      params("campaign-products/washing-machines-standard/234/141883e0-0f97-479d-aea9-560cc8b6dac2.jpg")
+    );
+    expect(res.status).toBe(200);
+  });
+
+  test("صفحة غير مكينات الصابون أو مسار عابث: 404 بلا طلب", async () => {
+    for (const path of [
+      "campaign-products/water-heaters-gas/234/141883e0-0f97-479d-aea9-560cc8b6dac2.jpg",
+      "campaign-products/washing-machines-standard/x/141883e0-0f97-479d-aea9-560cc8b6dac2.jpg",
+      "campaign-products/washing-machines-standard/234/../../secret.jpg",
+    ]) {
+      const res = await GET(request(), params(path));
+      expect(res.status).toBe(404);
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
