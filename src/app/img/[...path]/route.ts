@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { CAMPAIGN_OBJECT_PATH_RE } from "@/lib/campaignImages";
+import { FEATURED_OBJECT_PATH_RE } from "@/lib/featuredDisplayImages";
 
 /**
  * تقديم صور المنتجات المرفوعة من نطاق الموقع نفسه بدل رابط Supabase المباشر.
@@ -25,9 +26,16 @@ export const runtime = "nodejs";
 const OBJECT_PATH_RE =
   /^\d+\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|jpeg|png|webp)$/i;
 
-/** وصور بطاقات الحملات: `campaign/{page}-{type}/{UUID}.ext` (lib/campaignImages.ts). */
+/**
+ * وصور بطاقات الحملات `campaign/{page}-{type}/{UUID}.ext` (lib/campaignImages.ts)،
+ * وصور العرض في «الأكثر طلباً» `featured/{productId}/{UUID}.ext`.
+ */
 function isAllowedObjectPath(objectPath: string): boolean {
-  return OBJECT_PATH_RE.test(objectPath) || CAMPAIGN_OBJECT_PATH_RE.test(objectPath);
+  return (
+    OBJECT_PATH_RE.test(objectPath) ||
+    CAMPAIGN_OBJECT_PATH_RE.test(objectPath) ||
+    FEATURED_OBJECT_PATH_RE.test(objectPath)
+  );
 }
 
 const CONTENT_TYPES: Record<string, string> = {

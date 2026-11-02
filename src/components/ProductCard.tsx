@@ -16,9 +16,16 @@ export async function ProductCard({
   hasVariants = false,
   whatsappNumber,
   priority = false,
+  displayImageUrl = null,
 }: {
   product: CatalogProduct;
   imageUrl: string | null;
+  /**
+   * صورة عرضٍ خاصة بهذه البطاقة وحدها (قسم «الأكثر طلباً»، تُختار من لوحة
+   * الإدارة). تُغيّر ما يُرى على البطاقة فقط: السلة وصفحة المنتج تبقى على
+   * صورة المنتج (`imageUrl`). لا نسخ WebP لها — تُرفع مصغَّرة أصلاً.
+   */
+  displayImageUrl?: string | null;
   hasVariants?: boolean;
   whatsappNumber: string;
   /**
@@ -29,7 +36,8 @@ export async function ProductCard({
   priority?: boolean;
 }) {
   const isUnavailable = product.status === "out_of_stock" || product.stock_quantity <= 0;
-  const resolvedImageUrl = imageUrl ? await resolveProductImageUrl(imageUrl) : null;
+  const shownImagePath = displayImageUrl ?? imageUrl;
+  const resolvedImageUrl = shownImagePath ? await resolveProductImageUrl(shownImagePath) : null;
 
   return (
     <div className="flex flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white transition-shadow hover:shadow-md">
@@ -37,12 +45,13 @@ export async function ProductCard({
         href={`/product/${product.slug}`}
         className="group relative block aspect-square w-full bg-neutral-100"
       >
-        {resolvedImageUrl && imageUrl ? (
+        {resolvedImageUrl && shownImagePath ? (
           // `fill` السابق كان يضبط الموضع المطلق بنفسه؛ هنا نكتبه صراحةً
           // فالبطاقة مربّعة (aspect-square) ولا يتغيّر تخطيطها بحرف واحد.
           <ProductImage
-            storagePath={imageUrl}
+            storagePath={shownImagePath}
             resolvedSrc={resolvedImageUrl}
+            widths={displayImageUrl ? null : undefined}
             alt={product.name_ar}
             sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 220px"
             priority={priority}

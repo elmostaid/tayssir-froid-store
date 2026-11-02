@@ -6,6 +6,7 @@ import { sql } from "@/lib/db";
 import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import { revalidateCatalog } from "@/lib/queries/catalogCache";
 import { HOME_FEATURED_LIMIT } from "@/lib/queries/catalog";
+import { FEATURED_IMAGES_SETTINGS_KEY } from "@/lib/featuredDisplayImages";
 import {
   searchFeaturableProducts,
   type FeaturableProduct,
@@ -108,6 +109,11 @@ export async function removeFeaturedProduct(
   try {
     await sql.begin(async (tx) => {
       await tx`delete from public.home_featured_products where product_id = ${productId}`;
+      // صورة العرض تخصّ وجوده في القسم: تُنسى معه، فلا تعود فجأة إن أُضيف لاحقاً.
+      await tx`
+        update public.settings set value = value - ${String(productId)}::text
+        where key = ${FEATURED_IMAGES_SETTINGS_KEY}
+      `;
       await renumber(tx);
     });
   } catch (error) {

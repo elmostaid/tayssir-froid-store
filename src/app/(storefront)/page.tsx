@@ -8,7 +8,7 @@ import {
   getProducts,
   getProductsBySkus,
 } from "@/lib/queries/catalog";
-import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
+import { getSettings, getFeaturedDisplayImages, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 import { ProductCard } from "@/components/ProductCard";
 import { ProductImage } from "@/components/ProductImage";
 import { CategoryIcon } from "@/components/CategoryIcon";
@@ -96,6 +96,7 @@ export default async function HomePage() {
     categoryCovers,
     products,
     featured,
+    featuredDisplayImages,
     measuredTopDemand,
     variantProductIds,
     settings,
@@ -109,6 +110,8 @@ export default async function HomePage() {
     safeQuery(() => getProducts({ limit: HOME_PAGE_SIZE + 1 }), [], "home.getProducts"),
     // «الأكثر طلباً» — اختيار صاحب المتجر أولاً، والقياس احتياطاً.
     safeQuery(() => getFeaturedProducts(), [], "home.getFeaturedProducts"),
+    // صور العرض الخاصة بـ«الأكثر طلباً» — عطلها يُرجع صور المنتجات، لا صفحة ساقطة.
+    safeQuery(() => getFeaturedDisplayImages(), {}, "home.getFeaturedDisplayImages"),
     safeQuery(() => getProductsBySkus([...TOP_DEMAND_SKUS]), [], "home.getTopDemand"),
     safeQuery(() => getProductIdsWithVariants(), new Set<number>(), "home.getProductIdsWithVariants"),
     safeQuery(() => getSettings(), FALLBACK_SETTINGS, "home.getSettings"),
@@ -219,6 +222,8 @@ export default async function HomePage() {
                 key={product.id}
                 product={product}
                 imageUrl={product.primary_image_path}
+                // فقط حين القائمة يدوية: القائمة المقاسة الاحتياطية لا صور عرض لها.
+                displayImageUrl={featured.length > 0 ? featuredDisplayImages[String(product.id)]?.path ?? null : null}
                 hasVariants={variantProductIds.has(product.id)}
                 whatsappNumber={settings.whatsappNumber}
                 // أول صفّ فقط: هو ما يقع فوق الطيّة على الهاتف.

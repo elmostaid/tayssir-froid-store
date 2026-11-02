@@ -11,6 +11,7 @@ import {
   searchProductsToFeature,
 } from "@/app/admin/(protected)/featured/actions";
 import type { FeaturableProduct, FeaturedProduct } from "@/lib/queries/adminFeatured";
+import { FeaturedDisplayImageControl } from "@/components/admin/FeaturedDisplayImageControl";
 
 /**
  * إدارة قسم «الأكثر طلباً» فالصفحة الرئيسية.
@@ -28,9 +29,14 @@ export function FeaturedManager({
   featured,
   imageUrlByPath,
   usingFallback,
+  displayImageSrcByProductId = {},
+  canUploadDisplayImages = false,
 }: {
   featured: FeaturedProduct[];
   imageUrlByPath: Record<string, string>;
+  /** صور العرض الخاصة (رابط جاهز) لكل منتج له واحدة. */
+  displayImageSrcByProductId?: Record<string, string>;
+  canUploadDisplayImages?: boolean;
   /** لا اختيار يدوي بعد — الصفحة الرئيسية تعرض القائمة المقاسة تلقائياً. */
   usingFallback: boolean;
 }) {
@@ -101,6 +107,8 @@ export function FeaturedManager({
                     : null
                 }
                 busy={busy}
+                displayImageSrc={displayImageSrcByProductId[String(product.product_id)] ?? null}
+                canUploadDisplayImage={canUploadDisplayImages}
                 onMoveToRank={(rank) => run(() => moveFeaturedToRank(product.product_id, rank))}
                 onRemove={() => run(() => removeFeaturedProduct(product.product_id))}
               />
@@ -195,12 +203,16 @@ function FeaturedRow({
   product,
   imageUrl,
   busy,
+  displayImageSrc,
+  canUploadDisplayImage,
   onMoveToRank,
   onRemove,
 }: {
   product: FeaturedProduct;
   imageUrl: string | null;
   busy: boolean;
+  displayImageSrc: string | null;
+  canUploadDisplayImage: boolean;
   onMoveToRank: (rank: number) => void;
   onRemove: () => void;
 }) {
@@ -283,6 +295,13 @@ function FeaturedRow({
       </div>
 
       {rankError && <p className="mt-1 text-xs text-red-700">{rankError}</p>}
+
+      <FeaturedDisplayImageControl
+        productId={product.product_id}
+        productName={product.name_ar}
+        displayImageSrc={displayImageSrc}
+        canUpload={canUploadDisplayImage}
+      />
     </li>
   );
 }

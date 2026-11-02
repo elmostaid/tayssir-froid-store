@@ -137,3 +137,17 @@ describe("GET /img — صور بطاقات الحملات", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe("GET /img — صور العرض في «الأكثر طلباً»", () => {
+  test("featured/{productId}/{UUID}.jpg يُخدَم", async () => {
+    fetchMock.mockResolvedValueOnce(okResponse());
+    const res = await GET(request(), params("featured/234/141883e0-0f97-479d-aea9-560cc8b6dac2.jpg"));
+    expect(res.status).toBe(200);
+  });
+
+  test("featured بلا رقم منتج: 404 بلا طلب", async () => {
+    const res = await GET(request(), params("featured/x/141883e0-0f97-479d-aea9-560cc8b6dac2.jpg"));
+    expect(res.status).toBe(404);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

@@ -4,6 +4,8 @@ import { listFeaturedAdmin } from "@/lib/queries/adminFeatured";
 import { HOME_FEATURED_LIMIT } from "@/lib/queries/catalog";
 import { resolveProductImageUrls } from "@/lib/storage/resolveProductImageUrl";
 import { FeaturedManager } from "@/components/admin/FeaturedManager";
+import { getFeaturedDisplayImagesFresh } from "@/lib/queries/settings";
+import { canWriteProductImages } from "@/lib/storage/productImages";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +34,12 @@ export default async function AdminFeaturedPage() {
       .map((product) => product.primary_image_path)
       .filter((path): path is string => Boolean(path))
   );
+  // صور العرض الخاصة — قراءة بلا كاش: بعد الحفظ يرى المدير الجديدة فوراً.
+  const displayImages = await getFeaturedDisplayImagesFresh();
+  const displayResolved = await resolveProductImageUrls(Object.values(displayImages).map((entry) => entry.path));
+  const displayImageSrcByProductId = Object.fromEntries(
+    Object.entries(displayImages).map(([productId, entry]) => [productId, displayResolved[entry.path]])
+  );
 
   return (
     <div>
@@ -45,11 +53,17 @@ export default async function AdminFeaturedPage() {
         هذا الترتيب مستقل تماماً عن ترتيب المنتجات داخل تصنيفاتها فـ«المنتجات» —
         تغييره هنا لا يُحرّك أي منتج من مكانه فصفحة تصنيفه.
       </p>
+      <p className="mt-1 text-xs text-neutral-500">
+        ولكل منتج «صورة العرض»: صورة تظهر على بطاقته في هذا القسم وحده. صورة المنتج في
+        الكتالوج وصفحته وسعره لا تتغيّر.
+      </p>
 
       <FeaturedManager
         featured={featured}
         imageUrlByPath={imageUrlByPath}
         usingFallback={visibleCount === 0}
+        displayImageSrcByProductId={displayImageSrcByProductId}
+        canUploadDisplayImages={canWriteProductImages()}
       />
     </div>
   );

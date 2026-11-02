@@ -2,6 +2,11 @@ import { cache } from "react";
 import { unstable_cache } from "next/cache";
 import { dbGuard, sql } from "@/lib/db";
 import {
+  FEATURED_IMAGES_SETTINGS_KEY,
+  parseFeaturedDisplayImages,
+  type FeaturedDisplayImages,
+} from "@/lib/featuredDisplayImages";
+import {
   CAMPAIGN_IMAGES_SETTINGS_KEY,
   parseCampaignImageOverrides,
   type CampaignImageOverrides,
@@ -113,6 +118,21 @@ export async function getCampaignImageOverridesFresh(): Promise<CampaignImageOve
     select value from public.settings where key = ${CAMPAIGN_IMAGES_SETTINGS_KEY}
   `;
   return parseCampaignImageOverrides(row?.value);
+}
+
+/** صور العرض في «الأكثر طلباً» — من صفوف الإعدادات المخزَّنة مؤقتاً. */
+export const getFeaturedDisplayImages = cache(async (): Promise<FeaturedDisplayImages> => {
+  const rows = await querySettings();
+  const row = rows.find((candidate) => candidate.key === FEATURED_IMAGES_SETTINGS_KEY);
+  return parseFeaturedDisplayImages(row?.value);
+});
+
+/** نفس القراءة بلا كاش — للوحة الإدارة بعد الحفظ مباشرة. */
+export async function getFeaturedDisplayImagesFresh(): Promise<FeaturedDisplayImages> {
+  const [row] = await sql<{ value: unknown }[]>`
+    select value from public.settings where key = ${FEATURED_IMAGES_SETTINGS_KEY}
+  `;
+  return parseFeaturedDisplayImages(row?.value);
 }
 
 export const getSettings = cache(async (): Promise<StoreSettings> => {
