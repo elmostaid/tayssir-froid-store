@@ -18,12 +18,13 @@ import {
   parseSectionConfig,
   partFamily,
   sectionImageFolder,
+  sectionPagePath,
   type SectionEntry,
   type SectionSlot,
 } from "@/lib/campaignSections";
 
 /**
- * اختيار منتجات أقسام /washing-machines من لوحة «صور الحملات».
+ * اختيار منتجات أقسام /washing-machines و/water-heaters من لوحة «صور الحملات».
  *
  * كل التعديلات على صفّ إعدادات واحد (`campaign_section_products`) داخل
  * معاملة بقفل الصفّ، فلا يُضيع تعديلان متزامنان أحدهما الآخر. لا يُكتب
@@ -52,9 +53,9 @@ async function requireOwner(): Promise<string | null> {
   return null;
 }
 
-function afterChange() {
+function afterChange(slot: SectionSlot) {
   revalidateCatalog();
-  revalidatePath("/washing-machines");
+  revalidatePath(sectionPagePath(slot));
   revalidatePath("/admin/campaign-images");
 }
 
@@ -86,7 +87,7 @@ async function mutateSection(
     console.error("campaign sections: تعذّر الحفظ", error);
     return { error: "تعذّر الحفظ حالياً بسبب مشكلة تقنية." };
   }
-  afterChange();
+  afterChange(slot);
   return { error: null };
 }
 

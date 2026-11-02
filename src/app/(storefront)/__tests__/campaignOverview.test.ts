@@ -139,24 +139,27 @@ describe("الوجه المحايد لصفحة مكينات الصابون", () 
 });
 
 /**
- * أقسام مكينات الصابون «مُنتقاة» (اختيار المدير + الأكثر طلباً بقطعة من كل
- * صنف)، وصفحة الشوفو تبقى على أول أربعة بترتيب الكتالوج. وصور بطاقات
- * الأنواع لا تأخذ صورتها من المنتجات المنتقاة — فلا تتغيّر البطاقات.
+ * أقسام مكينات الصابون والشوفو «مُنتقاة» (اختيار المدير + الأكثر طلباً بقطعة
+ * من كل صنف). وصور بطاقات الأنواع لا تأخذ صورتها من المنتجات المنتقاة —
+ * فلا تتغيّر البطاقات (الشوفو: coverSku أو الصورة اليدوية كما كانت).
  */
-describe("أقسام مكينات الصابون المنتقاة", () => {
+describe("أقسام صفحات الحملات المنتقاة", () => {
   const source = readFileSync("src/app/(storefront)/campaignOverview.tsx", "utf8");
 
-  test("الأقسام المنتقاة تخصّ مكينات الصابون وحدها", async () => {
+  test("كل نوع في الصفحتين له خانة بنفس تصنيفه", async () => {
     const { findSectionSlot } = await import("@/lib/campaignSections");
     for (const tab of WASHING_TABS) {
       const slot = findSectionSlot(`washing-machines:${tab.key}`);
       expect(slot?.categorySlug).toBe(tab.categorySlug);
     }
-    for (const tab of HEATER_TABS) expect(findSectionSlot(`water-heaters:${tab.key}`)).toBeNull();
+    for (const tab of HEATER_TABS) {
+      const slot = findSectionSlot(`water-heaters:${tab.key}`);
+      expect(slot?.categorySlug).toBe(tab.categorySlug);
+    }
   });
 
-  test("صفحة الشوفو تبقى على getProducts بحدّ 4", () => {
-    expect(source).toMatch(/getProducts\(\{ categorySlug: tab\.categorySlug, limit: OVERVIEW_PREVIEW_SIZE \}\)/);
+  test("بطاقتا الشوفو تبقيان على coverSku", () => {
+    expect(HEATER_TABS.map((tab) => tab.coverSku)).toEqual(["TF-GWH-015", "TF-EWH-008"]);
   });
 
   test("صور البطاقات في الصفحة المنتقاة لا تُبنى من المنتجات المختارة", () => {

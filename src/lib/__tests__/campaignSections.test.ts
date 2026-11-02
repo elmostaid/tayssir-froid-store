@@ -27,14 +27,23 @@ describe("partFamily", () => {
     expect(partFamily("Pompe vidange LG")).toBe("pompe");
     expect(partFamily("قفل-باب أوتوماتيك")).toBe("قفل");
   });
+
+  test("أسماء الشوفو، وإملاءان آخران لنفس الصنف يُوحَّدان", () => {
+    expect(partFamily("ممبرام شوفو غاز شنوة صغيرة")).toBe("ممبرام");
+    expect(partFamily("دويت شوفو غاز فلتاج صغير")).toBe("دويت");
+    expect(partFamily("حوان شوفو كهرباء موديل 04")).toBe("جوان");
+    expect(partFamily("جوان شوفو كهرباء موديل 02")).toBe("جوان");
+    expect(partFamily("ريجستونس شوفو ضوء فلتاج")).toBe("ريجيستونس");
+  });
 });
 
 describe("findSectionSlot", () => {
-  test("الأنواع الثلاثة لمكينات الصابون فقط — لا الشوفو", () => {
+  test("الأنواع الثلاثة لمكينات الصابون، والغاز والكهرباء للشوفو", () => {
     expect(standard.categorySlug).toBe("standard-washing-machine-parts");
     expect(findSectionSlot("washing-machines:automatic")).not.toBeNull();
-    expect(findSectionSlot("water-heaters:gas")).toBeNull();
-    expect(findSectionSlot("water-heaters:electric")).toBeNull();
+    expect(findSectionSlot("water-heaters:gas")?.categorySlug).toBe("gas-water-heater-parts");
+    expect(findSectionSlot("water-heaters:electric")?.categorySlug).toBe("electric-water-heater-parts");
+    expect(findSectionSlot("water-heaters:solar")).toBeNull();
   });
 });
 
@@ -47,6 +56,16 @@ describe("صور العرض للأقسام", () => {
     expect(isSectionImageUrl(`${BASE}${path}`, semi, 12)).toBe(false);
     expect(isSectionImageUrl(`http://x${BASE.slice(8)}${path}`, standard, 12)).toBe(false);
     expect(SECTION_IMAGE_PATH_RE.test(`campaign-products/washing-machines-standard/12/../x.jpg`)).toBe(false);
+  });
+
+  test("مجلد الشوفو منفصل: صورة الغاز لا تُقبل للكهرباء", () => {
+    const gas = findSectionSlot("water-heaters:gas")!;
+    const electric = findSectionSlot("water-heaters:electric")!;
+    const path = `campaign-products/water-heaters-gas/40/${UUID}.jpg`;
+    expect(SECTION_IMAGE_PATH_RE.test(path)).toBe(true);
+    expect(isSectionImageUrl(`${BASE}${path}`, gas, 40)).toBe(true);
+    expect(isSectionImageUrl(`${BASE}${path}`, electric, 40)).toBe(false);
+    expect(SECTION_IMAGE_PATH_RE.test(`campaign-products/other-page-gas/40/${UUID}.jpg`)).toBe(false);
   });
 });
 
@@ -65,6 +84,7 @@ describe("parseSectionConfig", () => {
         { productId: 9 },
       ],
       "water-heaters:gas": [{ productId: 1 }],
+      "water-heaters:solar": [{ productId: 2 }],
       "washing-machines:semi": "bad",
     });
     expect(config["washing-machines:standard"]).toEqual([
@@ -73,7 +93,8 @@ describe("parseSectionConfig", () => {
       { productId: 7 },
       { productId: 8 },
     ]);
-    expect(Object.keys(config)).toEqual(["washing-machines:standard"]);
+    expect(config["water-heaters:gas"]).toEqual([{ productId: 1 }]);
+    expect(Object.keys(config)).toEqual(["washing-machines:standard", "water-heaters:gas"]);
     expect(parseSectionConfig(null)).toEqual({});
     expect(parseSectionConfig([])).toEqual({});
   });

@@ -1,7 +1,8 @@
 import type { CatalogProduct } from "@/lib/types";
 
 /**
- * منتجات أقسام صفحة /washing-machines: القطع الأربع تحت كل نوع.
+ * منتجات أقسام صفحتَي الحملات /washing-machines و/water-heaters: القطع
+ * الأربع تحت كل نوع (ثلاثة أنواع للمكينات، الغاز والكهرباء للشوفو).
  *
  * ## ما يقرّره المدير وما يُكمَل تلقائياً
  *
@@ -16,6 +17,11 @@ import type { CatalogProduct } from "@/lib/types";
  * الكلمة الأولى من اسم المنتج بعد التطبيع: «موطور صابون 150 واط» و«موطور
  * نشاف 70 واط» ⇒ «موطور». قيس على الكتالوج: الأسماء تبدأ بالصنف (منتري،
  * بولي، جلدة، قفل، كروازي، جوان…)، فالقاعدة بسيطة ومرئية للمدير في اللوحة.
+ * والشوفو كذلك (دويت، ممبرام، بواط، سويتش، جوان، لنود، طرموسطة…).
+ *
+ * بضع أسماء في الكتالوج مكتوبة بإملاء آخر لنفس القطعة («حوان» لـ«جوان»،
+ * «ريجستونس» لـ«ريجيستونس»): `FAMILY_ALIASES` يوحّدها، فلا يظهر جوانان في
+ * قسم واحد. أسماء المنتجات نفسها لا تُلمس.
  *
  * الاسم والسعر والرابط والحدّ الأدنى وزرّ السلة: من المنتج نفسه، بلا تغيير.
  */
@@ -25,22 +31,40 @@ export const SECTION_SETTINGS_KEY = "campaign_section_products";
 
 export type SectionSlot = {
   key: string;
-  page: "washing-machines";
+  page: "washing-machines" | "water-heaters";
   type: string;
   categorySlug: string;
   label: string;
 };
 
-/** صفحة مكينات الصابون وحدها — صفحة الشوفو لا تتغيّر. */
+/** الصفحات التي لها أقسام منتقاة، بعناوينها في لوحة الإدارة. */
+export const SECTION_PAGES = [
+  { page: "washing-machines", title: "مكينات الصابون", href: "/washing-machines" },
+  { page: "water-heaters", title: "الشوفو (سخانات الماء)", href: "/water-heaters" },
+] as const;
+
 export const SECTION_SLOTS: SectionSlot[] = [
   { key: "washing-machines:standard", page: "washing-machines", type: "standard", categorySlug: "standard-washing-machine-parts", label: "مكينة الصابون العادية" },
   { key: "washing-machines:semi", page: "washing-machines", type: "semi", categorySlug: "semi-automatic-washing-machine-parts", label: "مكينة الصابون نصف أوتوماتيك" },
   { key: "washing-machines:automatic", page: "washing-machines", type: "automatic", categorySlug: "automatic-washing-machine-parts", label: "مكينة الصابون أوتوماتيك" },
+  { key: "water-heaters:gas", page: "water-heaters", type: "gas", categorySlug: "gas-water-heater-parts", label: "الشوفو بالغاز" },
+  { key: "water-heaters:electric", page: "water-heaters", type: "electric", categorySlug: "electric-water-heater-parts", label: "الشوفو بالكهرباء" },
 ];
+
+/** مسار الصفحة العامة لخانة (لإبطال كاشها بعد التعديل). */
+export function sectionPagePath(slot: SectionSlot): string {
+  return `/${slot.page}`;
+}
 
 export function findSectionSlot(key: string): SectionSlot | null {
   return SECTION_SLOTS.find((slot) => slot.key === key) ?? null;
 }
+
+/** إملاءات أخرى لنفس الصنف في أسماء الكتالوج ⇒ الصيغة الغالبة. */
+const FAMILY_ALIASES: Record<string, string> = {
+  حوان: "جوان",
+  ريجستونس: "ريجيستونس",
+};
 
 /** الصنف: أول كلمة من الاسم، بلا تشكيل ولا علامات، والحروف اللاتينية صغيرة. */
 export function partFamily(name: string): string {
@@ -50,7 +74,8 @@ export function partFamily(name: string): string {
     .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .trim()
     .toLowerCase();
-  return cleaned.split(/\s+/)[0] ?? "";
+  const first = cleaned.split(/\s+/)[0] ?? "";
+  return FAMILY_ALIASES[first] ?? first;
 }
 
 export type SectionEntry = { productId: number; image?: string };
@@ -60,7 +85,7 @@ const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 
 /** `campaign-products/{page}-{type}/{productId}/{UUID}.ext` */
 export const SECTION_IMAGE_PATH_RE = new RegExp(
-  `^campaign-products/(washing-machines-[a-z]+)/(\\d+)/${UUID}\\.(jpg|jpeg|png|webp)$`,
+  `^campaign-products/((?:washing-machines|water-heaters)-[a-z]+)/(\\d+)/${UUID}\\.(jpg|jpeg|png|webp)$`,
   "i"
 );
 

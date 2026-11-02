@@ -4,7 +4,7 @@ import { canWriteProductImages } from "@/lib/storage/remoteStorage";
 import { resolveCampaignCardImages } from "@/lib/campaignCardImages";
 import { getCampaignImageOverridesFresh, getCampaignSectionsFresh } from "@/lib/queries/settings";
 import { getCategoryProductsByDemand } from "@/lib/queries/catalog";
-import { SECTION_SIZE, SECTION_SLOTS, partFamily, selectSectionProducts } from "@/lib/campaignSections";
+import { SECTION_PAGES, SECTION_SIZE, SECTION_SLOTS, partFamily, selectSectionProducts } from "@/lib/campaignSections";
 import { resolveProductImageUrls } from "@/lib/storage/resolveProductImageUrl";
 import { CampaignSectionsManager, type SectionGroup } from "@/components/admin/CampaignSectionsManager";
 import { campaignSlotKey } from "@/lib/campaignImages";
@@ -44,7 +44,7 @@ export default async function AdminCampaignImagesPage() {
     })
   );
 
-  // منتجات أقسام /washing-machines كما يراها الزائر الآن: اختيار المدير
+  // منتجات أقسام صفحتَي الحملات كما يراها الزائر الآن: اختيار المدير
   // (قراءة بلا كاش) ثم الإكمال التلقائي — نفس دالة الصفحة العامة.
   const sectionConfig = await getCampaignSectionsFresh();
   const sectionItems = await Promise.all(
@@ -57,7 +57,8 @@ export default async function AdminCampaignImagesPage() {
     [item.product.primary_image_path, item.displayImage].filter((path): path is string => Boolean(path))
   );
   const sectionResolved = await resolveProductImageUrls(sectionPaths);
-  const sections: SectionGroup[] = SECTION_SLOTS.map((slot, index) => ({
+  const sections: (SectionGroup & { page: string })[] = SECTION_SLOTS.map((slot, index) => ({
+    page: slot.page,
     slotKey: slot.key,
     label: slot.label,
     manualCount: sectionItems[index].filter((item) => item.source === "manual").length,
@@ -86,18 +87,24 @@ export default async function AdminCampaignImagesPage() {
       </p>
       <CampaignImagesManager groups={groups} canUpload={canWriteProductImages()} />
 
-      <h2 className="mt-10 text-lg font-bold text-neutral-800" id="sections">
-        منتجات أقسام مكينات الصابون
-      </h2>
-      <p className="mt-2 text-sm text-neutral-600">
-        المنتجات الأربعة التي تظهر تحت كل نوع في صفحة /washing-machines. اختر المنتجات ورتّبها، ويمكنك
-        تغيير صورة عرضها في هذه الصفحة وحدها.
-      </p>
-      <p className="mt-1 text-xs text-neutral-500">
-        قطعة واحدة من كل صنف في القسم (موطور واحد، منتري واحد…). الاسم والسعر والرابط وزرّ السلة والحدّ
-        الأدنى من المنتج نفسه ولا تتغيّر. ما لم تختره يُكمَل تلقائياً بالأكثر طلباً المتوفّر.
-      </p>
-      <CampaignSectionsManager sections={sections} size={SECTION_SIZE} canUpload={canWriteProductImages()} />
+      {SECTION_PAGES.map((page) => (
+        <div key={page.page} id={`sections-${page.page}`}>
+          <h2 className="mt-10 text-lg font-bold text-neutral-800">منتجات أقسام {page.title}</h2>
+          <p className="mt-2 text-sm text-neutral-600">
+            المنتجات الأربعة التي تظهر تحت كل نوع في صفحة <span dir="ltr">{page.href}</span>. اختر المنتجات
+            ورتّبها، ويمكنك تغيير صورة عرضها في هذه الصفحة وحدها.
+          </p>
+          <p className="mt-1 text-xs text-neutral-500">
+            قطعة واحدة من كل صنف في القسم (موطور واحد، ممبرام واحد…). الاسم والسعر والرابط وزرّ السلة
+            والحدّ الأدنى من المنتج نفسه ولا تتغيّر. ما لم تختره يُكمَل تلقائياً بالأكثر طلباً المتوفّر.
+          </p>
+          <CampaignSectionsManager
+            sections={sections.filter((section) => section.page === page.page)}
+            size={SECTION_SIZE}
+            canUpload={canWriteProductImages()}
+          />
+        </div>
+      ))}
     </div>
   );
 }

@@ -108,9 +108,9 @@ export async function CampaignOverview({
   // واحد لا يجوز أن يُخفي النوعين الآخرين — صفحة فيها نوعان أنفع لزائر
   // مدفوع من صفحة عطل كاملة. ونرمي فقط إذا سقطت الثلاثة.
   //
-  // صفحة مكينات الصابون: الأقسام «مُنتقاة» — اختيار المدير أولاً ثم الأكثر
-  // طلباً بقطعة واحدة من كل صنف (lib/campaignSections.ts). صفحة الشوفو تبقى
-  // على سلوكها: أول أربعة بترتيب الكتالوج.
+  // صفحتا مكينات الصابون والشوفو: الأقسام «مُنتقاة» — اختيار المدير أولاً
+  // ثم الأكثر طلباً بقطعة واحدة من كل صنف (lib/campaignSections.ts). صفحة
+  // بلا خانات معرَّفة هناك تبقى على أول أربعة بترتيب الكتالوج.
   const curated = Boolean(findSectionSlot(campaignSlotKey(pageKey, tabs[0]?.key ?? "")));
   const [ranked, variantProductIds, settings, sections] = await Promise.all([
     Promise.all(

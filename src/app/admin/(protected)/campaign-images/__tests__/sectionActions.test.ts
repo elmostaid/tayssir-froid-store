@@ -32,6 +32,9 @@ const STAFF = { id: "s", email: "staff@local", role: "staff" as const };
 const NAMES = ["موطور اختبار 150 واط", "موطور اختبار نشاف", "منتري اختبار", "بولي اختبار", "جلدة اختبار", "قفل اختبار"];
 const ids: number[] = [];
 let otherCategoryProduct = 0;
+const HEATER_SLOT = "water-heaters:gas";
+const HEATER_NAMES = ["ممبرام اختبار شنوة صغيرة", "ممبرام اختبار شنوة كبيرة", "دويت اختبار فلتاج", "حوان اختبار كهرباء"];
+const heaterIds: number[] = [];
 
 async function entries() {
   return (await getCampaignSectionsFresh())[SLOT] ?? [];
@@ -57,6 +60,16 @@ beforeAll(async () => {
     values ('TEST-FIXTURE-SEC-X', 'test-fixture-sec-x', ${other.id}, 'كروازي من تصنيف آخر', 'قطعة', 1, 1, 40, 10, 'published', 1)
     returning id`;
   otherCategoryProduct = p.id;
+  const [gas] = await sql<{ id: number }[]>`
+    insert into public.categories (slug, name_ar, is_active) values ('gas-water-heater-parts', 'قطع الشوفو الغازي', true)
+    on conflict (slug) do update set is_active = public.categories.is_active returning id`;
+  for (const [index, name] of HEATER_NAMES.entries()) {
+    const [h] = await sql<{ id: number }[]>`
+      insert into public.products (sku, slug, category_id, name_ar, unit_label, min_order_qty, qty_increment, sale_price, stock_quantity, status, sort_order)
+      values (${`TEST-FIXTURE-SEC-H${index}`}, ${`test-fixture-sec-h${index}`}, ${gas.id}, ${name}, 'قطعة', 1, 1, 30, 10, 'published', ${index})
+      returning id`;
+    heaterIds.push(h.id);
+  }
 });
 
 beforeEach(async () => {
@@ -81,8 +94,9 @@ describe("اختيار منتجات أقسام /washing-machines", () => {
     expect(await entries()).toEqual([]);
   });
 
-  test("قسم الشوفو أو قسم مجهول ⇒ رفض", async () => {
-    expect((await actions.addSectionProduct("water-heaters:gas", ids[0])).error).toMatch(/قسم غير معروف/);
+  test("قسم مجهول ⇒ رفض", async () => {
+    expect((await actions.addSectionProduct("water-heaters:solar", ids[0])).error).toMatch(/قسم غير معروف/);
+    expect((await actions.addSectionProduct("washing-machines:other", ids[0])).error).toMatch(/قسم غير معروف/);
   });
 
   test("إضافة بالترتيب، ورفض صنف مكرّر ومنتج من تصنيف آخر ومنتج مكرّر", async () => {
@@ -155,5 +169,38 @@ describe("اختيار منتجات أقسام /washing-machines", () => {
     const config = await getCampaignSectionsFresh();
     expect(config["washing-machines:semi"]).toEqual([{ productId: 77 }]);
     expect(config[SLOT]).toBeUndefined();
+  });
+});
+
+describe("نفس الخاصية لقسم الشوفو بالغاز", () => {
+  const heaterEntries = async () => (await getCampaignSectionsFresh())[HEATER_SLOT] ?? [];
+
+  test("إضافة وترتيب، ورفض صنف مكرّر ومنتج من مكينات الصابون", async () => {
+    expect((await actions.addSectionProduct(HEATER_SLOT, heaterIds[0])).error).toBeNull();
+    expect((await actions.addSectionProduct(HEATER_SLOT, heaterIds[1])).error).toMatch(/يوجد «ممبرام»/);
+    expect((await actions.addSectionProduct(HEATER_SLOT, ids[0])).error).toMatch(/ليس من هذا النوع/);
+    expect((await actions.addSectionProduct(HEATER_SLOT, heaterIds[2])).error).toBeNull();
+    expect((await actions.moveSectionProduct(HEATER_SLOT, heaterIds[2], 1)).error).toBeNull();
+    expect((await heaterEntries()).map((entry) => entry.productId)).toEqual([heaterIds[2], heaterIds[0]]);
+    // قسم مكينات الصابون لا يتأثّر.
+    expect(await entries()).toEqual([]);
+  });
+
+  test("البحث في تصنيف الغاز وحده", async () => {
+    const found = await actions.searchSectionProducts(HEATER_SLOT, "اختبار");
+    if ("error" in found) throw new Error(found.error);
+    expect(found.map((row) => row.id).sort()).toEqual([...heaterIds].sort());
+    expect(found.find((row) => row.id === heaterIds[3])?.family).toBe("جوان");
+  });
+
+  test("صورة العرض في مجلد water-heaters-gas، ولا تُقبل في قسم آخر", async () => {
+    const target = await actions.createSectionImageUploadTarget(HEATER_SLOT, heaterIds[3], "image/jpeg");
+    expect(target.objectPath).toMatch(new RegExp(`^campaign-products/water-heaters-gas/${heaterIds[3]}/[0-9a-f-]{36}\\.jpg$`));
+    listMock.mockResolvedValue({ data: [{ name: target.objectPath!.split("/").pop() }], error: null });
+    expect((await actions.commitSectionImage("water-heaters:electric", heaterIds[3], target.objectPath!)).error).toBeTruthy();
+    expect((await actions.commitSectionImage(HEATER_SLOT, heaterIds[3], target.objectPath!)).error).toBeNull();
+    expect(await heaterEntries()).toEqual([{ productId: heaterIds[3], image: `${BASE}${target.objectPath}` }]);
+    expect((await actions.resetSectionImage(HEATER_SLOT, heaterIds[3])).error).toBeNull();
+    expect(await heaterEntries()).toEqual([{ productId: heaterIds[3] }]);
   });
 });
