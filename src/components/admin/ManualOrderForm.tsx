@@ -52,11 +52,19 @@ function Field({
 export function ManualOrderForm({
   initialDraft,
   leadId,
+  attemptKey,
 }: {
   /** مسودّة جاهزة من تحويل طلب واتساب — انظر lib/orders/whatsappLeadDraft.ts. */
   initialDraft?: ImportedOrderDraft;
   /** وجوده يعني: هذا تحويل Lead لا طلب يدوي عادي — يُرسَل لـconvertWhatsappLeadAction. */
   leadId?: number;
+  /**
+   * مفتاح هذه المحاولة، يولّده الخادم عند فتح الصفحة. يبقى هو نفسه مع كل
+   * إعادة إرسال (بعد خطأ أو انقطاع)، فلا تُنشأ الطلبية مرّتين ولا يُخصم
+   * المخزون مرّتين. النجاح ينقل إلى صفحة الطلبية، والطلبية التالية تفتح
+   * الصفحة من جديد بمفتاح جديد.
+   */
+  attemptKey?: string;
 } = {}) {
   // تحويل Lead يمرّ بمسار مختلف (قفل ذرّي يمنع تحويله مرتين) — انظر
   // convertWhatsappLead.ts. الشكل (OrderEditState) واحد فالحالتين.
@@ -89,6 +97,7 @@ export function ManualOrderForm({
 
   return (
     <form action={formAction} className="mt-4 flex flex-col gap-4">
+      {attemptKey && <input type="hidden" name="idempotencyKey" value={attemptKey} />}
       {leadId && <input type="hidden" name="leadId" value={leadId} />}
       {!leadId && <ImportOrderPanel onDraft={applyDraft} />}
 

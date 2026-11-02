@@ -11,7 +11,7 @@ import {
 // عميل مُلفَّق: يكفي أن يكون قابلاً للنداء كدالة وسم (tag) وأن يملك end،
 // فهذا كل ما يستعمله الحارس من postgres.js. هكذا نختبر منطق القرار كاملاً
 // بلا قاعدة بيانات ولا انتظار حقيقي — وسيناريوهات الانقطاع الحقيقية لها
-// نصّها المنفصل (scripts/db-resilience-scenarios.mts) على قاعدة حيّة.
+// نصّها المنفصل على PostgreSQL حقيقي (scripts/db-rotation-scenarios.mjs).
 type Behaviour = "ok" | "hang" | "error";
 
 function fakeClient(behaviour: Behaviour) {
@@ -66,234 +66,174 @@ afterEach(() => {
 });
 
 describe("readDbResilienceConfig — الافتراضي هو سلوك الإنتاج، والإطفاء صريح", () => {
-  test("بلا أي متغيّر: الفحص والإتلاف مُفعَّلان بالقيم الموثَّقة", () => {
+  test("بلا أي متغيّر: التدوير والتصعيد مُفعَّلان بالقيم الموثَّقة", () => {
     expect(readDbResilienceConfig({})).toEqual(DB_RESILIENCE_DEFAULTS);
+    expect(DB_RESILIENCE_DEFAULTS.rotateAfterIdleMs).toBe(15000);
   });
 
-  test("off يُطفئ — وهذه هي خطة الرجوع بلا نشر", () => {
-    const config = readDbResilienceConfig({
-      DB_LIVENESS_PREFLIGHT: "off",
-      DB_HANG_ESCALATION: "off",
-    });
-    expect(config.preflight).toBe(false);
-    expect(config.escalation).toBe(false);
+  test("off يُطفئ — بالمفتاح الجديد أو القديم — وهذه خطة الرجوع بلا نشر", () => {
+    expect(readDbResilienceConfig({ DB_IDLE_ROTATION: "off" }).rotation).toBe(false);
+    expect(readDbResilienceConfig({ DB_LIVENESS_PREFLIGHT: "off" }).rotation).toBe(false);
+    expect(readDbResilienceConfig({ DB_HANG_ESCALATION: "off" }).escalation).toBe(false);
   });
 
   test("قيمة مشوَّهة أو خارج النطاق تعود إلى الافتراضي، لا إلى صفر", () => {
-    expect(readDbResilienceConfig({ DB_PREFLIGHT_TIMEOUT_MS: "0" }).preflightTimeoutMs).toBe(
-      DB_RESILIENCE_DEFAULTS.preflightTimeoutMs
-    );
-    expect(readDbResilienceConfig({ DB_STALE_AFTER_MS: "نعم" }).staleAfterMs).toBe(
-      DB_RESILIENCE_DEFAULTS.staleAfterMs
-    );
-    expect(readDbResilienceConfig({ DB_PREFLIGHT_TIMEOUT_MS: "1500" }).preflightTimeoutMs).toBe(1500);
+    const d = DB_RESILIENCE_DEFAULTS;
+    expect(readDbResilienceConfig({ DB_STALE_AFTER_MS: "abc" }).rotateAfterIdleMs).toBe(d.rotateAfterIdleMs);
+    expect(readDbResilienceConfig({ DB_STALE_AFTER_MS: "10" }).rotateAfterIdleMs).toBe(d.rotateAfterIdleMs);
+    expect(readDbResilienceConfig({ DB_STALE_AFTER_MS: "30000" }).rotateAfterIdleMs).toBe(30000);
   });
 });
 
-describe("متى يعمل الفحص المسبق أصلاً", () => {
-  test("مُطفأ ⇒ لا استعلام فحص إطلاقاً", async () => {
-    const { guard, made } = harness({ behaviours: ["ok"], config: { preflight: false } });
+describe("التدوير بعد الخمول — بلا أي استعلام فحص", () => {
+  test("لا يُرسَل أي شيء إلى القاعدة من ensureLive في أي حالة", async () => {
+    const { guard, made, advanceClock } = harness({ behaviours: ["ok"] });
     guard.current();
-    expect((await guard.ensureLive()).action).toBe("disabled");
-    expect(made[0].calls.queries).toBe(0);
+    const done = guard.trackQuery(made[0].client);
+    done();
+    advanceClock(60_000);
+    await guard.ensureLive();
+    expect(made.every((m) => m.calls.queries === 0)).toBe(true);
   });
 
-  test("عميل جديد لم ينجح له استعلام بعد ⇒ لا فحص: لا مقبس قديم يُفحَص", async () => {
+  test("عميل جديد لم يجرِ عليه شيء ⇒ لا تدوير", async () => {
     const { guard, made } = harness({ behaviours: ["ok"] });
     expect((await guard.ensureLive()).action).toBe("skipped-cold");
-    expect(made[0].calls.queries).toBe(0);
+    expect(made).toHaveLength(1);
   });
 
-  test("آخر نجاح قريب ⇒ لا فحص: لا ثمن تحت حمل متواصل", async () => {
-    const { guard, advanceClock, made } = harness({ behaviours: ["ok"] });
+  test("نشاط قريب ⇒ لا تدوير", async () => {
+    const { guard, made, advanceClock } = harness({ behaviours: ["ok"] });
     guard.current();
-    guard.noteHealthy();
-    advanceClock(1000);
-    const result = await guard.ensureLive();
-    expect(result.action).toBe("skipped-fresh");
-    expect(result.idleMs).toBe(1000);
-    expect(made[0].calls.queries).toBe(0);
-  });
-
-  test("بعد فجوة خمول ⇒ فحص واحد ينجح ويُحدِّث آخر نجاح", async () => {
-    const { guard, advanceClock, made } = harness({ behaviours: ["ok"] });
-    guard.current();
-    guard.noteHealthy();
-    advanceClock(9000);
-    expect((await guard.ensureLive()).action).toBe("passed");
-    expect(made[0].calls.queries).toBe(1);
-    // صار العميل «حيّاً الآن»، فالطلب التالي لا يفحص مرّة ثانية.
+    guard.trackQuery(made[0].client)();
+    advanceClock(14_000);
     expect((await guard.ensureLive()).action).toBe("skipped-fresh");
-    expect(made[0].calls.queries).toBe(1);
+    expect(made).toHaveLength(1);
   });
 
-  test("فحص واحد مشترك بين طلبات متزامنة، لا فحص لكل طلب", async () => {
-    const { guard, advanceClock, made } = harness({ behaviours: ["ok"] });
+  test("فجوة خمول ⇒ عميل جديد، والقديم يُقاعَد بـend مع مهلة — لا timeout:0", async () => {
+    const { guard, made, advanceClock } = harness({ behaviours: ["ok"] });
     guard.current();
-    guard.noteHealthy();
-    advanceClock(9000);
-    const [a, b, c] = await Promise.all([
-      guard.ensureLive(),
-      guard.ensureLive(),
-      guard.ensureLive(),
-    ]);
-    expect([a.action, b.action, c.action]).toEqual(["passed", "passed", "passed"]);
-    expect(made[0].calls.queries).toBe(1);
-  });
-});
-
-describe("مقبس ميت: الفحص يتعلّق، فيُعاد إنشاء العميل ويُتلَف القديم", () => {
-  test("انتهاء مهلة الفحص ⇒ إتلاف القديم بـ{timeout:0} وعميل جديد", async () => {
-    vi.useFakeTimers();
-    const { guard, advanceClock, made } = harness({ behaviours: ["hang", "ok"] });
-    guard.current();
-    guard.noteHealthy();
-    advanceClock(9000);
-
-    const pending = guard.ensureLive();
-    await vi.advanceTimersByTimeAsync(DB_RESILIENCE_DEFAULTS.preflightTimeoutMs + 10);
-    const result = await pending;
-
-    expect(result.action).toBe("timed-out");
-    expect(result.recycle).toEqual({ recycled: true, generation: 2 });
-    // الإتلاف هو ما يرفض الوعود المعلَّقة فعلياً — راجع terminate() في
-    // postgres.js. فبلا هذا السطر لا شيء يُنهي التعليق.
-    expect(made[0].calls.ended).toBe(1);
-    expect(made[0].calls.endOptions[0]).toEqual({ timeout: 0 });
-    expect(guard.current()).toBe(made[1].client);
-    expect(guard.stats().generation).toBe(2);
-  });
-
-  test("العميل الجديد يبدأ بارداً، فلا يُفحَص فوراً ولا تنشأ حلقة فحص/إتلاف", async () => {
-    vi.useFakeTimers();
-    const { guard, advanceClock } = harness({ behaviours: ["hang", "hang"] });
-    guard.current();
-    guard.noteHealthy();
-    advanceClock(9000);
-    const pending = guard.ensureLive();
-    await vi.advanceTimersByTimeAsync(DB_RESILIENCE_DEFAULTS.preflightTimeoutMs + 10);
-    await pending;
-
-    expect((await guard.ensureLive()).action).toBe("skipped-cold");
-    expect(guard.stats().recycles).toBe(1);
-  });
-
-  test("خطأ اتصال صريح ⇒ إعادة إنشاء كذلك، ويُبلَّغ الرمز وحده", async () => {
-    const { guard, advanceClock, made } = harness({ behaviours: ["error", "ok"] });
-    guard.current();
-    guard.noteHealthy();
-    advanceClock(9000);
+    guard.trackQuery(made[0].client)();
+    advanceClock(15_000);
     const result = await guard.ensureLive();
-    expect(result.action).toBe("failed");
-    expect(result.errorCode).toBe("CONNECTION_CLOSED");
-    expect(result.recycle).toMatchObject({ recycled: true });
-    expect(made[0].calls.ended).toBe(1);
-    expect(JSON.stringify(result)).not.toContain("socket is gone");
+    expect(result.action).toBe("rotated");
+    expect(made).toHaveLength(2);
+    expect(guard.current()).toBe(made[1].client);
+    expect(made[0].calls.endOptions).toEqual([{ timeout: 2 }]);
+  });
+
+  test("استعلام عالق من قبل تجميد يُحسب نشاطاً قديماً لا حديثاً ⇒ تدوير", async () => {
+    const { guard, made, advanceClock } = harness({ behaviours: ["ok"] });
+    guard.current();
+    guard.trackQuery(made[0].client); // لم ينتهِ أبداً: جُمِّدت الدالة
+    advanceClock(120_000);
+    expect((await guard.ensureLive()).action).toBe("rotated");
+    // تجاوز سقفه منذ زمن ⇒ أقلّ مهلة تصريف.
+    expect(made[0].calls.endOptions).toEqual([{ timeout: 2 }]);
+  });
+
+  test("طلبات متزامنة بعد الخمول: تدوير واحد فقط", async () => {
+    const { guard, made, advanceClock } = harness({ behaviours: ["ok"] });
+    guard.current();
+    guard.trackQuery(made[0].client)();
+    advanceClock(30_000);
+    const results = await Promise.all([guard.ensureLive(), guard.ensureLive(), guard.ensureLive()]);
+    expect(results.map((r) => r.action)).toEqual(["rotated", "skipped-cold", "skipped-cold"]);
+    expect(made).toHaveLength(2);
+  });
+
+  test("مُطفأ ⇒ نفس العميل مهما طال الخمول", async () => {
+    const { guard, made, advanceClock } = harness({ behaviours: ["ok"], config: { rotation: false } });
+    guard.current();
+    guard.trackQuery(made[0].client)();
+    advanceClock(600_000);
+    expect((await guard.ensureLive()).action).toBe("disabled");
+    expect(made).toHaveLength(1);
   });
 });
 
-describe("سلامة الطلبيات: لا إتلاف أثناء معاملة كتابة", () => {
-  test("معاملة جارية ⇒ يُؤجَّل الإتلاف ولا يُلمَس العميل", () => {
-    const { guard, made } = harness({ behaviours: ["ok", "ok"] });
-    const lease = guard.leaseForWrite(60_000);
-    expect(lease.client).toBe(made[0].client);
+describe("مهلة التصريف: لا يُقطَع استعلام سليم ضمن سقفه", () => {
+  test("استعلام بدأ قبل ثانية ⇒ يبقى له 12.5 ثانية", () => {
+    const { guard, made, advanceClock } = harness({ behaviours: ["ok"] });
+    guard.current();
+    guard.trackQuery(made[0].client);
+    advanceClock(1_000);
+    const outcome = guard.requestRecycle("forced");
+    expect(outcome).toMatchObject({ recycled: true, drainMs: 12_500 });
+    expect(made[0].calls.endOptions).toEqual([{ timeout: 12.5 }]);
+  });
 
-    const outcome = guard.requestRecycle("test");
-    expect(outcome).toEqual({
-      recycled: false,
-      reason: "deferred-write-in-flight",
-      writesInFlight: 1,
-    });
+  test("لا استعلام جارٍ ⇒ أقلّ مهلة (2s)، والإغلاق فوري عملياً لأن لا شيء ينتظر", () => {
+    const { guard } = harness({ behaviours: ["ok"] });
+    guard.current();
+    expect(guard.requestRecycle("forced")).toMatchObject({ recycled: true, drainMs: 2_000 });
+  });
+
+  test("السقف لا يُتجاوز أبداً: 13.5 ثانية", () => {
+    const { guard, made } = harness({ behaviours: ["ok"] });
+    guard.current();
+    guard.trackQuery(made[0].client);
+    expect(guard.requestRecycle("forced")).toMatchObject({ drainMs: 13_500 });
+  });
+});
+
+describe("سلامة الطلبيات: لا تقاعد أثناء كتابة", () => {
+  test("معاملة جارية ⇒ يُؤجَّل التدوير ولا يُلمَس العميل، ويُنفَّذ بعدها", async () => {
+    const { guard, made, advanceClock } = harness({ behaviours: ["ok"] });
+    const lease = guard.leaseForWrite(75_000);
+    guard.trackQuery(made[0].client)();
+    advanceClock(30_000);
+    const result = await guard.ensureLive();
+    expect(result.action).toBe("rotation-deferred");
     expect(made[0].calls.ended).toBe(0);
-    expect(guard.current()).toBe(made[0].client);
     expect(guard.stats().condemned).toBe(true);
     lease.release();
     expect(made[0].calls.ended).toBe(1);
-  });
-
-  test("ينفَّذ التأجيل عند انتهاء آخر معاملة — لا قبلها", () => {
-    const { guard, made } = harness({ behaviours: ["ok", "ok"] });
-    const first = guard.leaseForWrite(60_000);
-    const second = guard.leaseForWrite(60_000);
-    guard.requestRecycle("test");
-
-    first.release();
-    expect(made[0].calls.ended).toBe(0);
-
-    second.release();
-    expect(made[0].calls.ended).toBe(1);
-    expect(guard.stats().generation).toBe(2);
-  });
-
-  test("معاملة بلا حكم مسبق لا تُسبّب أي إتلاف عند انتهائها", () => {
-    const { guard, made } = harness({ behaviours: ["ok", "ok"] });
-    guard.leaseForWrite(60_000).release();
-    expect(made[0].calls.ended).toBe(0);
-    expect(guard.stats().generation).toBe(1);
-  });
-
-  test("الفحص المتعلِّق أثناء كتابة لا يُتلف شيئاً — يُؤجَّل فقط", async () => {
-    vi.useFakeTimers();
-    const { guard, advanceClock, made } = harness({ behaviours: ["hang", "ok"] });
-    guard.current();
-    guard.noteHealthy();
-    guard.leaseForWrite(60_000);
-    advanceClock(9000);
-
-    const pending = guard.ensureLive();
-    await vi.advanceTimersByTimeAsync(DB_RESILIENCE_DEFAULTS.preflightTimeoutMs + 10);
-    const result = await pending;
-
-    expect(result.action).toBe("timed-out");
-    expect(result.recycle).toMatchObject({ reason: "deferred-write-in-flight" });
-    expect(made[0].calls.ended).toBe(0);
+    expect(guard.current()).toBe(made[1].client);
   });
 });
 
-describe("حدود الإتلاف", () => {
-  test("فترة تهدئة تمنع حلقة إتلاف متسارعة", () => {
-    const { guard, advanceClock, made } = harness({ behaviours: ["ok", "ok", "ok"] });
+describe("حدود التقاعد", () => {
+  test("فترة تهدئة تمنع حلقة تقاعد متسارعة بسبب التعليق — لا بسبب الخمول", () => {
+    const { guard, made, advanceClock } = harness({ behaviours: ["ok"] });
     guard.current();
-    expect(guard.requestRecycle("first")).toMatchObject({ recycled: true });
-    advanceClock(1000);
-    expect(guard.requestRecycle("second")).toEqual({ recycled: false, reason: "cooldown" });
-    advanceClock(DB_RESILIENCE_DEFAULTS.recycleCooldownMs);
-    expect(guard.requestRecycle("third")).toMatchObject({ recycled: true });
-    expect(made.filter((m) => m.calls.ended > 0)).toHaveLength(2);
+    expect(guard.noteHangEscalation("hang", made[0].client).recycled).toBe(true);
+    expect(guard.noteHangEscalation("hang", made[1].client)).toEqual({ recycled: false, reason: "cooldown" });
+    advanceClock(10_001);
+    expect(guard.noteHangEscalation("hang", made[1].client).recycled).toBe(true);
   });
 
-  test("بلا عميل بعد: لا شيء يُتلَف", () => {
+  test("تعليق على عميل غير الحالي لا يُقاعِد الحالي", () => {
+    const { guard, made } = harness({ behaviours: ["ok"] });
+    guard.current();
+    guard.requestRecycle("forced");
+    expect(guard.noteHangEscalation("hang", made[0].client)).toEqual({ recycled: false, reason: "not-current" });
+    expect(made[1].calls.ended).toBe(0);
+  });
+
+  test("DB_HANG_ESCALATION=off ⇒ تعليق استعلام لا يُقاعِد العميل", () => {
+    const { guard, made } = harness({ behaviours: ["ok"], config: { escalation: false } });
+    guard.current();
+    expect(guard.noteHangEscalation("hang", made[0].client).recycled).toBe(false);
+    expect(made[0].calls.ended).toBe(0);
+  });
+
+  test("بلا عميل بعد: لا شيء يُقاعَد", () => {
     const { guard } = harness({ behaviours: ["ok"] });
-    expect(guard.requestRecycle("x")).toEqual({ recycled: false, reason: "no-client" });
-  });
-
-  test("DB_HANG_ESCALATION=off ⇒ تعليق استعلام لا يُتلف العميل", () => {
-    const { guard, made } = harness({ behaviours: ["ok", "ok"], config: { escalation: false } });
-    guard.current();
-    expect(guard.noteHangEscalation("hang").recycled).toBe(false);
-    expect(made[0].calls.ended).toBe(0);
-    expect(guard.stats().escalations).toBe(0);
-  });
-
-  test("مُفعَّلاً ⇒ تعليق استعلام يُتلف العميل ويُعدّ", () => {
-    const { guard, made } = harness({ behaviours: ["ok", "ok"] });
-    guard.current();
-    expect(guard.noteHangEscalation("hang")).toMatchObject({ recycled: true });
-    expect(made[0].calls.ended).toBe(1);
-    expect(guard.stats().escalations).toBe(1);
+    expect(guard.requestRecycle("forced")).toEqual({ recycled: false, reason: "no-client" });
   });
 });
 
-describe("الفحص لا يرمي أبداً", () => {
+describe("ensureLive لا ترمي أبداً", () => {
   test("فشل إنشاء العميل يُبلَّغ كنتيجة، لا كاستثناء يُسقِط القراءة", async () => {
     const guard = new ConnectionGuard({
       create: () => {
-        throw new Error("DATABASE_URL غير معرَّف");
+        throw Object.assign(new Error("DATABASE_URL missing"), { code: "NO_URL" });
       },
+      config: () => DB_RESILIENCE_DEFAULTS,
     });
-    const result = await guard.ensureLive();
-    expect(result.action).toBe("failed");
-    expect(result.errorCode).toBe("Error");
+    await expect(guard.ensureLive()).resolves.toMatchObject({ action: "failed", errorCode: "NO_URL" });
   });
 });
 
@@ -402,55 +342,33 @@ describe("leaseForClient — العقد يُرفَع على العميل الذ�
   });
 });
 
-describe("رصد ما يحدث فعلاً: السجلّ هو الطريق الوحيد عبر الدوال المنفصلة", () => {
-  test("تخطّي الفحص لأن الاتصال حيّ لا يُسجَّل — وإلا صار السجلّ بحجم الحركة", async () => {
-    const events: { kind: string }[] = [];
-    let now = 1_000_000;
+describe("السجلّ: سطرٌ لكل حدث حقيقي فقط", () => {
+  test("الحالات الغالبة لا تُسجَّل، والتدوير يُسجَّل بسببه ومهلته", async () => {
+    const events: { kind: string; detail: Record<string, unknown> }[] = [];
+    let now = 0;
+    const created: ReturnType<typeof fakeClient>[] = [];
     const guard = new ConnectionGuard({
-      create: () => fakeClient("ok").client,
+      create: () => {
+        const c = fakeClient("ok");
+        created.push(c);
+        return c.client;
+      },
       now: () => now,
-      onEvent: (e) => events.push({ kind: e.kind }),
+      config: () => DB_RESILIENCE_DEFAULTS,
+      onEvent: (e) => events.push(e),
     });
-    guard.current();
-    guard.noteHealthy();
-    now += 1000;
+    await guard.ensureLive();
+    guard.trackQuery(created[0].client)();
+    now += 1_000;
     await guard.ensureLive();
     expect(events).toEqual([]);
-  });
 
-  test("فحصٌ عمل فعلاً يُسجَّل مع مدّته وعمر الخمول وعدّاداته", async () => {
-    const events: { kind: string; detail: Record<string, unknown> }[] = [];
-    let now = 1_000_000;
-    const guard = new ConnectionGuard({
-      create: () => fakeClient("ok").client,
-      now: () => now,
-      onEvent: (e) => events.push(e),
-    });
-    guard.current();
-    guard.noteHealthy();
-    now += 9000;
+    now += 20_000;
     await guard.ensureLive();
-
-    expect(events).toHaveLength(1);
-    expect(events[0].kind).toBe("preflight");
-    expect(events[0].detail).toMatchObject({ action: "passed", idleMs: 9000 });
-    expect(events[0].detail.counts).toMatchObject({ passed: 1 });
-    // ولا سرّ في السطر: لا رابط ولا كلمة سر ولا بيانات زبون.
-    expect(JSON.stringify(events[0])).not.toContain("postgres://");
-  });
-
-  test("إعادة الإنشاء والتأجيل يُسجَّلان بسببهما", () => {
-    const events: { kind: string; detail: Record<string, unknown> }[] = [];
-    const guard = new ConnectionGuard({
-      create: () => fakeClient("ok").client,
-      onEvent: (e) => events.push(e),
-    });
-    const lease = guard.leaseForWrite(20_000);
-    guard.requestRecycle("read-hang");
-    lease.release();
-
-    expect(events.map((e) => e.kind)).toEqual(["recycle-deferred", "recycle"]);
-    expect(events[0].detail).toMatchObject({ reason: "read-hang", writesInFlight: 1 });
-    expect(events[1].detail).toMatchObject({ reason: "deferred-after-write", generation: 2 });
+    expect(events.map((e) => e.kind)).toEqual(["recycle"]);
+    expect(events[0].detail).toMatchObject({ reason: "idle-gap", generation: 2, drainMs: 2_000 });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(events.map((e) => e.kind)).toEqual(["recycle", "retired"]);
   });
 });

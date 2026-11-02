@@ -1,6 +1,7 @@
 import postgres from "postgres";
 import {
   ConnectionGuard,
+  QUERY_HARD_TIMEOUT_MS,
   classifyStatement,
   readDbResilienceConfig,
   type StatementKind,
@@ -8,10 +9,9 @@ import {
 
 type SqlClient = ReturnType<typeof postgres>;
 
-// حد زمني حقيقي لكل استعلام على مستوى العميل — أقصر من مهلة safeQuery
-// (15 ثانية) حتى يعمل هذا أولاً دائماً، وأطول قليلاً من statement_timeout
-// (8 ثوان) حتى لا يسبق مهلة الخادم في الحالة التي يعمل فيها الخادم فعلاً.
-const QUERY_HARD_TIMEOUT_MS = 10000;
+// حد زمني حقيقي لكل استعلام على مستوى العميل (QUERY_HARD_TIMEOUT_MS = 10s،
+// معرَّف في dbResilience.ts لأن مهلة تصريف العميل المُقاعَد تُحسب منه) —
+// أقصر من مهلة safeQuery (15 ثانية) حتى يعمل هذا أولاً دائماً.
 
 /**
  * مدّة عقد الكتابة لعبارة مفردة خارج أي معاملة (38 عبارة في المشروع:
@@ -105,6 +105,7 @@ function boundQueryLifetime<T>(query: T, kind: StatementKind, client: SqlClient)
   let armed = false;
   let resolved = false;
   let releaseWriteLease: () => void = () => {};
+  let untrack: () => void = () => {};
 
   const disarm = () => {
     resolved = true;
@@ -118,22 +119,18 @@ function boundQueryLifetime<T>(query: T, kind: StatementKind, client: SqlClient)
     }
   };
 
-  // كل استعلام ينجح هو الدليل الوحيد الموثوق على أن مقبس هذا العميل حيّ
-  // الآن — وهو ما يسمح للفحص المسبق أن يتخطّى نفسه تحت حمل متواصل بلا
-  // أي ثمن.
-  const onSuccess = () => {
+  // بدء الاستعلام وانتهاؤه هما «النشاط» الذي يقيس به الحارس الخمول، ومنهما
+  // تُحسب مهلة تصريف هذا العميل إن قوعِد والاستعلام جارٍ عليه.
+  const onSettled = () => {
     disarm();
     releaseWriteLease();
-    dbGuard.noteHealthy();
-  };
-  const onFailure = () => {
-    disarm();
-    releaseWriteLease();
+    untrack();
   };
 
   const arm = () => {
     if (armed) return;
     armed = true;
+    untrack = dbGuard.trackQuery(client);
 
     // عبارة كتابة تأخذ عقداً على **نفس العميل** الذي بُنيت عليه: فلا
     // يمكن لإتلافٍ سببه تعليق قراءةٍ أخرى أن يقطعها. وهذا هو ما كان
@@ -159,9 +156,10 @@ function boundQueryLifetime<T>(query: T, kind: StatementKind, client: SqlClient)
       // لن يأتي — فيبقى الوعد معلَّقاً إلى سقف 300 ثانية، وتبقى عملية
       // تجديد الكاش في الخلفية (waitUntil) تُمسك النسخة كلها معه.
       // فنمنح cancel() مهلة قصيرة ليعمل كما ينبغي، ثم إن كان الوعد ما
-      // زال معلَّقاً نُقرّ بأن الاتصال ميت ونُعيد إنشاء العميل: إتلاف
-      // القديم يرفض هذا الوعد وكل وعد أخيه رفضاً محلياً فورياً. ولا يُتلَف
-      // شيء أبداً وهناك معاملة كتابة جارية — راجع dbResilience.ts.
+      // زال معلَّقاً نُقرّ بأن الاتصال ميت فيُقاعَد **هذا** العميل: لا
+      // يستقبل استعلاماً جديداً، وما يجري عليه سليماً يكتمل، والمعلَّق
+      // يُرفَض عند انتهاء التصريف — راجع dbResilience.ts. ولا يُقاعَد شيء
+      // وهناك معاملة كتابة جارية.
       // ⚠️ القراءة وحدها تُصعِّد. عبارة الكتابة لا تُتلف العميل بنفسها
       // أبداً: إلغاؤها عند 10 ثوان يُنهيها على خادم حيّ بإرجاع مؤكَّد
       // (57014)، وعلى مقبس ميت لا نضيف إليها شيئاً بالإتلاف. فلا يجوز
@@ -170,7 +168,7 @@ function boundQueryLifetime<T>(query: T, kind: StatementKind, client: SqlClient)
         escalationTimer = setTimeout(() => {
           escalationTimer = undefined;
           if (resolved) return;
-          dbGuard.noteHangEscalation("query-hang-after-cancel");
+          dbGuard.noteHangEscalation("query-hang-after-cancel", client);
         }, readDbResilienceConfig().escalateGraceMs);
       }
     }, QUERY_HARD_TIMEOUT_MS);
@@ -178,7 +176,7 @@ function boundQueryLifetime<T>(query: T, kind: StatementKind, client: SqlClient)
     // تنظيف المؤقّت عند انتهاء الاستعلام نجاحاً أو فشلاً. نستعمل then
     // الأصلي (قبل الترقيع) لتفادي أي تسلسل لا نهائي، وكلا المُعالِجَين
     // يُعيد undefined فلا ينشأ رفض غير مُلتقَط من هذا الفرع.
-    Reflect.apply(originalThen, pending, [onSuccess, onFailure]);
+    Reflect.apply(originalThen, pending, [onSettled, onSettled]);
   };
 
   Object.defineProperty(pending, "then", {

@@ -648,6 +648,8 @@ export async function createManualOrderAction(
     acknowledgeBelowCost: formData.get("acknowledgeBelowCost") === "on",
     origin: { reference: String(formData.get("originReference") ?? "") || null },
     adConsentDeclared: formData.get("adConsentDeclared") === "on",
+    // نفس المفتاح مع كل إعادة إرسال من نفس النموذج — راجع createManualOrder.
+    idempotencyKey: String(formData.get("idempotencyKey") ?? "") || null,
   });
 
   if (!result.ok) {

@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
@@ -53,7 +54,9 @@ export default async function NewManualOrderPage({ searchParams }: Props) {
           ? "المنتجات معبَّأة من طلب واتساب تلقائياً — أضف اسم الزبون وهاتفه ومدينته كما وصلتك في المحادثة، ثم أكّد."
           : "لتسجيل بيع وقع خارج الموقع. يدخل المبيعات والأرباح والتقارير كأي طلب، ويبقى مميَّزاً بمصدره حتى تقارن بين قنواتك — ولا يدخل قمع تحويل الموقع لأنه لم يمرّ به."}
       </p>
-      <ManualOrderForm initialDraft={initialDraft} leadId={lead?.id} />
+      {/* مفتاح هذه المحاولة: جديد مع كل فتح للصفحة (force-dynamic)، وثابت مع
+          كل إعادة إرسال من نفس النموذج — راجع createManualOrder. */}
+      <ManualOrderForm initialDraft={initialDraft} leadId={lead?.id} attemptKey={randomUUID()} />
     </div>
   );
 }

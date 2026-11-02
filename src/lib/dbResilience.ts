@@ -5,89 +5,75 @@ type SqlClient = ReturnType<typeof postgres>;
 /**
  * ## المشكلة التي يحلّها هذا الملف
  *
- * توثيق Supabase الرسمي يصف الحالة بالحرف (troubleshooting-connect_timeout-
- * or-hanging-queries-in-vercel-serverless-functions): البيئة الخادومية
- * **تُجمِّد** الدالة بين طلب وطلب. أثناء التجميد تتوقّف مؤقّتات keep_alive
- * عند العميل، فيُسقط المجمّع أو NAT اتصال TCP الخامل بلا إشعار. وعند
- * استئناف الدالة يحاول العميل إعادة استعمال **مقبس ميت**: الكتابة تنجح
- * ظاهرياً (البايتات تذهب إلى العدم)، ولا يأتي أي رد، ولا يُغلق المقبس —
- * فيتعلَّق الاستعلام إلى سقف التنفيذ.
+ * Vercel **تُجمِّد** الدالة بعد الجواب. ما كان جارياً على قاعدة البيانات
+ * لحظة التجميد يبقى نصفياً. ومع `prepare: false` يُرسَل كل استعلام بقيم على
+ * مرحلتين (Parse+Describe+Flush، ثم Bind+Execute+Sync)، وبينهما معاملة ضمنية
+ * مفتوحة على الخادم. فإن جُمِّدت الدالة بين المرحلتين، يقتل Postgres الاتصال
+ * بعد `transaction_timeout = 45s` (FATAL 25P04، آخر أمر PARSE) — مُثبَت في
+ * سجلات الإنتاج (19 حالة في 24 ساعة، كلها عند PARSE) ومُعاد إنتاجه على
+ * PostgreSQL 17.6 محلياً. وعند استئناف الدالة يجد الاستعلام التالي مقبساً
+ * ميتاً أو خطأً قديماً ينتظره.
  *
- * وهذا يطابق ما قِسناه فعلاً في سجلات Vercel يوم 20 أكتوبر: عناقيد
- * CONNECT_TIMEOUT وETIMEDOUT(-110) وCONNECTION_CLOSED على منفذ المجمّع،
- * مع **صمت كامل في سجلات Postgres** في نفس اللحظة — أي أن الطلب لم يصل
- * إلى القاعدة أصلاً.
+ * ## لماذا لم يعد الحلّ «فحص ثم إتلاف فوري»
  *
- * ## لماذا لا يكفي ما عندنا اليوم
+ * الإصدار السابق كان يفحص اتصالاً واحداً (`select 1`) بعد الخمول، وعند أي
+ * فشل — أو عند تعليق قراءة 13 ثانية — يُتلف العميل **كله** فوراً
+ * (`end({ timeout: 0 })`). وهذا كان يرفض كل استعلام سليم جارٍ على الاتصالات
+ * الأربعة الأخرى في نفس اللحظة: كل أخطاء CONNECTION_DESTROYED في الإنتاج
+ * منذ 20 أكتوبر مصدرها هذا الإتلاف نفسه، لا Supabase. والفحص نفسه لا يرى
+ * إلا اتصالاً واحداً من خمسة، فنجاحه لم يكن يضمن الباقي.
  *
- * db.ts يربط كل استعلام بمؤقّت يستدعي `query.cancel()` الحقيقي. وهذا
- * يُنهي الحالة الأولى فقط. راجع `cancel()` في
- * node_modules/postgres/src/index.js:350 — له ثلاثة فروع:
- *   1. الاستعلام ما زال في طابور العميل (`!query.state`): يُحذف من
- *      الطابور ويُرفَض فوراً بـ57014. ✅ هذه حالتنا عند إشباع المجمّع.
- *   2. الاستعلام أُرسل وهو نشط (`query.state && query.active`): يُفتح
- *      **اتصال جديد** لإرسال CancelRequest. الوعد الأصلي **لا يُرفَض
- *      محلياً**؛ يبقى معلَّقاً في انتظار أن يردّ الخادم بخطأ على المقبس
- *      الأصلي. ❌ وإذا كان ذلك المقبس ميتاً فلا يأتي رد أبداً، والاتصال
- *      الجديد نفسه يتعلّق لأن المشكلة في الشبكة لا في الاستعلام.
- *   3. الاستعلام أُرسل خلف استعلام آخر (pipelined): يُعلَّم `cancelled`
- *      فقط، بلا رفض محلي. ❌ نفس النتيجة.
+ * ## الآلية الآن: تدوير هادئ
  *
- * ففروع 2 و3 هي بالضبط سقف 300 ثانية. و`Promise.race` وحدها لا تُصلحها:
- * الخاسر يُتخلّى عنه ولا يُلغى، فيبقى الاتصال محجوزاً من أصل `max` إلى
- * الأبد — وهو ما سمّم المجمّع قبلاً (راجع safeQuery.ts).
+ * - **بعد فجوة خمول** (لا استعلام بدأ ولا انتهى منذ `rotateAfterIdleMs`)
+ *   تبدأ الطلبات الجديدة على عميل جديد بمقابس جديدة — بلا فحص. أي تجميد
+ *   حقيقي أطول من ذلك، فلا يُعاد استعمال مقبس من قبل التجميد أبداً.
+ * - **العميل القديم يُقاعَد لا يُتلَف**: `end({ timeout })` يترك كل استعلام
+ *   جارٍ يكتمل، ولا يرفض إلا ما بقي بعد مهلة التصريف. والمهلة محسوبة من
+ *   أحدث استعلام جارٍ عليه: لا تنتهي قبل أن يبلغ ذلك الاستعلام سقفه الطبيعي
+ *   (إلغاء عند 10 ثوان + 3 ثوان سماح). فلا يُقطَع استعلام سليم مهما طال
+ *   ضمن حدوده، ولا يعيش استعلام معلَّق أكثر من سقفه.
+ * - **تعليق قراءة بعد الإلغاء** يُقاعِد العميل بنفس الطريقة، فلا يُستعمل
+ *   للطلبات الجديدة، ولا يُرفَض ما يجري عليه إلا عند انتهاء التصريف.
+ * - العميل المُقاعَد لا يستقبل استعلاماً جديداً: الوكيل `sql` يسأل دائماً
+ *   عن العميل الحالي.
  *
- * ## الآلية الوحيدة التي تُرفَض بها هذه الوعود فعلياً
+ * ## حدود متعمَّدة — سلامة الطلبيات أولاً (بلا تغيير)
  *
- * `sql.end({ timeout: 0 })` ← `destroy()` ← `c.terminate()`، و`terminate()`
- * في connection.js:422 يفعل حرفياً:
- *     if (stream || query || initial || sent.length)
- *       error(Errors.connection('CONNECTION_DESTROYED', options))
- * أي يرفض الاستعلام الجاري **وكل** ما في `sent[]` رفضاً محلياً فورياً، بلا
- * انتظار أي بايت من الخادم. هذه هي النقطة الوحيدة في postgres.js التي
- * تحوّل تعليقاً غير محدود إلى فشل محدود. فكل ما يفعله هذا الملف مبني
- * عليها: نُشخِّص المقبس الميت، ثم **نُعيد إنشاء العميل** ونُتلف القديم —
- * فيتحرّر كل وعد معلَّق عليه، ويبدأ الطلب التالي على مقابس جديدة.
- *
- * ## حدود متعمَّدة — سلامة الطلبيات أولاً
- *
- * إتلاف العميل أثناء معاملة كتابة جارية يجعل نتيجة COMMIT **مجهولة**: لا
- * نعرف هل وصل COMMIT إلى الخادم قبل انقطاع المقبس أم لا. لذلك:
- *   - `writesInFlight > 0` يمنع الإتلاف منعاً مطلقاً. يُؤجَّل ويُنفَّذ عند
- *     انتهاء آخر معاملة كتابة (condemned).
- *   - لا إعادة محاولة تلقائية لأي شيء، لا قراءة ولا كتابة. الفحص المسبق
- *     يسبق إنشاء استعلام القراءة، فتُنفَّذ القراءة **مرّة واحدة** على
- *     العميل الجديد — وهذا ليس إعادة محاولة بل اختيار اتصال سليم قبل
- *     البدء.
+ * - عقد كتابة نشط على العميل الحالي يمنع تقاعده إلى أن تُحسَم الكتابة،
+ *   ثم يُقاعَد. فلا تصير نتيجة COMMIT مجهولة بسببنا.
+ * - لا إعادة محاولة تلقائية لأي استعلام، لا قراءة ولا كتابة.
  */
 
+/** الإلغاء عند العميل (db.ts) — التصريف يُحسب منه، فلا ينحرف الرقمان. */
+export const QUERY_HARD_TIMEOUT_MS = 10000;
+
 export type DbResilienceConfig = {
-  /** هل يُشغَّل الفحص المسبق أصلاً؟ `off` يُعيد سلوك الإنتاج الحالي بالحرف. */
-  preflight: boolean;
-  /** هل يُتلَف العميل عندما يتعلّق استعلام بعد فشل cancel()؟ */
+  /** التدوير بعد الخمول. `off` يُبقي العميل نفسه مهما طال الخمول. */
+  rotation: boolean;
+  /** هل يُقاعَد العميل عندما يتعلّق استعلام قراءة بعد فشل cancel()؟ */
   escalation: boolean;
-  /** لا فحص مسبق إذا كان آخر نجاح أحدث من هذا — فلا ثمن تحت حمل متواصل. */
-  staleAfterMs: number;
-  /** سقف الفحص المسبق نفسه. قصير بالضرورة: هو في مسار كل قراءة باردة. */
-  preflightTimeoutMs: number;
+  /** فجوة خمول تكفي لافتراض أن المقابس قد تكون ماتت (تجميد). */
+  rotateAfterIdleMs: number;
   /** مهلة إضافية بعد cancel() قبل الحكم بأن الاستعلام لن يُرفَض أبداً. */
   escalateGraceMs: number;
-  /** حد أدنى بين إتلافَين — يمنع حلقة إتلاف/إنشاء تحت عطل مستمر. */
+  /** حد أدنى بين تقاعدَين بسبب تعليق — يمنع حلقة تحت عطل مستمر. */
   recycleCooldownMs: number;
+  /** أقلّ مهلة تصريف للعميل المُقاعَد، ولو لم يكن عليه استعلام مُتتبَّع. */
+  retireMinDrainMs: number;
 };
 
 export const DB_RESILIENCE_DEFAULTS: DbResilienceConfig = {
-  preflight: true,
+  rotation: true,
   escalation: true,
-  // أي تجميد حقيقي بين طلبين يتجاوز هذا بكثير، وأي حمل حقيقي يبقى تحته —
-  // فالفحص يعمل بعد الفجوات فقط، لا على كل طلب.
-  staleAfterMs: 5000,
-  // أطول من زمن ذهاب وإياب حقيقي إلى eu-north-1 بعشرات الأضعاف، وأقصر
-  // بكثير من connect_timeout (5s) حتى لا نخلط «مقبس ميت» بـ«اتصال جديد
-  // يُفتح الآن».
-  preflightTimeoutMs: 2500,
+  // أقصر من idle_timeout (20s) في db.ts: الاتصالات كانت ستُغلَق عند 20s على
+  // أي حال لولا التجميد، فالتدوير بعد 15s لا يكاد يضيف اتصالاً جديداً،
+  // ويضمن ألا يُستعمل مقبس من قبل تجميد. وأقصر بكثير من 45s التي يقتل
+  // الخادم بعدها معاملةً نصفية.
+  rotateAfterIdleMs: 15000,
   escalateGraceMs: 3000,
   recycleCooldownMs: 10000,
+  retireMinDrainMs: 2000,
 };
 
 function readFlag(raw: string | undefined, fallback: boolean): boolean {
@@ -115,12 +101,14 @@ export function readDbResilienceConfig(
 ): DbResilienceConfig {
   const d = DB_RESILIENCE_DEFAULTS;
   return {
-    preflight: readFlag(env.DB_LIVENESS_PREFLIGHT, d.preflight),
+    // `DB_LIVENESS_PREFLIGHT` هو اسم المفتاح القديم — يبقى مقروءاً حتى لا
+    // يتغيّر معنى إعداد موجود عند الرجوع أو التقدّم.
+    rotation: readFlag(env.DB_IDLE_ROTATION ?? env.DB_LIVENESS_PREFLIGHT, d.rotation),
     escalation: readFlag(env.DB_HANG_ESCALATION, d.escalation),
-    staleAfterMs: readMs(env.DB_STALE_AFTER_MS, d.staleAfterMs, 500, 600000),
-    preflightTimeoutMs: readMs(env.DB_PREFLIGHT_TIMEOUT_MS, d.preflightTimeoutMs, 250, 10000),
+    rotateAfterIdleMs: readMs(env.DB_STALE_AFTER_MS, d.rotateAfterIdleMs, 1000, 600000),
     escalateGraceMs: readMs(env.DB_ESCALATE_GRACE_MS, d.escalateGraceMs, 250, 60000),
     recycleCooldownMs: readMs(env.DB_RECYCLE_COOLDOWN_MS, d.recycleCooldownMs, 0, 600000),
+    retireMinDrainMs: readMs(env.DB_RETIRE_MIN_DRAIN_MS, d.retireMinDrainMs, 0, 60000),
   };
 }
 
@@ -152,22 +140,21 @@ export type PreflightAction =
   | "disabled"
   | "skipped-cold"
   | "skipped-fresh"
-  | "passed"
-  | "timed-out"
+  | "rotated"
+  | "rotation-deferred"
   | "failed";
 
 export type RecycleOutcome =
-  | { recycled: true; generation: number }
+  | { recycled: true; generation: number; drainMs: number }
   | {
       recycled: false;
-      reason: "no-client" | "deferred-write-in-flight" | "cooldown";
+      reason: "no-client" | "deferred-write-in-flight" | "cooldown" | "disabled" | "not-current";
       writesInFlight?: number;
     };
 
 export type PreflightResult = {
   action: PreflightAction;
-  elapsedMs: number;
-  /** عمر آخر نجاح معروف لحظة القرار — هو ما يُفسِّر `skipped-fresh`. */
+  /** عمر آخر نشاط لحظة القرار — هو ما يُفسِّر قرار التدوير. */
   idleMs: number | null;
   errorCode?: string;
   recycle?: RecycleOutcome;
@@ -177,8 +164,10 @@ export type GuardStats = {
   generation: number;
   hasClient: boolean;
   idleMs: number | null;
+  /** استعلامات جارية على العميل الحالي (مُتتبَّعة عبر db.ts). */
+  inflight: number;
   writesInFlight: number;
-  /** منها ما يمنع الإتلاف فعلاً الآن — الباقي تجاوز موعده. */
+  /** منها ما يمنع التقاعد فعلاً الآن — الباقي تجاوز موعده. */
   writesBlockingRecycle: number;
   condemned: boolean;
   preflights: Record<PreflightAction, number>;
@@ -186,6 +175,10 @@ export type GuardStats = {
   recyclesDeferred: number;
   recyclesOnCooldown: number;
   escalations: number;
+  /** عملاء ما زالوا في التصريف الآن — يجب أن يبقى صغيراً ويعود إلى صفر. */
+  retiring: number;
+  retiredClients: number;
+  /** عملاء أُغلقوا بالقوة (reset فقط). */
   destroyedClients: number;
 };
 
@@ -194,17 +187,20 @@ type WriteLease = { deadlineAt: number };
 type Slot = {
   client: SqlClient;
   generation: number;
-  lastHealthyAt: number | null;
+  /** آخر بدء أو انتهاء استعلام — لا «آخر نجاح»: الخمول هو غياب النشاط. */
+  lastActivityAt: number | null;
+  /** الاستعلامات الجارية الآن وبداية كلٍّ منها — منها تُحسب مهلة التصريف. */
+  inflight: Map<symbol, number>;
   /**
    * عقود الكتابة الجارية على هذه الشريحة. عقدٌ لم يتجاوز موعده يمنع
-   * الإتلاف منعاً مطلقاً. وعقدٌ تجاوز موعده يتوقّف عن المنع فقط — ولا
-   * يُسبِّب إتلافاً بنفسه أبداً. أي أن الكتابة تحصل على **حماية** لا على
-   * عدوانية: كتابة معلَّقة وحدها على نسخة خاملة لا تُتلف شيئاً، لكنها لا
-   * تُقفل استعادة القراءات إلى الأبد.
+   * التقاعد منعاً مطلقاً. وعقدٌ تجاوز موعده يتوقّف عن المنع فقط — ولا
+   * يُسبِّب تقاعداً بنفسه أبداً.
    */
   writeLeases: Set<WriteLease>;
   condemned: boolean;
 };
+
+type Retiring = { generation: number; startedAt: number; drainMs: number };
 
 const noop = () => {};
 
@@ -216,6 +212,17 @@ function errorCodeOf(error: unknown): string {
   return error instanceof Error ? error.name : "UNKNOWN";
 }
 
+function emptyPreflightCounts(): Record<PreflightAction, number> {
+  return {
+    disabled: 0,
+    "skipped-cold": 0,
+    "skipped-fresh": 0,
+    rotated: 0,
+    "rotation-deferred": 0,
+    failed: 0,
+  };
+}
+
 /**
  * الحارس لا يعرف كيف يُبنى العميل ولا كيف يُقرأ الوقت — يتلقّاهما. فيصير
  * قابلاً للاختبار بعميل مُلفَّق وبساعة مُسيَّرة، بلا قاعدة بيانات ولا
@@ -225,21 +232,16 @@ export class ConnectionGuard {
   private slot: Slot | null = null;
   private generation = 0;
   private lastRecycleAt: number | null = null;
-  private inFlight: Promise<PreflightResult> | null = null;
+  private readonly slots = new WeakMap<SqlClient, Slot>();
+  private readonly retiring = new Set<Retiring>();
 
   private counters = {
-    preflights: {
-      disabled: 0,
-      "skipped-cold": 0,
-      "skipped-fresh": 0,
-      passed: 0,
-      "timed-out": 0,
-      failed: 0,
-    } as Record<PreflightAction, number>,
+    preflights: emptyPreflightCounts(),
     recycles: 0,
     recyclesDeferred: 0,
     recyclesOnCooldown: 0,
     escalations: 0,
+    retiredClients: 0,
     destroyedClients: 0,
   };
 
@@ -265,46 +267,59 @@ export class ConnectionGuard {
       this.deps.onEvent({ kind, detail });
       return;
     }
-    // ⚠️ لماذا السجلّ هو الطريق الوحيد لقياس هذا في الإنتاج: كل مسار في
-    // Next على Vercel يُنشَر **دالةً خادومية منفصلة**، ولكل دالة نسختها
-    // من هذا الحارس. فعدّادات نسخةٍ لا يراها مسارٌ آخر إطلاقاً — ولو كان
-    // في نفس النشر. أي مسار تشخيص يقرأ `stats()` يقرأ عدّادات نفسه لا
-    // عدّادات الصفحات. فالسجلّ المُوحَّد هو ما يجمعها.
-    //
-    // ولا يُسجَّل إلا ما يستحقّ: الحالة الغالبة (تخطّي الفحص لأن الاتصال
-    // حيّ بالدليل) لا تمرّ من هنا أصلاً — راجع record(). فسطرٌ في السجلّ
-    // يعني أن شيئاً حقيقياً حدث.
-    console.log(
-      `[db-resilience] ${kind} ${JSON.stringify(detail)}`
-    );
+    // كل مسار في Next على Vercel دالةٌ منفصلة لها حارسها: السجلّ الموحَّد
+    // هو الطريق الوحيد لرؤية ما يحدث عبرها. ولا يُسجَّل إلا الحدث الحقيقي.
+    console.log(`[db-resilience] ${kind} ${JSON.stringify(detail)}`);
+  }
+
+  private newSlot(): Slot {
+    const slot: Slot = {
+      client: this.deps.create(),
+      generation: ++this.generation,
+      lastActivityAt: null,
+      inflight: new Map(),
+      writeLeases: new Set(),
+      condemned: false,
+    };
+    this.slots.set(slot.client, slot);
+    return slot;
   }
 
   /** العميل الحالي، يُنشأ عند أول طلب. */
   current(): SqlClient {
-    if (this.slot) return this.slot.client;
-    this.slot = {
-      client: this.deps.create(),
-      generation: ++this.generation,
-      lastHealthyAt: null,
-      writeLeases: new Set(),
-      condemned: false,
-    };
+    if (!this.slot) this.slot = this.newSlot();
     return this.slot.client;
   }
 
-  /** يُعلَن عند كل استعلام نجح فعلاً — وهو ما يُعرِّف «العميل حيّ». */
+  /**
+   * يُستدعى من db.ts عند أول `then` لكل استعلام على `client` بعينه، ويُرجع
+   * دالة تُستدعى عند انتهائه نجاحاً أو فشلاً. منه يُعرف الخمول الحقيقي،
+   * ومنه تُحسب مهلة تصريف العميل إن قوعِد والاستعلام جارٍ.
+   */
+  trackQuery(client: SqlClient): () => void {
+    const slot = this.slots.get(client);
+    if (!slot) return noop;
+    const id = Symbol("query");
+    const startedAt = this.now();
+    slot.inflight.set(id, startedAt);
+    slot.lastActivityAt = startedAt;
+    let done = false;
+    return () => {
+      if (done) return;
+      done = true;
+      slot.inflight.delete(id);
+      slot.lastActivityAt = this.now();
+    };
+  }
+
+  /** للتوافق: نجاحٌ نشاطٌ كذلك. */
   noteHealthy(): void {
-    if (this.slot) this.slot.lastHealthyAt = this.now();
+    if (this.slot) this.slot.lastActivityAt = this.now();
   }
 
   /**
-   * عقد الكتابة: يُرجع العميل **وقفله معاً، في عملية واحدة**.
-   *
-   * ولماذا ليس «زِد العدّاد» ثم «خُذ العميل» في خطوتين: لأن بينهما ثغرة
-   * حقيقية ولو ضيّقة — لو وقع إتلاف في تلك اللحظة، لارتفع العدّاد على
-   * الشريحة الجديدة بينما تجري المعاملة على العميل القديم، فيصير العميل
-   * القديم قابلاً للإتلاف وفيه COMMIT جارٍ. العقد يربط القفل بالشريحة
-   * التي سلّمها بعينها، فلا توجد لحظة بينهما أصلاً.
+   * عقد الكتابة: يُرجع العميل **وقفله معاً، في عملية واحدة** — فلا لحظة
+   * بينهما يمكن أن يُقاعَد فيها العميل الذي ستجري عليه المعاملة.
    */
   leaseForWrite(ttlMs: number): { client: SqlClient; release: () => void } {
     const client = this.current();
@@ -312,14 +327,8 @@ export class ConnectionGuard {
   }
 
   /**
-   * عقد كتابة على **عميل بعينه**.
-   *
-   * ولماذا بعينه: العقد قد يُطلَب بعد لحظة من إنشاء الاستعلام (التسليح
-   * يقع عند أول `then`)، وقد يكون إتلافٌ وقع بينهما. فلو رُفع العقد على
-   * «العميل الحالي» أيّاً كان، لحمينا شريحةً لا تجري عليها كتابة وتركنا
-   * الكتابة الحقيقية بلا حماية. وإن لم يكن هذا العميل هو الحالي، فشريحته
-   * أُتلفت أصلاً واستعلاماتها مرفوضة — فالحماية بلا معنى، ويُرجَع عقد
-   * فارغ.
+   * عقد كتابة على **عميل بعينه**. إن لم يكن هو الحالي فقد قوعِد أصلاً،
+   * والعميل المُقاعَد لا يُرفَض فيه شيء قبل انتهاء تصريفه — فيُرجَع عقد فارغ.
    */
   leaseForClient(
     client: SqlClient,
@@ -338,21 +347,14 @@ export class ConnectionGuard {
       if (released) return;
       released = true;
       slot.writeLeases.delete(lease);
-      // إن حُكم على هذه الشريحة أثناء الكتابة، يُنفَّذ الإتلاف الآن —
-      // بعد أن صارت نتيجة الكتابة معروفة ومسجَّلة. فلا يبقى عميل معروف
-      // الموت في الخدمة، ولا يُتلَف وهناك COMMIT قد يصير مجهولاً.
-      if (
-        slot.writeLeases.size === 0 &&
-        slot.condemned &&
-        this.slot === slot
-      ) {
+      // حُكم على الشريحة أثناء الكتابة ⇒ تُقاعَد الآن، بعد أن حُسمت.
+      if (slot.writeLeases.size === 0 && slot.condemned && this.slot === slot) {
         this.requestRecycle("deferred-after-write");
       }
     };
     return { leased: true, release };
   }
 
-  /** عقود الكتابة التي ما زالت تمنع الإتلاف فعلاً (لم تتجاوز موعدها). */
   private blockingWrites(slot: Slot): number {
     const now = this.now();
     let blocking = 0;
@@ -360,126 +362,63 @@ export class ConnectionGuard {
     return blocking;
   }
 
-  private idleMs(): number | null {
-    if (!this.slot || this.slot.lastHealthyAt === null) return null;
-    return this.now() - this.slot.lastHealthyAt;
+  /** الخمول = منذ آخر بدء أو انتهاء استعلام، بما فيه استعلام عالق من قبل تجميد. */
+  private idleMs(slot: Slot | null = this.slot): number | null {
+    if (!slot || slot.lastActivityAt === null) return null;
+    return this.now() - slot.lastActivityAt;
   }
 
   /**
-   * الفحص المسبق. يُستدعى **قبل** إنشاء استعلام القراءة، فإن اقتضى الأمر
-   * إعادة إنشاء العميل، يُبنى الاستعلام على العميل الجديد من البداية — لا
-   * إعادة إرسال لاستعلام سابق.
+   * يُستدعى **قبل** بناء استعلام القراءة. لا يرسل أي شيء إلى القاعدة:
+   * إن مرّت فجوة خمول، يبدأ هذا الطلب وما بعده على عميل جديد، ويُقاعَد
+   * القديم بهدوء. اسمه باقٍ كما كان لأن المستدعين لم يتغيّروا.
+   *
+   * ⚠️ عقد صريح: لا ترمي أبداً.
    */
   async ensureLive(): Promise<PreflightResult> {
     const config = this.config();
-    const startedAt = this.now();
+    if (!config.rotation) return this.record({ action: "disabled", idleMs: this.idleMs() });
 
-    if (!config.preflight) return this.record({ action: "disabled", elapsedMs: 0, idleMs: this.idleMs() });
-
-    // ⚠️ عقد صريح: هذه الدالة **لا ترمي أبداً**. هي فحص صحّة لا مصدر
-    // نتيجة، فلو رمت لصارت هي نفسها سبب فشل قراءة كانت ستنجح (مثلاً
-    // DATABASE_URL غائب: الخطأ الصحيح يجب أن يأتي من الاستعلام الحقيقي
-    // كما كان دائماً، لا من الفحص).
     try {
       this.current();
     } catch (error) {
-      return this.record({
-        action: "failed",
-        elapsedMs: 0,
-        idleMs: null,
-        errorCode: errorCodeOf(error),
-      });
+      // الخطأ الصحيح (مثلاً DATABASE_URL غائب) يجب أن يأتي من الاستعلام
+      // الحقيقي كما كان دائماً، لا من هنا.
+      return this.record({ action: "failed", idleMs: null, errorCode: errorCodeOf(error) });
     }
+
     const idleMs = this.idleMs();
+    if (idleMs === null) return this.record({ action: "skipped-cold", idleMs });
+    if (idleMs < config.rotateAfterIdleMs) return this.record({ action: "skipped-fresh", idleMs });
 
-    // عميل جديد لم ينجح له استعلام بعد: لا مقبس قديم يمكن أن يكون ميتاً،
-    // فالفحص هنا مجرّد ثمن على البدء البارد — ومهلة الاتصال (5s) تكفيه.
-    if (idleMs === null) return this.record({ action: "skipped-cold", elapsedMs: 0, idleMs });
-    if (idleMs < config.staleAfterMs) return this.record({ action: "skipped-fresh", elapsedMs: 0, idleMs });
-
-    // طلبات متزامنة في نفس النسخة تتشارك فحصاً واحداً، لا فحصاً لكل واحدة.
-    if (this.inFlight) return this.inFlight;
-
-    this.inFlight = this.runPreflight(startedAt, idleMs).finally(() => {
-      this.inFlight = null;
+    const recycle = this.requestRecycle("idle-gap", { ignoreCooldown: true });
+    return this.record({
+      action: recycle.recycled ? "rotated" : "rotation-deferred",
+      idleMs,
+      recycle,
     });
-    return this.inFlight;
-  }
-
-  private async runPreflight(startedAt: number, idleMs: number): Promise<PreflightResult> {
-    const config = this.config();
-    const client = this.current();
-
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const probe = client`select 1 as ok`;
-    const timeout = new Promise<"timeout">((resolve) => {
-      timer = setTimeout(() => resolve("timeout"), config.preflightTimeoutMs);
-    });
-
-    try {
-      const outcome = await Promise.race([
-        (probe as unknown as Promise<unknown>).then(() => "ok" as const),
-        timeout,
-      ]);
-
-      if (outcome === "ok") {
-        this.noteHealthy();
-        return this.record({ action: "passed", elapsedMs: this.now() - startedAt, idleMs });
-      }
-
-      // ⚠️ النقطة الحرجة: السباق انتهى، لكن `probe` **ما زال معلَّقاً** —
-      // فلو توقّفنا هنا لكنّا فعلنا بالضبط ما نهى عنه الشرط: Promise.race
-      // تتخلّى ولا تُلغي. الإتلاف أدناه هو ما يرفضه فعلياً عبر terminate().
-      // ونُسكِت رفضه مسبقاً حتى لا يصير رفضاً غير مُلتقَط.
-      (probe as unknown as Promise<unknown>).catch(noop);
-      const recycle = this.requestRecycle("preflight-timeout");
-      return this.record({
-        action: "timed-out",
-        elapsedMs: this.now() - startedAt,
-        idleMs,
-        recycle,
-      });
-    } catch (error) {
-      // خطأ صريح من العميل (CONNECT_TIMEOUT، CONNECTION_CLOSED، ECONNRESET):
-      // المقبس أعلن موته بنفسه. نُعيد الإنشاء كي لا يرث الطلب التالي نفس
-      // الاتصال، ونُبلِّغ الرمز فقط — بلا رابط ولا كلمة سر.
-      const recycle = this.requestRecycle("preflight-error");
-      return this.record({
-        action: "failed",
-        elapsedMs: this.now() - startedAt,
-        idleMs,
-        errorCode: errorCodeOf(error),
-        recycle,
-      });
-    } finally {
-      clearTimeout(timer);
-    }
   }
 
   private record(result: PreflightResult): PreflightResult {
     this.counters.preflights[result.action] += 1;
-    // `skipped-fresh` هي الحالة الغالبة تحت أي حمل (آخر استعلام نجح قبل
-    // أقل من staleAfterMs)، و`disabled` حالة الإطفاء — فتسجيلهما ضجيج
-    // بحجم حركة الموقع. وما عداهما قليل بطبعه ويستحقّ سطراً: فحصٌ عمل
-    // فعلاً (passed) أو كشف موتاً (timed-out/failed) أو بدءٌ بارد.
-    if (result.action !== "skipped-fresh" && result.action !== "disabled") {
+    // الحالات الغالبة (عميل حيّ بالنشاط، أو جديد، أو مُطفأ) ضجيجٌ بحجم
+    // الحركة. التدوير وتأجيله والفشل قليلة بطبعها وتستحقّ سطراً.
+    if (result.action === "rotation-deferred" || result.action === "failed") {
       this.emit("preflight", {
         action: result.action,
-        elapsedMs: result.elapsedMs,
         idleMs: result.idleMs,
         ...(result.errorCode ? { errorCode: result.errorCode } : {}),
         ...(result.recycle ? { recycle: result.recycle } : {}),
-        counts: { ...this.counters.preflights },
       });
     }
     return result;
   }
 
   /**
-   * إعادة إنشاء العميل: تبديل أولاً، ثم إتلاف القديم في الخلفية. الترتيب
-   * مقصود — الطلب التالي يجد عميلاً جاهزاً فوراً ولا ينتظر إتلاف شيء.
+   * تبديل العميل الحالي بآخر جديد، وتقاعد القديم بهدوء. الترتيب مقصود:
+   * الطلب التالي يجد عميلاً جاهزاً فوراً ولا ينتظر شيئاً.
    */
-  requestRecycle(reason: string): RecycleOutcome {
+  requestRecycle(reason: string, options: { ignoreCooldown?: boolean } = {}): RecycleOutcome {
     const slot = this.slot;
     if (!slot) return { recycled: false, reason: "no-client" };
 
@@ -488,15 +427,12 @@ export class ConnectionGuard {
       slot.condemned = true;
       this.counters.recyclesDeferred += 1;
       this.emit("recycle-deferred", { reason, writesInFlight: blocking });
-      return {
-        recycled: false,
-        reason: "deferred-write-in-flight",
-        writesInFlight: blocking,
-      };
+      return { recycled: false, reason: "deferred-write-in-flight", writesInFlight: blocking };
     }
 
     const config = this.config();
     if (
+      !options.ignoreCooldown &&
       this.lastRecycleAt !== null &&
       this.now() - this.lastRecycleAt < config.recycleCooldownMs
     ) {
@@ -505,34 +441,70 @@ export class ConnectionGuard {
       return { recycled: false, reason: "cooldown" };
     }
 
-    const old = slot.client;
-    this.slot = {
-      client: this.deps.create(),
-      generation: ++this.generation,
-      lastHealthyAt: null,
-      writeLeases: new Set(),
-      condemned: false,
-    };
+    const idleMs = this.idleMs(slot);
+    this.slot = this.newSlot();
     this.lastRecycleAt = this.now();
     this.counters.recycles += 1;
-    this.emit("recycle", { reason, generation: this.slot.generation });
-
-    this.destroy(old);
-    return { recycled: true, generation: this.slot.generation };
+    const drainMs = this.retire(slot);
+    this.emit("recycle", {
+      reason,
+      generation: this.slot.generation,
+      idleMs,
+      inflightOnOld: slot.inflight.size,
+      drainMs,
+      retiring: this.retiring.size,
+    });
+    return { recycled: true, generation: this.slot.generation, drainMs };
   }
 
-  private destroy(client: SqlClient): void {
-    this.counters.destroyedClients += 1;
-    // timeout: 0 ⇒ destroy() فوراً ⇒ terminate() لكل اتصال ⇒ رفض محلي
-    // لكل استعلام جارٍ أو مُرسَل. هذا هو ما يُنهي التعليق، وهو السبب
-    // الوحيد لوجود هذه الدالة.
-    void Promise.resolve(client.end({ timeout: 0 })).catch(noop);
+  /**
+   * مهلة التصريف: لا تنتهي قبل أن يبلغ **أحدث** استعلام جارٍ على هذا العميل
+   * سقفه الطبيعي (إلغاء + سماح). استعلامٌ سليم ينتهي قبلها حتماً (أو يُلغى
+   * عند 10 ثوان فيردّ الخادم الحيّ فوراً). وما بقي بعدها معلَّقٌ على مقبس
+   * ميت، فرفضه هو الصواب.
+   */
+  private drainMsFor(slot: Slot): number {
+    const config = this.config();
+    const ceiling = QUERY_HARD_TIMEOUT_MS + config.escalateGraceMs + 500;
+    let newest: number | null = null;
+    for (const startedAt of slot.inflight.values()) {
+      if (newest === null || startedAt > newest) newest = startedAt;
+    }
+    const needed = newest === null ? 0 : newest + ceiling - this.now();
+    return Math.min(ceiling, Math.max(config.retireMinDrainMs, needed));
   }
 
-  /** تُستدعى عند تعليق استعلام رغم cancel() — راجع db.ts. */
-  noteHangEscalation(reason: string): RecycleOutcome {
-    if (!this.config().escalation) {
-      return { recycled: false, reason: "cooldown" };
+  private retire(slot: Slot): number {
+    const drainMs = this.drainMsFor(slot);
+    const entry: Retiring = { generation: slot.generation, startedAt: this.now(), drainMs };
+    this.retiring.add(entry);
+    this.counters.retiredClients += 1;
+    // end({timeout}) لا يقبل استعلاماً جديداً، ويترك الجاري يكتمل، ثم
+    // يُغلق المقابس. وإن بقي شيء عند انتهاء المهلة يُرفَض محلياً
+    // (CONNECTION_DESTROYED) — وهو ما يُنهي التعليق على مقبس ميت.
+    void Promise.resolve(slot.client.end({ timeout: drainMs / 1000 }))
+      .catch(noop)
+      .finally(() => {
+        this.retiring.delete(entry);
+        this.emit("retired", {
+          generation: entry.generation,
+          elapsedMs: this.now() - entry.startedAt,
+          drainMs,
+          leftInflight: slot.inflight.size,
+        });
+      });
+    return drainMs;
+  }
+
+  /**
+   * تُستدعى عند تعليق استعلام قراءة رغم cancel() — راجع db.ts. لا تمسّ إلا
+   * العميل الذي علق عليه الاستعلام إن كان هو الحالي: عميلٌ مُقاعَد أصلاً
+   * سيُنهيه تصريفه، ولا يجوز أن يُقاعَد بسببه عميلٌ جديد سليم.
+   */
+  noteHangEscalation(reason: string, client?: SqlClient): RecycleOutcome {
+    if (!this.config().escalation) return { recycled: false, reason: "disabled" };
+    if (client && (!this.slot || this.slot.client !== client)) {
+      return { recycled: false, reason: "not-current" };
     }
     this.counters.escalations += 1;
     return this.requestRecycle(reason);
@@ -543,6 +515,7 @@ export class ConnectionGuard {
       generation: this.generation,
       hasClient: this.slot !== null,
       idleMs: this.idleMs(),
+      inflight: this.slot?.inflight.size ?? 0,
       writesInFlight: this.slot?.writeLeases.size ?? 0,
       writesBlockingRecycle: this.slot ? this.blockingWrites(this.slot) : 0,
       condemned: this.slot?.condemned ?? false,
@@ -551,6 +524,8 @@ export class ConnectionGuard {
       recyclesDeferred: this.counters.recyclesDeferred,
       recyclesOnCooldown: this.counters.recyclesOnCooldown,
       escalations: this.counters.escalations,
+      retiring: this.retiring.size,
+      retiredClients: this.counters.retiredClients,
       destroyedClients: this.counters.destroyedClients,
     };
   }
@@ -559,23 +534,20 @@ export class ConnectionGuard {
   async reset(): Promise<void> {
     const slot = this.slot;
     this.slot = null;
-    this.inFlight = null;
     this.lastRecycleAt = null;
+    this.retiring.clear();
     this.counters = {
-      preflights: {
-        disabled: 0,
-        "skipped-cold": 0,
-        "skipped-fresh": 0,
-        passed: 0,
-        "timed-out": 0,
-        failed: 0,
-      },
+      preflights: emptyPreflightCounts(),
       recycles: 0,
       recyclesDeferred: 0,
       recyclesOnCooldown: 0,
       escalations: 0,
+      retiredClients: 0,
       destroyedClients: 0,
     };
-    if (slot) await Promise.resolve(slot.client.end({ timeout: 0 })).catch(noop);
+    if (slot) {
+      this.counters.destroyedClients += 1;
+      await Promise.resolve(slot.client.end({ timeout: 0 })).catch(noop);
+    }
   }
 }

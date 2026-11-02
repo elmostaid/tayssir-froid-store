@@ -77,7 +77,34 @@ export type ManualOrderInput = {
    * مُشفَّراً) مع Meta. لا يُفترَض أبداً: الافتراضي false.
    */
   adConsentDeclared?: boolean;
+  /**
+   * مفتاح هذه **المحاولة** بعينها، يولّده نموذج الإنشاء مرّة واحدة عند فتحه
+   * ويُعيده كما هو مع كل إعادة إرسال. يُحفظ في `orders.idempotency_key`
+   * (فريد في قاعدة البيانات) — فإعادة الإرسال بعد انقطاعٍ ضاع فيه الجواب
+   * تُرجع نفس الطلبية ولا تخصم المخزون مرّتين. غيابه ⇒ السلوك القديم.
+   */
+  idempotencyKey?: string | null;
 };
+
+/** فضاء أسماء منفصل عن مفاتيح طلبات الموقع في نفس العمود الفريد. */
+const MANUAL_KEY_PREFIX = "manual:";
+
+export function manualIdempotencyKey(raw: string | null | undefined): string | null {
+  const key = raw?.trim();
+  if (!key || !/^[A-Za-z0-9-]{16,100}$/.test(key)) return null;
+  return MANUAL_KEY_PREFIX + key;
+}
+
+type ExistingOrder = { id: number; order_number: string; public_reference: string };
+
+async function findByIdempotencyKey(key: string): Promise<ExistingOrder | null> {
+  const [row] = await sql<ExistingOrder[]>`
+    select id, order_number, public_reference from public.orders
+    where idempotency_key = ${key}
+    limit 1
+  `;
+  return row ?? null;
+}
 
 export type ManualOrderResult =
   | {
@@ -87,6 +114,8 @@ export type ManualOrderResult =
       publicReference: string;
       /** المرجع المُدخَل لم يُربط (والطلبية سُجِّلت رغم ذلك) — السبب للمدير. */
       originWarning?: string | null;
+      /** نفس المحاولة أُرسلت من قبل وحُفظت: هذه هي الطلبية الأولى نفسها. */
+      duplicate?: boolean;
     }
   | { ok: false; errors: CreateOrderFieldError[] };
 
@@ -134,6 +163,16 @@ function validateCustomer(input: ManualOrderInput): CreateOrderFieldError[] {
 }
 
 export async function createManualOrder(input: ManualOrderInput): Promise<ManualOrderResult> {
+  const idempotencyKey = manualIdempotencyKey(input.idempotencyKey);
+
+  // قبل أي تحقق: إن كانت هذه المحاولة قد حُفظت من قبل (ضاع جوابها في
+  // انقطاع)، فالجواب الصحيح هو الطلبية نفسها — لا خطأ مخزون بسبب خصمٍ
+  // قامت به هي نفسها، ولا طلبية ثانية.
+  if (idempotencyKey) {
+    const existing = await findByIdempotencyKey(idempotencyKey);
+    if (existing) return existingResult(existing);
+  }
+
   const structuralErrors = validateCustomer(input);
   if (structuralErrors.length > 0) return { ok: false, errors: structuralErrors };
 
@@ -168,15 +207,28 @@ export async function createManualOrder(input: ManualOrderInput): Promise<Manual
         insert into public.orders (
           customer_name, customer_phone, customer_city, customer_address,
           customer_notes, items_subtotal, delivery_fee, actual_delivery_cost,
-          final_total, status, source, confirmed_at
+          final_total, status, source, confirmed_at, idempotency_key
         ) values (
           ${input.customer.fullName.trim()}, ${normalizedPhone}, ${input.customer.city.trim()},
           ${input.customer.address.trim()}, ${input.customer.notes?.trim() || null},
           ${subtotal}, ${deliveryFee}, ${actualDeliveryCost},
-          ${subtotal + deliveryFee}, 'confirmed', ${input.source}, now()
+          ${subtotal + deliveryFee}, 'confirmed', ${input.source}, now(), ${idempotencyKey}
         )
+        on conflict (idempotency_key) do nothing
         returning id, order_number, public_reference
       `;
+
+      // تعارض ⇒ إرسالٌ متزامن لنفس المحاولة سبق هذا إلى الحفظ (الإدراج
+      // ينتظر قفل الفهرس الفريد حتى تُحسم المعاملة الأخرى). لا أسطر، ولا
+      // خصم مخزون، ولا سجلّ حالة: الطلبية الأولى هي الجواب.
+      if (!order) {
+        const [existing] = await trx<ExistingOrder[]>`
+          select id, order_number, public_reference from public.orders
+          where idempotency_key = ${idempotencyKey}
+          limit 1
+        `;
+        return { ...existing, originWarning: null, duplicate: true as const };
+      }
 
       await writeNewOrderLines(trx, order.id, lines);
 
@@ -236,8 +288,10 @@ export async function createManualOrder(input: ManualOrderInput): Promise<Manual
         )
       `;
 
-      return { ...order, originWarning };
+      return { ...order, originWarning, duplicate: false as const };
     });
+
+    if (created.duplicate) return existingResult(created);
 
     // البيعة مؤكَّدة منذ إنشائها: تُرسَل الآن — أو تُرفض بسببها (لا موافقة،
     // المفتاح مُطفأ) دون أي أثر. `await` لا `void`: دالة serverless قد
@@ -269,4 +323,15 @@ export async function createManualOrder(input: ManualOrderInput): Promise<Manual
       errors: [{ field: "general", message: "تعذّر حفظ الطلب بسبب مشكلة تقنية. حاول مرة أخرى." }],
     };
   }
+}
+
+function existingResult(order: ExistingOrder): ManualOrderResult {
+  return {
+    ok: true,
+    orderId: order.id,
+    orderNumber: order.order_number,
+    publicReference: order.public_reference,
+    originWarning: null,
+    duplicate: true,
+  };
 }
