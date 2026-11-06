@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 import { safeQuery } from "@/lib/safeQuery";
-import { AD_CONSENT_MAX_AGE_DAYS, isAdConsentCollectionEnabled } from "@/lib/privacy/consent";
+import { AD_CONSENT_MAX_AGE_DAYS, isAdConsentCollectionEnabled, isAdTrackingOptOut } from "@/lib/privacy/consent";
 import { PrivacySettingsLink } from "@/components/ConsentBanner";
 
 export const metadata: Metadata = {
@@ -30,6 +30,7 @@ export default async function PrivacyPage() {
   const receipts = process.env.CNDP_RECEIPT_NUMBERS?.trim() || null;
   const contactEmail = process.env.PRIVACY_CONTACT_EMAIL?.trim() || null;
   const consentEnabled = isAdConsentCollectionEnabled();
+  const optOut = isAdTrackingOptOut();
 
   return (
     <article className="mx-auto max-w-3xl px-4 py-8 text-sm leading-7 text-neutral-700">
@@ -65,7 +66,7 @@ export default async function PrivacyPage() {
           ولك أن تعترض في أي وقت برسالة واتساب، فلا نُرسل بيانات طلبياتك.
         </li>
         <li>
-          <strong>{consentEnabled ? "بموافقتك فقط — كوكيز Meta:" : "كوكيز Meta (غير مفعّلة حالياً، ولا تُفعَّل إلا بموافقتك):"}</strong> معرّفات Meta Pixel (<span dir="ltr">_fbp</span>،{" "}
+          <strong>{optOut ? "كوكيز Meta (مفعّلة، ويمكنك رفضها في أي وقت من «إعدادات الكوكيز» أسفل الموقع):" : consentEnabled ? "بموافقتك فقط — كوكيز Meta:" : "كوكيز Meta (غير مفعّلة حالياً، ولا تُفعَّل إلا بموافقتك):"}</strong> معرّفات Meta Pixel (<span dir="ltr">_fbp</span>،{" "}
           <span dir="ltr">_fbc</span>)، ومعرّف النقر على الإعلان، وعنوان IP ونوع المتصفح — لقياس
           نتائج إعلاناتنا على فيسبوك وإنستغرام. وعند تأكيد طلبيتك نُرسل إلى Meta قيمتها
           ومنتجاتها، ورقم هاتفك <strong>مُشفَّراً</strong> (SHA-256) لا كما هو.
@@ -102,7 +103,7 @@ export default async function PrivacyPage() {
         راسلنا على واتساب أعلاه.
         {consentEnabled && (
           <>
-            {" "}ويمكنك منح موافقتك على كوكيز Meta أو سحبها في أي وقت: <PrivacySettingsLink />.
+            {" "}{optOut ? "ويمكنك رفض كوكيز Meta في أي وقت" : "ويمكنك منح موافقتك على كوكيز Meta أو سحبها في أي وقت"}: <PrivacySettingsLink />.
           </>
         )}
       </p>

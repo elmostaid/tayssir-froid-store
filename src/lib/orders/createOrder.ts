@@ -15,7 +15,7 @@ import { sendCapiEvent } from "@/lib/pixel/capi";
 import { writeServerOrderSubmittedEvent } from "@/lib/analytics/serverPurchase";
 import { resolveFbc } from "@/lib/pixel/fbc";
 import { capiIdentityFromRequest } from "@/lib/pixel/identity";
-import { isAdConsentGranted, parseAdConsent } from "@/lib/privacy/consent";
+import { isAdTrackingAllowed, parseAdConsent } from "@/lib/privacy/consent";
 import { attributionForConsent } from "@/lib/privacy/attribution";
 import { toInternationalDigits } from "@/lib/phone";
 import { getSiteUrl } from "@/lib/siteUrl";
@@ -368,7 +368,7 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       // تعتبر أحدهما تكراراً للآخر فتُسقطه.
       //
       // وبلا موافقة لا شيء يُرسَل إلى Meta — لا هذا ولا الشراء لاحقاً.
-      if (isAdConsentGranted(adConsent)) void sendCapiEvent({
+      if (isAdTrackingAllowed(adConsent)) void sendCapiEvent({
         eventName: "OrderSubmitted",
         eventId: input.idempotencyKey,
         eventSourceUrl: input.requestContext?.eventSourceUrl,

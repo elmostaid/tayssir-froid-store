@@ -1,6 +1,6 @@
 import type { Sql, TransactionSql } from "postgres";
 import { parseOriginReference } from "@/lib/whatsappInquiry";
-import { parseAdConsent, type AdConsent } from "@/lib/privacy/consent";
+import { isAdTrackingAllowed, parseAdConsent, type AdConsent } from "@/lib/privacy/consent";
 
 type Trx = TransactionSql<Record<string, unknown>> | Sql<Record<string, unknown>>;
 
@@ -132,5 +132,12 @@ export function manualOrderConsent(
     return { adConsent: "granted", source: "inherited", copyIdentity: true };
   }
   if (adminDeclared) return { adConsent: "granted", source: "admin_declared", copyIdentity: false };
-  return { adConsent: origin?.adConsent ?? "unknown", source: origin ? "inherited" : null, copyIdentity: false };
+  // نمط الرفض المتاح: زائر لم يرفض تُنسخ هويته المحفوظة (التُقطت لأنها مسموحة)،
+  // واختياره الحقيقي (`unknown`) يبقى كما هو.
+  const inherited = origin?.adConsent ?? "unknown";
+  return {
+    adConsent: inherited,
+    source: origin ? "inherited" : null,
+    copyIdentity: Boolean(origin) && isAdTrackingAllowed(inherited),
+  };
 }

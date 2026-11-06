@@ -4,7 +4,7 @@ import type { AttributionTouch, OrderAttribution } from "@/lib/attribution/types
 import { isUnfilledMacro, shouldKeepPreviousTouch } from "@/lib/attribution/types";
 import {
   AD_CONSENT_EVENT,
-  isAdConsentGranted,
+  isAdTrackingAllowed,
   readAdConsentFromDocument,
 } from "@/lib/privacy/consent";
 
@@ -42,7 +42,7 @@ type ClickIds = Pick<AttributionTouch, "fbclid" | "gclid" | "ttclid"> & { at: nu
 let pendingClickIds: ClickIds | null = null;
 
 function withoutClickIdsUnlessConsented(touch: AttributionTouch): AttributionTouch {
-  if (isAdConsentGranted(readAdConsentFromDocument())) return touch;
+  if (isAdTrackingAllowed(readAdConsentFromDocument())) return touch;
   if (touch.fbclid || touch.gclid || touch.ttclid) {
     pendingClickIds = { fbclid: touch.fbclid, gclid: touch.gclid, ttclid: touch.ttclid, at: touch.at };
   }
@@ -51,7 +51,7 @@ function withoutClickIdsUnlessConsented(touch: AttributionTouch): AttributionTou
 
 /** عند الموافقة: معرّفات اللمسة المنتظرة تُكتب فيها هي وحدها (نفس `at`). */
 export function persistPendingClickIds(): void {
-  if (!pendingClickIds || !isAdConsentGranted(readAdConsentFromDocument())) return;
+  if (!pendingClickIds || !isAdTrackingAllowed(readAdConsentFromDocument())) return;
   const pending = pendingClickIds;
   pendingClickIds = null;
   for (const key of [FIRST_KEY, LAST_KEY]) {

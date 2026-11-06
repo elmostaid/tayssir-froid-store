@@ -10,7 +10,7 @@ import {
   offlinePurchaseSharingSince,
   type MetaActionSource,
 } from "@/lib/pixel/actionSource";
-import { isAdConsentGranted } from "@/lib/privacy/consent";
+import { isAdTrackingAllowed } from "@/lib/privacy/consent";
 import {
   isGaMeasurementProtocolConfigured,
   sendGaPurchaseEvent,
@@ -269,7 +269,8 @@ export function metaPurchaseGate(
     } {
   const actionSource = actionSourceForOrderSource(order.source);
   if (!actionSource) return { ok: false, reason: "unknown_channel" };
-  const granted = isAdConsentGranted(order.ad_consent);
+  // «مسموح»: موافقة صريحة، أو لم يختر في نمط الرفض المتاح. الرفض لا يُرسَل أبداً.
+  const granted = isAdTrackingAllowed(order.ad_consent);
   if (!granted) {
     // بلا موافقة: المصلحة المشروعة وحدها، بشروطها (انظر actionSource.ts).
     const liSince = legitimateInterestPurchasesSince();

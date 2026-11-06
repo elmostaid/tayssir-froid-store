@@ -1,5 +1,5 @@
 import { resolveFbc } from "@/lib/pixel/fbc";
-import { isAdConsentGranted } from "@/lib/privacy/consent";
+import { isAdTrackingAllowed } from "@/lib/privacy/consent";
 import type { AttributionTouch } from "@/lib/attribution/types";
 import type { CreateOrderRequestContext } from "@/lib/orders/types";
 import type { CapiIdentitySnapshot } from "@/lib/pixel/sendDeferredPurchase";
@@ -21,7 +21,7 @@ export function capiIdentityFromRequest(
   requestContext: CreateOrderRequestContext | undefined,
   lastTouch: AttributionTouch | null
 ): CapiIdentitySnapshot | null {
-  if (!isAdConsentGranted(requestContext?.adConsent)) return null;
+  if (!isAdTrackingAllowed(requestContext?.adConsent)) return null;
 
   return {
     fbp: requestContext?.fbp ?? null,

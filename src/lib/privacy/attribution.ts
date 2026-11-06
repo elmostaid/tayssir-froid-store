@@ -1,5 +1,5 @@
 import type { AttributionTouch, OrderAttribution } from "@/lib/attribution/types";
-import { isAdConsentGranted, type AdConsent } from "@/lib/privacy/consent";
+import { isAdTrackingAllowed, type AdConsent } from "@/lib/privacy/consent";
 
 /**
  * ما يُحفظ من الإسناد حسب الموافقة.
@@ -19,6 +19,6 @@ export function attributionForConsent(
   attribution: OrderAttribution | null,
   consent: AdConsent
 ): OrderAttribution | null {
-  if (!attribution || isAdConsentGranted(consent)) return attribution;
+  if (!attribution || isAdTrackingAllowed(consent)) return attribution;
   return { first: stripTouch(attribution.first), last: stripTouch(attribution.last) };
 }

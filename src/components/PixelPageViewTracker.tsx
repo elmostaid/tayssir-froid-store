@@ -3,7 +3,7 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { usePathname } from "next/navigation";
 import { ensureMetaPixelLoaded, trackPageView } from "@/lib/pixel/fbq";
-import { readAdConsentFromDocument, subscribeAdConsent } from "@/lib/privacy/consent";
+import { isAdTrackingAllowed, readAdConsentFromDocument, subscribeAdConsent } from "@/lib/privacy/consent";
 
 /**
  * تحميل Pixel وPageView — بعد الموافقة وحدها، ومرة واحدة لكل عرض صفحة.
@@ -26,7 +26,7 @@ export function PixelPageViewTracker({ pixelId }: { pixelId: string }) {
   const lastTrackedPathname = useRef<string | null>(null);
 
   useEffect(() => {
-    if (consent !== "granted") return;
+    if (!isAdTrackingAllowed(consent)) return;
     if (lastTrackedPathname.current === pathname) return;
     lastTrackedPathname.current = pathname;
     ensureMetaPixelLoaded(pixelId);

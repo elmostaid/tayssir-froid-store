@@ -6,6 +6,7 @@ import { trackAnalyticsEvent } from "@/lib/analytics/track";
 import {
   adConsentPromptMode,
   isAdConsentCollectionEnabled,
+  isAdTrackingOptOut,
   readAdConsentFromDocument,
   subscribeAdConsent,
   writeAdConsent,
@@ -77,9 +78,18 @@ export function ConsentBanner() {
     >
       <div className="mx-auto flex max-w-3xl flex-col gap-2 text-[13px] leading-5 text-neutral-700 sm:flex-row sm:items-center sm:gap-4 sm:text-sm">
         <p className="sm:flex-1">
-          نستعمل كوكيز <strong>Meta</strong> (فيسبوك وإنستغرام) لقياس إعلاناتنا وتخصيصها، وتُنقل
-          بياناتها خارج المغرب — بموافقتك فقط. الرفض لا يمنعك من الطلب، وتغيّر اختيارك متى شئت من
-          أسفل الصفحة.{" "}
+          {isAdTrackingOptOut() ? (
+            <>
+              نستعمل كوكيز <strong>Meta</strong> (فيسبوك وإنستغرام) لقياس إعلاناتنا، وتُنقل بياناتها خارج
+              المغرب. يمكنك رفضها الآن أو في أي وقت من أسفل الصفحة، والرفض لا يمنعك من الطلب.{" "}
+            </>
+          ) : (
+            <>
+              نستعمل كوكيز <strong>Meta</strong> (فيسبوك وإنستغرام) لقياس إعلاناتنا وتخصيصها، وتُنقل
+              بياناتها خارج المغرب — بموافقتك فقط. الرفض لا يمنعك من الطلب، وتغيّر اختيارك متى شئت من
+              أسفل الصفحة.{" "}
+            </>
+          )}
           <Link href="/privacy" className="font-medium underline">
             التفاصيل
           </Link>

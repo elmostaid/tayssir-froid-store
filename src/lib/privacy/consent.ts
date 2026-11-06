@@ -39,7 +39,32 @@ export type AdConsent = "granted" | "denied" | "unknown";
  * `NEXT_PUBLIC_AD_CONSENT_ENABLED=on` (وقت البناء) مع إعادة الشريط.
  */
 export function isAdConsentCollectionEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_AD_CONSENT_ENABLED === "on";
+  // نمط الرفض المتاح يقرأ الاختيار دائماً: بدون ذلك لا يُحترَم رفضٌ صريح.
+  return process.env.NEXT_PUBLIC_AD_CONSENT_ENABLED === "on" || isAdTrackingOptOut();
+}
+
+/**
+ * نمط «الرفض متاح» (قرار صاحب المشروع، 2026-11-06): قياس Meta يعمل لكل
+ * زائر **ما لم يرفض صراحةً** من «إعدادات الكوكيز» — كما كان قبل 2026-10-31،
+ * بلا شريط. الرفض الصريح (`denied`) يبقى نافذاً في كل مسار.
+ *
+ * بلا هذا المتغير يبقى السلوك «بموافقة مسبقة فقط» كما هو.
+ */
+export function isAdTrackingOptOut(): boolean {
+  return process.env.NEXT_PUBLIC_AD_TRACKING_OPT_OUT === "on";
+}
+
+/**
+ * هل يُسمح بالقياس الإعلاني لهذا الاختيار؟ موافقة صريحة دائماً؛ و«لم يختر»
+ * أيضاً في نمط الرفض المتاح. الرفض الصريح لا يُسمح له أبداً.
+ *
+ * هذه هي البوّابة الوحيدة لقرارات الإرسال (Pixel، CAPI، معرّفات النقر،
+ * الهوية). القيمة المحفوظة مع الطلبية تبقى الاختيار الحقيقي، لا تفسيره.
+ */
+export function isAdTrackingAllowed(value: unknown): boolean {
+  const consent = parseAdConsent(value);
+  if (consent === "granted") return true;
+  return consent === "unknown" && isAdTrackingOptOut();
 }
 
 /**

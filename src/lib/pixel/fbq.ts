@@ -5,7 +5,7 @@
 import { getOrderAttribution } from "@/lib/attribution/capture";
 import {
   AD_CONSENT_EVENT,
-  isAdConsentGranted,
+  isAdTrackingAllowed,
   readAdConsentFromDocument,
 } from "@/lib/privacy/consent";
 
@@ -63,7 +63,7 @@ function newEventId(): string {
 export function ensureMetaPixelLoaded(pixelId: string): void {
   if (typeof window === "undefined" || typeof document === "undefined") return;
   if (typeof window.fbq === "function") return;
-  if (!isAdConsentGranted(readAdConsentFromDocument())) return;
+  if (!isAdTrackingAllowed(readAdConsentFromDocument())) return;
   type FbqStub = ((...args: unknown[]) => void) & {
     callMethod?: (...args: unknown[]) => void;
     queue: unknown[][];
@@ -100,7 +100,7 @@ if (typeof window !== "undefined") {
 function callFbq(eventName: string, params: Record<string, unknown>, eventId: string): void {
   if (typeof window === "undefined" || typeof window.fbq !== "function") return;
   // من سحب موافقته في نفس الصفحة: Pixel محمَّل، لكن لا حدث بعد السحب.
-  if (!isAdConsentGranted(readAdConsentFromDocument())) return;
+  if (!isAdTrackingAllowed(readAdConsentFromDocument())) return;
   window.fbq("track", eventName, params, { eventID: eventId });
 }
 
@@ -110,7 +110,7 @@ function callFbq(eventName: string, params: Record<string, unknown>, eventId: st
 function relayToCapi(eventName: string, eventId: string, customData: Record<string, unknown>): void {
   if (typeof window === "undefined" || typeof fetch !== "function") return;
   // الخادم يرفض بلا موافقة على أي حال (api/pixel-events)؛ هنا نتفادى الطلب.
-  if (!isAdConsentGranted(readAdConsentFromDocument())) return;
+  if (!isAdTrackingAllowed(readAdConsentFromDocument())) return;
   // الـfbclid يُمرَّر مع كل حدث لسبب واحد: `fbc` على الخادم كان يُقرأ من
   // كوكي `_fbc` فقط، وهي كوكي تكتبها Meta Pixel نفسها. فإذا حُجبت الـPixel
   // وصل الحدث بلا إسناد لأي إعلان ولم يظهر في تقارير الحملة. والقيمة محفوظة
