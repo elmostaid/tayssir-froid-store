@@ -6,6 +6,7 @@ import { AttributionTracker } from "@/components/AttributionTracker";
 import { MobileCartBar } from "@/components/MobileCartBar";
 import { EARLY_ADD_SCRIPT } from "@/lib/cart/earlyAdd";
 import { ImageFallbackScript } from "@/components/ImageFallbackScript";
+import { ConsentBanner } from "@/components/ConsentBanner";
 
 export default function StorefrontLayout({
   children,
@@ -40,8 +41,10 @@ export default function StorefrontLayout({
             مساحة فارغة أسفل صفحة لا شريط فيها. */}
         <MobileCartBar />
       </div>
-      {/* لا شريط موافقة (قرار 2026-11-01)، فلا Pixel ولا هوية إعلانية —
-          انظر isAdConsentCollectionEnabled في lib/privacy/consent.ts. */}
+      {/* اختيار الموافقة على كوكيز Meta. لا يعرض شيئاً ما دام الجمع مطفأً
+          (NEXT_PUBLIC_AD_CONSENT_ENABLED)، وفي نمط `settings` لا يظهر إلا حين
+          يفتحه الزائر بنفسه — انظر adConsentPromptMode في lib/privacy/consent.ts. */}
+      <ConsentBanner />
     </CartProvider>
   );
 }

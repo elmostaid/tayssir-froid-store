@@ -42,6 +42,23 @@ export function isAdConsentCollectionEnabled(): boolean {
   return process.env.NEXT_PUBLIC_AD_CONSENT_ENABLED === "on";
 }
 
+/**
+ * كيف يُسأل الزائر حين يكون الجمع مُفعَّلاً:
+ *
+ * - `settings` (الافتراضي): لا شيء يظهر من تلقاء نفسه. الزائر يفتح
+ *   الاختيار بنفسه من رابط «إعدادات الكوكيز» أسفل الموقع أو صفحة الخصوصية.
+ *   هذا ما يحترم قرار 2026-11-01 (لا شريط ولا نافذة)، وثمنه أن قلّة فقط
+ *   ستوافق.
+ * - `banner`: الشريط يظهر أسفل الصفحة لمن لم يختر بعد (الزرّان بنفس الوزن).
+ *
+ * أي قيمة أخرى ⇒ `settings`: الخطأ في الضبط لا يُظهر شريطاً لم يُطلب.
+ */
+export type AdConsentPromptMode = "banner" | "settings";
+
+export function adConsentPromptMode(): AdConsentPromptMode {
+  return process.env.NEXT_PUBLIC_AD_CONSENT_PROMPT === "banner" ? "banner" : "settings";
+}
+
 /** الاختيار كما تحمله كوكي الزائر — `unknown` دائماً ما دام الجمع مطفأً. */
 export function adConsentFromCookie(raw: unknown): AdConsent {
   return isAdConsentCollectionEnabled() ? parseAdConsent(raw) : "unknown";

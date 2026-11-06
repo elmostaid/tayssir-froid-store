@@ -121,3 +121,22 @@ describe("POST /api/pixel-events — إعادة توجيه أحداث Pixel (غ�
     expect(call.customData.currency).toBe("MAD");
   });
 });
+
+describe("POST /api/pixel-events — الجمع مطفأ (حالة الإنتاج منذ 2026-11-01)", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  test("كوكي granted قديمة لا تكفي حين الجمع مطفأ: 204 ولا شيء يصل Meta", async () => {
+    vi.stubEnv("NEXT_PUBLIC_AD_CONSENT_ENABLED", "");
+    const response = await POST(makeRequest({ eventName: "AddToCart", eventId: "evt-off", customData: {} }));
+    expect(response.status).toBe(204);
+    expect(sendCapiEventMock).not.toHaveBeenCalled();
+  });
+
+  test("الجمع مُفعَّل وموافقة صريحة: نفس الحدث يصل CAPI بنفس event_id", async () => {
+    vi.stubEnv("NEXT_PUBLIC_AD_CONSENT_ENABLED", "on");
+    sendCapiEventMock.mockResolvedValue({ ok: true });
+    await POST(makeRequest({ eventName: "InitiateCheckout", eventId: "evt-on", customData: { value: 10 } }));
+    expect(sendCapiEventMock).toHaveBeenCalledTimes(1);
+    expect(sendCapiEventMock.mock.calls[0][0]).toMatchObject({ eventName: "InitiateCheckout", eventId: "evt-on" });
+  });
+});

@@ -4,6 +4,8 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { trackAnalyticsEvent } from "@/lib/analytics/track";
 import {
+  adConsentPromptMode,
+  isAdConsentCollectionEnabled,
   readAdConsentFromDocument,
   subscribeAdConsent,
   writeAdConsent,
@@ -46,8 +48,12 @@ export function ConsentBanner() {
     return () => window.removeEventListener(OPEN_EVENT, open);
   }, []);
 
+  // الجمع مطفأ: لا شيء يُعرض، ولا حتى عند طلب الفتح (لا اختيار يُقرأ أصلاً).
+  if (!isAdConsentCollectionEnabled()) return null;
   if (consent === null) return null;
-  if (consent !== "unknown" && !reopened) return null;
+  // `settings`: يظهر فقط حين يفتحه الزائر بنفسه. `banner`: يظهر أيضاً لمن لم يختر.
+  const autoOpen = adConsentPromptMode() === "banner" && consent === "unknown";
+  if (!autoOpen && !reopened) return null;
 
   function choose(value: "granted" | "denied") {
     writeAdConsent(value);
@@ -91,8 +97,12 @@ export function ConsentBanner() {
   );
 }
 
-/** رابط «إعدادات الخصوصية» في التذييل — يُعيد فتح الشريط لتغيير الاختيار. */
+/**
+ * رابط «إعدادات الكوكيز» في التذييل وصفحة الخصوصية — يفتح الاختيار.
+ * لا يظهر حين يكون الجمع مطفأً: رابط لا يفعل شيئاً أسوأ من غيابه.
+ */
 export function PrivacySettingsLink() {
+  if (!isAdConsentCollectionEnabled()) return null;
   return (
     <button
       type="button"

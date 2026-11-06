@@ -8,13 +8,14 @@ import {
 } from "@/lib/whatsappInquiry";
 import { captureAttribution, getOrderAttribution } from "@/lib/attribution/capture";
 import { WhatsAppInquiryLink } from "@/components/WhatsAppInquiryLink";
-import { ConsentBanner } from "@/components/ConsentBanner";
+import { ConsentBanner, PrivacySettingsLink } from "@/components/ConsentBanner";
 
 vi.mock("@/lib/analytics/track", () => ({ trackAnalyticsEvent: vi.fn() }));
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   document.cookie = "tf_ad_consent=; Max-Age=0; path=/";
   window.localStorage.clear();
 });
@@ -169,6 +170,7 @@ describe("معرّف النقرة لا يُكتب على الجهاز قبل ا�
 
 describe("شريط الموافقة: القبول والرفض بنفس السهولة", () => {
   test("الزرّان بنفس المظهر حرفياً، وكلاهما يحفظ الاختيار ويُخفي الشريط", () => {
+    vi.stubEnv("NEXT_PUBLIC_AD_CONSENT_PROMPT", "banner");
     for (const [label, expected] of [["موافق", "granted"], ["رفض", "denied"]] as const) {
       document.cookie = "tf_ad_consent=; Max-Age=0; path=/";
       render(<ConsentBanner />);
@@ -190,5 +192,71 @@ describe("الإنتاج بلا شريط: لا موافقة تُقرأ أبدا�
     document.cookie = "tf_ad_consent=granted; path=/";
     expect(adConsentFromCookie("granted")).toBe("unknown");
     expect(readAdConsentFromDocument()).toBe("unknown");
+  });
+});
+
+describe("طريقة السؤال: لا شريط إلا إذا طُلب صراحةً", () => {
+  test("النمط الافتراضي (settings): لا شيء يظهر من تلقاء نفسه لزائر لم يختر", () => {
+    vi.stubEnv("NEXT_PUBLIC_AD_CONSENT_PROMPT", "");
+    render(<ConsentBanner />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  test("قيمة ضبط خاطئة ⇒ settings، لا شريط", () => {
+    vi.stubEnv("NEXT_PUBLIC_AD_CONSENT_PROMPT", "Banner ");
+    render(<ConsentBanner />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  test("settings: الزائر يفتح الاختيار من رابط «إعدادات الكوكيز» ويوافق ⇒ granted", () => {
+    vi.stubEnv("NEXT_PUBLIC_AD_CONSENT_PROMPT", "settings");
+    render(
+      <>
+        <PrivacySettingsLink />
+        <ConsentBanner />
+      </>
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "إعدادات الكوكيز" }));
+    fireEvent.click(screen.getByRole("button", { name: "موافق" }));
+    expect(document.cookie).toContain("tf_ad_consent=granted");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  test("settings: من اختار سابقاً يستطيع تغيير اختياره (سحب الموافقة)", () => {
+    vi.stubEnv("NEXT_PUBLIC_AD_CONSENT_PROMPT", "settings");
+    writeAdConsent("granted");
+    render(
+      <>
+        <PrivacySettingsLink />
+        <ConsentBanner />
+      </>
+    );
+    fireEvent.click(screen.getByRole("button", { name: "إعدادات الكوكيز" }));
+    fireEvent.click(screen.getByRole("button", { name: "رفض" }));
+    expect(document.cookie).toContain("tf_ad_consent=denied");
+  });
+
+  test("banner: يظهر لمن لم يختر، ولا يظهر لمن اختار", () => {
+    vi.stubEnv("NEXT_PUBLIC_AD_CONSENT_PROMPT", "banner");
+    render(<ConsentBanner />);
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    cleanup();
+    writeAdConsent("denied");
+    render(<ConsentBanner />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  test("الجمع مطفأ: لا رابط إعدادات ولا شريط، مهما كان النمط", () => {
+    vi.stubEnv("NEXT_PUBLIC_AD_CONSENT_ENABLED", "");
+    vi.stubEnv("NEXT_PUBLIC_AD_CONSENT_PROMPT", "banner");
+    render(
+      <>
+        <PrivacySettingsLink />
+        <ConsentBanner />
+      </>
+    );
+    expect(screen.queryByRole("button", { name: "إعدادات الكوكيز" })).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

@@ -1,6 +1,7 @@
 "use client";
 
 import type { AttributionTouch, OrderAttribution } from "@/lib/attribution/types";
+import { isUnfilledMacro, shouldKeepPreviousTouch } from "@/lib/attribution/types";
 import {
   AD_CONSENT_EVENT,
   isAdConsentGranted,
@@ -135,7 +136,8 @@ export function readTouchFromLocation(treatDirectAsTouch = false): AttributionTo
   const params = new URLSearchParams(location.search);
   const get = (key: string) => {
     const value = params.get(key)?.trim();
-    return value ? value : null;
+    // `{{ad.id}}` حرفياً = وسم لم تعوّضه Meta، لا مصدر.
+    return value && !isUnfilledMacro(value) ? value : null;
   };
 
   const referrer = typeof document !== "undefined" ? document.referrer : "";
@@ -191,7 +193,10 @@ export function captureAttribution(): void {
 
     // أول لمسة محفوظة ولا تُمسّ. آخر لمسة تتغيّر عند مصدر جديد وحده.
     const raw = readTouchFromLocation(false);
-    if (raw) writeStored(LAST_KEY, withoutClickIdsUnlessConsented(raw));
+    if (!raw) return;
+    // إحالة عارية من نفس الشبكة لا تمحو إعلاناً موسوماً حديثاً (انظر types.ts).
+    if (shouldKeepPreviousTouch(raw, readStored(LAST_KEY))) return;
+    writeStored(LAST_KEY, withoutClickIdsUnlessConsented(raw));
   } catch {
     // القياس لا يُسقط صفحة أبداً.
   }
