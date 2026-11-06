@@ -88,10 +88,13 @@ export async function createWhatsappLead(
 
     const adConsent = parseAdConsent(input.requestContext?.adConsent);
     const attribution = attributionForConsent(sanitizeAttribution(input.attribution), adConsent);
-    const identity = capiIdentityFromRequest(
-      input.requestContext,
-      attribution?.last ?? attribution?.first ?? null
-    );
+    // قيد القاعدة (`*_identity_needs_consent`) يشترط موافقة صريحة لحفظ الهوية هنا،
+    // حتى في نمط الرفض المتاح. معرّف النقرة يبقى في الإسناد، ومنه تُبنى `fbc`
+    // لطلبية واتساب المربوطة — فلا Migration ولا خسارة للإعلان.
+    const identity =
+      adConsent === "granted"
+        ? capiIdentityFromRequest(input.requestContext, attribution?.last ?? attribution?.first ?? null)
+        : null;
     const attributionFirst = attribution?.first ? sql.json(attribution.first) : null;
     const attributionLast = attribution?.last ? sql.json(attribution.last) : null;
 
