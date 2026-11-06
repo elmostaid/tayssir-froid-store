@@ -1,6 +1,5 @@
 import Image from "next/image";
 import { WhatsAppInquiryLink } from "@/components/WhatsAppInquiryLink";
-import { PrivacySettingsLink } from "@/components/ConsentBanner";
 import Link from "next/link";
 import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 import { safeQuery } from "@/lib/safeQuery";
@@ -48,7 +47,6 @@ export async function SiteFooter() {
           <Link href="/privacy" className="underline">
             سياسة الخصوصية
           </Link>
-          <PrivacySettingsLink />
         </p>
       </div>
     </footer>
