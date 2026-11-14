@@ -1,6 +1,6 @@
 import { displayCustomerAddress } from "@/lib/orders/customerAddress";
 import { describeTouch } from "@/lib/attribution/types";
-import Link from "next/link";
+import Link from "@/components/Link";
 import { notFound, redirect } from "next/navigation";
 import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import { getEditableOrderLines } from "@/lib/queries/adminProductSearch";
@@ -21,6 +21,7 @@ import { DeliveryFeeForm } from "@/components/admin/DeliveryFeeForm";
 import { ActualDeliveryCostForm } from "@/components/admin/ActualDeliveryCostForm";
 import { CopyBonButton } from "@/components/admin/CopyBonButton";
 import { DeleteOrderButton } from "@/components/admin/DeleteOrderButton";
+import { RetryPurchaseButton } from "@/components/admin/RetryPurchaseButton";
 import { CopyDeliveryInfoButton } from "@/components/admin/CopyDeliveryInfoButton";
 import { OrderProfitPanel } from "@/components/admin/OrderProfitPanel";
 import { buildCustomerWhatsAppLink } from "@/lib/whatsapp";
@@ -189,6 +190,65 @@ export default async function AdminOrderDetailPage({ params }: Props) {
         </div>
       )}
 
+      {/* المصدر والموافقة وتسليم البيعة إلى Meta — لكل القنوات. فشل التسليم
+          صامت بطبعه: لا الزبون يراه ولا المدير، ولا يظهر إلا كنقص في تقارير
+          الحملة بعد أيام. والموافقة تُعرض لأنها سبب «لم تُرسَل» الأكثر شيوعاً
+          بعد اليوم، ولا يجوز أن يُقرأ غيابها عطلاً. */}
+      <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-4 text-sm">
+        <h2 className="text-sm font-semibold text-neutral-800">القياس</h2>
+        <dl className="mt-2 grid gap-1 text-xs text-neutral-700">
+          <div>
+            <dt className="inline font-semibold">مرجع الزيارة: </dt>
+            <dd className="inline" dir="ltr">{order.originReference ?? "—"}</dd>
+          </div>
+          <div>
+            <dt className="inline font-semibold">موافقة المشاركة مع Meta: </dt>
+            <dd className="inline">
+              {order.adConsent === "granted"
+                ? `نعم (${order.adConsentSource === "admin_declared" ? "صرّح بها المدير" : order.adConsentSource === "inherited" ? "من زيارة الموقع" : "شريط الموقع"})`
+                : order.adConsent === "denied"
+                  ? "رفض"
+                  : "غير معروفة — لا يُرسَل شيء"}
+            </dd>
+          </div>
+          {order.metaPurchaseActionSource && (
+            <div>
+              <dt className="inline font-semibold">أُرسلت كـ: </dt>
+              <dd className="inline" dir="ltr">{order.metaPurchaseActionSource}</dd>
+            </div>
+          )}
+        </dl>
+        {order.status === "cancelled" && order.metaPurchaseAcceptedAt && (
+          <p className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            ⚠ أُلغيت هذه الطلبية بعد أن قبلت Meta بيعتها. Meta لا تتيح سحب حدث شراء، فهي
+            تبقى في تقاريرها — احسبها عند مقارنة أرقام Meta بالمبيعات الفعلية.
+          </p>
+        )}
+      </div>
+
+      {(order.metaPurchaseAcceptedAt || order.metaPurchaseError) && (
+          <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-4">
+            <h2 className="text-sm font-semibold text-neutral-800">تسليم البيعة إلى Meta</h2>
+            {order.metaPurchaseAcceptedAt ? (
+              <p className="mt-2 text-sm text-green-700">
+                ✅ أقرّت Meta بالاستلام — {new Date(order.metaPurchaseAcceptedAt).toLocaleString("ar-MA")}
+              </p>
+            ) : (
+              <>
+                <p className="mt-2 text-sm font-semibold text-red-700">
+                  {order.metaPurchaseAttempts > 0
+                    ? `⚠ لم تُقِرّ Meta بالاستلام بعد (${order.metaPurchaseAttempts} محاولة)`
+                    : "⚠ البيعة لم تُرسَل إلى Meta"}
+                </p>
+                <p className="mt-1 break-words text-xs text-neutral-600" dir="ltr">
+                  {order.metaPurchaseError}
+                </p>
+                {isOwnerAdmin(admin) && <RetryPurchaseButton orderId={order.id} />}
+              </>
+            )}
+          </div>
+        )}
+
       <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-4">
         <h2 className="text-sm font-semibold text-neutral-800">المنتجات</h2>
         {/* السطور المرفوضة لا تختفي: الطلب يُحفظ كما اختاره الزبون، وما لم
@@ -350,16 +410,19 @@ export default async function AdminOrderDetailPage({ params }: Props) {
         </div>
       </div>
 
-      {/* حذف نهائي — مقصور على Owner/Admin، ومفصول في قسم خاص بإطار أحمر
-          حتى لا يُضغط بالخطأ بجوار الإجراءات العادية. الصلاحية تُفحص من
-          جديد داخل deleteOrder نفسه. */}
-      {isOwnerAdmin(admin) && (
+      {/* حذف نهائي — إجراء استثنائي، لا طريقة الإلغاء اليومية.
+          لا يظهر إلا على طلب منتهٍ (ملغى أو راجع): الإلغاء هو ما يُرجع المخزون
+          ويُسجّل السبب ويحفظ السطور والتاريخ والإسناد. وبلا هذا الشرط كان
+          الحذف صار مسار الإلغاء الفعلي — 38 طلباً محذوفاً مقابل طلب واحد
+          أُلغي بالطريقة الصحيحة. الشرطان (Owner + ملغى) يُفحصان من جديد
+          داخل deleteOrder نفسه. */}
+      {isOwnerAdmin(admin) && (order.status === "cancelled" || order.status === "returned") && (
         <div className="mt-4 rounded-xl border border-red-200 bg-white p-4">
-          <h2 className="text-sm font-semibold text-red-700">حذف الطلب</h2>
-          <p className="mt-1 text-xs text-neutral-600">
-            يحذف الطلب وكل سطوره وسجل حالاته نهائياً. لا يمكن التراجع. حركات
-            المخزون تبقى محفوظة في السجل، لكن الحذف لا يُرجع الكمية إلى
-            المخزون — إن أردت إرجاعها، ألغِ الطلب أولاً ثم احذفه.
+          <h2 className="text-sm font-semibold text-red-700">حذف الطلب نهائياً</h2>
+          <p className="mt-1 text-xs leading-relaxed text-neutral-600">
+            يمحو الطلب وسطوره وسجل حالاته نهائياً، ولا يمكن التراجع. المخزون
+            رُجِّع عند الإلغاء فلا يُرجَّع مرتين. تبقى لقطة الطلب وسبب الحذف
+            في سجل الحذف وحده — فلا تحذف إلا ما لا تحتاج الإجابة عنه لاحقاً.
           </p>
           <div className="mt-3">
             <DeleteOrderButton orderId={order.id} orderNumber={order.orderNumber} />

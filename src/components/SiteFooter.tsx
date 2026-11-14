@@ -1,9 +1,9 @@
 import Image from "next/image";
-import { buildWhatsAppLink } from "@/lib/whatsapp";
+import { WhatsAppInquiryLink } from "@/components/WhatsAppInquiryLink";
+import Link from "@/components/Link";
 import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 import { safeQuery } from "@/lib/safeQuery";
-import { formatMad } from "@/lib/format";
-import { isFreeDelivery, FREE_DELIVERY_HEADLINE } from "@/lib/delivery";
+import { DELIVERY_AVAILABILITY, DELIVERY_COST_TIMING } from "@/lib/delivery";
 
 export async function SiteFooter() {
   const settings = await safeQuery(
@@ -12,10 +12,6 @@ export async function SiteFooter() {
     "SiteFooter.getSettings"
   );
 
-  const whatsappLink = buildWhatsAppLink(
-    settings.whatsappNumber,
-    `مرحباً، عندي سؤال بخصوص منتجات ${settings.storeName}.`
-  );
 
   return (
     <footer className="border-t border-neutral-200 bg-white">
@@ -36,23 +32,22 @@ export async function SiteFooter() {
         </p>
         <p className="mt-1">{settings.storeCity}</p>
         <p className="mt-1">
-          {isFreeDelivery(settings.deliveryFeePerCartonMad) ? (
-            <>🚚 {FREE_DELIVERY_HEADLINE}. الدفع عند الاستلام فقط.</>
-          ) : (
-            <>
-              التوصيل {formatMad(settings.deliveryFeePerCartonMad)} لكل كرطونة، يُحدَّد عدد
-              الكرطونات بعد تجهيز الطلب. الدفع عند الاستلام فقط.
-            </>
-          )}
+          🚚 {DELIVERY_AVAILABILITY}. {DELIVERY_COST_TIMING}. الدفع عند الاستلام
+          فقط.
         </p>
-        <a
-          href={whatsappLink}
-          target="_blank"
-          rel="noopener noreferrer"
+        <WhatsAppInquiryLink
+          whatsappNumber={settings.whatsappNumber}
+          message={`مرحباً، عندي سؤال بخصوص منتجات ${settings.storeName}.`}
+          kind="general"
           className="mt-3 inline-block font-medium text-whatsapp-dark underline"
         >
           تواصل معنا عبر واتساب
-        </a>
+        </WhatsAppInquiryLink>
+        <p className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-500">
+          <Link href="/privacy" className="underline">
+            سياسة الخصوصية
+          </Link>
+        </p>
       </div>
     </footer>
   );

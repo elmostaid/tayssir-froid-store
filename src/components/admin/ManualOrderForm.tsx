@@ -1,7 +1,11 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { createManualOrderAction, type OrderEditState } from "@/app/admin/(protected)/orders/actions";
+import {
+  createManualOrderAction,
+  convertWhatsappLeadAction,
+  type OrderEditState,
+} from "@/app/admin/(protected)/orders/actions";
 import { OrderLinesEditor } from "@/components/admin/OrderLinesEditor";
 import { MANUAL_ORDER_SOURCES, ORDER_SOURCE_LABELS } from "@/lib/orders/orderSource";
 import { ImportOrderPanel } from "@/components/admin/ImportOrderPanel";
@@ -45,9 +49,28 @@ function Field({
   );
 }
 
-export function ManualOrderForm() {
-  const [state, formAction, pending] = useActionState(createManualOrderAction, initialState);
-  const [draft, setDraft] = useState<ImportedOrderDraft | null>(null);
+export function ManualOrderForm({
+  initialDraft,
+  leadId,
+  attemptKey,
+}: {
+  /** مسودّة جاهزة من تحويل طلب واتساب — انظر lib/orders/whatsappLeadDraft.ts. */
+  initialDraft?: ImportedOrderDraft;
+  /** وجوده يعني: هذا تحويل Lead لا طلب يدوي عادي — يُرسَل لـconvertWhatsappLeadAction. */
+  leadId?: number;
+  /**
+   * مفتاح هذه المحاولة، يولّده الخادم عند فتح الصفحة. يبقى هو نفسه مع كل
+   * إعادة إرسال (بعد خطأ أو انقطاع)، فلا تُنشأ الطلبية مرّتين ولا يُخصم
+   * المخزون مرّتين. النجاح ينقل إلى صفحة الطلبية، والطلبية التالية تفتح
+   * الصفحة من جديد بمفتاح جديد.
+   */
+  attemptKey?: string;
+} = {}) {
+  // تحويل Lead يمرّ بمسار مختلف (قفل ذرّي يمنع تحويله مرتين) — انظر
+  // convertWhatsappLead.ts. الشكل (OrderEditState) واحد فالحالتين.
+  const action = leadId ? convertWhatsappLeadAction : createManualOrderAction;
+  const [state, formAction, pending] = useActionState(action, initialState);
+  const [draft, setDraft] = useState<ImportedOrderDraft | null>(initialDraft ?? null);
   const [warnings, setWarnings] = useState<ImportIssue[]>([]);
 
   // الاستيراد يُعيد بناء الحقول من الصفر: `key` مشتقّ من عدّاد المسودّات
@@ -74,12 +97,16 @@ export function ManualOrderForm() {
 
   return (
     <form action={formAction} className="mt-4 flex flex-col gap-4">
-      <ImportOrderPanel onDraft={applyDraft} />
+      {attemptKey && <input type="hidden" name="idempotencyKey" value={attemptKey} />}
+      {leadId && <input type="hidden" name="leadId" value={leadId} />}
+      {!leadId && <ImportOrderPanel onDraft={applyDraft} />}
 
       {draft && (
         <div className="rounded-xl border border-green-300 bg-green-50 p-3">
           <p className="text-sm font-bold text-green-800">
-            قُرئ البون: {draft.items.length} منتجاً — راجع كل شيء أدناه ثم أكّد.
+            {leadId
+              ? `طلب واتساب: ${draft.items.length} منتجاً — راجع كل شيء أدناه، أضف اسم الزبون وهاتفه ومدينته من المحادثة، ثم أكّد.`
+              : `قُرئ البون: ${draft.items.length} منتجاً — راجع كل شيء أدناه ثم أكّد.`}
           </p>
           <p className="mt-0.5 text-[11px] text-green-800">
             لم يُنشأ أي طلب بعد، ولم يتغيّر أي مخزون.
@@ -134,19 +161,51 @@ export function ManualOrderForm() {
             <span className="mb-1 block font-semibold">
               مصدر الطلب <span className="text-red-500">*</span>
             </span>
-            <select
-              key={`source-${draftKey}`}
-              name="source"
-              required
-              defaultValue={draft?.source ?? "whatsapp"}
-              className="min-h-11 w-full rounded-lg border border-neutral-300 px-3 text-sm"
-            >
-              {MANUAL_ORDER_SOURCES.map((source) => (
-                <option key={source} value={source}>
-                  {ORDER_SOURCE_LABELS[source]}
-                </option>
-              ))}
-            </select>
+            {leadId ? (
+              <p className="min-h-11 flex items-center rounded-lg border border-neutral-200 bg-neutral-50 px-3 text-sm text-neutral-600">
+                {ORDER_SOURCE_LABELS.whatsapp} (ثابت لتحويل طلب واتساب)
+              </p>
+            ) : (
+              <select
+                key={`source-${draftKey}`}
+                name="source"
+                required
+                defaultValue={draft?.source ?? "whatsapp"}
+                className="min-h-11 w-full rounded-lg border border-neutral-300 px-3 text-sm"
+              >
+                {MANUAL_ORDER_SOURCES.map((source) => (
+                  <option key={source} value={source}>
+                    {ORDER_SOURCE_LABELS[source]}
+                  </option>
+                ))}
+              </select>
+            )}
+          </label>
+          {!leadId && (
+            <label className="text-xs text-neutral-700">
+              <span className="mb-1 block font-semibold">مرجع المحادثة (اختياري)</span>
+              <input
+                key={`origin-${draftKey}`}
+                type="text"
+                name="originReference"
+                dir="ltr"
+                placeholder="Q-XXXXXXXXXX أو W-XXXXXXXX"
+                maxLength={2000}
+                className="min-h-11 w-full rounded-lg border border-neutral-300 px-3 text-sm"
+              />
+              <span className="mt-1 block text-[11px] text-neutral-500">
+                الصق المرجع (أو الرسالة كاملة) من محادثة واتساب. يربط الطلبية بالزيارة التي
+                جاءت منها؛ القناة تبقى كما اخترتها. مرجع خاطئ أو مستعمل لا يمنع التسجيل: تُحفظ
+                الطلبية بلا ربط ويُكتب السبب في سجلّها.
+              </span>
+            </label>
+          )}
+          <label className="flex items-start gap-2 text-xs text-neutral-700 sm:col-span-2">
+            <input type="checkbox" name="adConsentDeclared" className="mt-0.5 h-4 w-4" />
+            <span>
+              سألتُ الزبون ووافق صراحةً على مشاركة بيانات هذه البيعة (الهاتف مُشفَّراً) مع Meta
+              لقياس الإعلانات. اتركه فارغاً إن لم تسأل — لا يُرسَل شيء.
+            </span>
           </label>
           <label className="text-xs text-neutral-700">
             <span className="mb-1 block font-semibold">ملاحظة (اختياري)</span>

@@ -56,3 +56,12 @@ body {
   outline: 2px solid var(--brand-turquoise);
   outline-offset: 2px;
 }
+
+/* شريط الموافقة على الهاتف: حين يظهر شريط السلة الثابت، يقف الشريط فوقه
+   بدل أن يغطّي زرّ «إتمام الطلب». ارتفاع شريط السلة: py-2 + min-h-12 +
+   حدّ 1px = 65px. متصفح بلا `:has` يرجع للسلوك القديم (يغطّيه) — لا يكسر. */
+@media (max-width: 639.98px) {
+  body:has([data-cart-bar]:not([hidden])) [data-consent-banner] {
+    bottom: 65px;
+  }
+}

@@ -12,7 +12,19 @@ vi.mock("next/cache", () => ({
 const sqlMock = vi.fn(async () => {
   throw new Error('relation "public.home_featured_products" does not exist');
 });
-vi.mock("@/lib/db", () => ({ sql: sqlMock }));
+// الفهرس المُخزَّن يفحص حيوية الاتصال قبل كل استعلام (بما فيه تجديد
+// الكاش في الخلفية — راجع catalog.ts)، فالتلفيق يحتاج الحارس أيضاً. وفحصٌ
+// ينجح دائماً هو الصحيح هنا: المقصود إثبات تراجع القسم الاختياري عند فشل
+// **الاستعلام**، لا عند تعذّر الاتصال.
+const ensureLiveMock = vi.fn(async () => ({
+  action: "skipped-cold" as const,
+  elapsedMs: 0,
+  idleMs: null,
+}));
+vi.mock("@/lib/db", () => ({
+  sql: sqlMock,
+  dbGuard: { ensureLive: ensureLiveMock },
+}));
 
 const { getFeaturedProducts, getCategoryCoverImages } = await import("@/lib/queries/catalog");
 

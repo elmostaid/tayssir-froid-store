@@ -31,15 +31,17 @@ export function buildWhatsAppLink(whatsappNumber: string, message: string): stri
   return `https://api.whatsapp.com/send/?${params.toString()}`;
 }
 
+/** نصّ الاستفسار عن منتج — مصدر واحد للبطاقة وصفحة المنتج. */
+export function productInquiryMessage(productName: string, sku: string): string {
+  return `مرحباً، أريد الاستفسار عن المنتج: ${productName} (${sku})`;
+}
+
 export function buildProductWhatsAppLink(
   whatsappNumber: string,
   productName: string,
   sku: string
 ): string {
-  return buildWhatsAppLink(
-    whatsappNumber,
-    `مرحباً، أريد الاستفسار عن المنتج: ${productName} (${sku})`
-  );
+  return buildWhatsAppLink(whatsappNumber, productInquiryMessage(productName, sku));
 }
 
 // رابط واتساب من لوحة الإدارة إلى **الزبون نفسه** (رقمه من الطلب)، وليس إلى

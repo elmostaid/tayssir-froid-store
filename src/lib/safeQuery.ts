@@ -1,3 +1,4 @@
+import { dbGuard } from "@/lib/db";
 import { ServiceUnavailableError } from "@/lib/serviceUnavailable";
 
 // حد زمني صارم شامل حول كل استعلام صفحات الواجهة العامة — دليل حقيقي على
@@ -55,6 +56,15 @@ export async function safeQuery<T>(
   });
 
   try {
+    // قبل بناء أي استعلام: إن مرّت فجوة خمول (تجميد محتمل)، يبدأ هذا الطلب
+    // على عميل جديد بمقابس جديدة، ويُقاعَد القديم بهدوء — راجع
+    // dbResilience.ts. لا يرسل شيئاً إلى القاعدة ولا يرمي أبداً (و`.catch`
+    // شبكة أمان فوق ذلك: لا يجوز أن يُحوِّل قراءةً ناجحة إلى فشل).
+    //
+    // ولا تمرّ من هنا أي كتابة (createOrder وأفعال لوحة الإدارة لا تستعمل
+    // safeQuery)، فمسار الطلبيات لا يتأثر بهذا السطر.
+    await dbGuard.ensureLive().catch(() => null);
+
     return await Promise.race([run(), timeout]);
   } catch (error) {
     // عدم توفّر قاعدة البيانات ليس حالة "تراجع بهدوء": تمريرها كقيمة

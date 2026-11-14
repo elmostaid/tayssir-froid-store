@@ -35,11 +35,16 @@ async function getStock(productId: number): Promise<number> {
   return row.stock_quantity;
 }
 
+// الإلغاء والإرجاع صارا يُلزمان بسبب مُصرَّح من قائمة مغلقة — بلا سبب
+// يُرفض الإجراء قبل لمس المخزون. فكل نموذج يحمله، كما تحمله الواجهة.
+const REASON = "not_confirmed";
+
 function statusForm(orderId: number, status: string, note = ""): FormData {
   const fd = new FormData();
   fd.set("orderId", String(orderId));
   fd.set("status", status);
   fd.set("note", note);
+  fd.set("cancellationReason", REASON);
   return fd;
 }
 
@@ -47,6 +52,7 @@ function cancelForm(orderId: number, note = ""): FormData {
   const fd = new FormData();
   fd.set("orderId", String(orderId));
   fd.set("note", note);
+  fd.set("cancellationReason", REASON);
   return fd;
 }
 

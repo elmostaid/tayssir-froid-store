@@ -41,6 +41,17 @@ export type AdminOrderDetail = AdminOrderListItem & {
    * null = **غير مسجَّلة**، وليس صفراً. انظر lib/orders/deliveryCost.ts.
    */
   actualDeliveryCost: string | null;
+  /** لحظة إقرار Meta باستلام حدث الشراء. null = لم تُقِرّ (أو ليست بيعة بعد). */
+  metaPurchaseAcceptedAt: string | null;
+  /** سبب آخر فشل في تسليم البيعة. غير فارغ = يحتاج إعادة محاولة. */
+  metaPurchaseError: string | null;
+  metaPurchaseAttempts: number;
+  /** القناة التي أُرسلت بها البيعة فعلاً (website/chat/phone_call/...). */
+  metaPurchaseActionSource: string | null;
+  /** Q-/W- المربوط — الزيارة التي جاءت منها الطلبية، إن عُرفت. */
+  originReference: string | null;
+  adConsent: string;
+  adConsentSource: string | null;
 };
 
 export type AdminOrderItem = {
@@ -212,6 +223,7 @@ export async function getDashboardOrderStats(): Promise<DashboardOrderStats> {
       sales_month: string;
       count_new: number;
       count_needs_review: number;
+      count_contacted: number;
       count_confirmed: number;
       count_preparing: number;
       count_shipped: number;
@@ -232,6 +244,8 @@ export async function getDashboardOrderStats(): Promise<DashboardOrderStats> {
         where created_at >= date_trunc('month', current_date) and status not in ('cancelled', 'returned')
       ), 0) as sales_month,
       count(*) filter (where status = 'new')::int as count_new,
+      count(*) filter (where status = 'needs_review')::int as count_needs_review,
+      count(*) filter (where status = 'contacted')::int as count_contacted,
       count(*) filter (where status = 'confirmed')::int as count_confirmed,
       count(*) filter (where status = 'preparing')::int as count_preparing,
       count(*) filter (where status = 'shipped')::int as count_shipped,
@@ -249,6 +263,7 @@ export async function getDashboardOrderStats(): Promise<DashboardOrderStats> {
     countsByStatus: {
       new: row?.count_new ?? 0,
       needs_review: row?.count_needs_review ?? 0,
+      contacted: row?.count_contacted ?? 0,
       confirmed: row?.count_confirmed ?? 0,
       preparing: row?.count_preparing ?? 0,
       shipped: row?.count_shipped ?? 0,
@@ -280,13 +295,22 @@ export async function getAdminOrderById(id: number): Promise<AdminOrderDetail | 
       source: string;
       attribution_first: unknown;
       attribution_last: unknown;
+      meta_purchase_accepted_at: string | null;
+      meta_purchase_error: string | null;
+      meta_purchase_attempts: number;
+      meta_purchase_action_source: string | null;
+      origin_reference: string | null;
+      ad_consent: string;
+      ad_consent_source: string | null;
     }[]
   >`
     select id, order_number, public_reference, status, customer_name,
       customer_phone, customer_city, customer_address, customer_notes,
       items_subtotal, carton_count, delivery_fee, actual_delivery_cost,
       final_total, created_at, source,
-      attribution_first, attribution_last
+      attribution_first, attribution_last,
+      meta_purchase_accepted_at, meta_purchase_error, meta_purchase_attempts,
+      meta_purchase_action_source, origin_reference, ad_consent, ad_consent_source
     from public.orders where id = ${id} limit 1
   `;
   const row = rows[0];
@@ -313,6 +337,15 @@ export async function getAdminOrderById(id: number): Promise<AdminOrderDetail | 
     actualDeliveryCost: row.actual_delivery_cost,
     finalTotal: row.final_total,
     createdAt: row.created_at,
+    // حالة تسليم البيعة إلى Meta — تُعرَض لأن فشلها صامت بطبعه: لا الزبون
+    // يراه ولا المدير، ولا يظهر إلا كنقص في تقارير الحملة بعد أيام.
+    metaPurchaseAcceptedAt: row.meta_purchase_accepted_at,
+    metaPurchaseError: row.meta_purchase_error,
+    metaPurchaseAttempts: row.meta_purchase_attempts,
+    metaPurchaseActionSource: row.meta_purchase_action_source,
+    originReference: row.origin_reference,
+    adConsent: row.ad_consent,
+    adConsentSource: row.ad_consent_source,
   };
 }
 

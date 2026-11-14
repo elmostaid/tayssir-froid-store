@@ -17,12 +17,26 @@ function makeRequest(body: unknown, extraHeaders: Record<string, string> = {}) {
       "Content-Type": "application/json",
       "user-agent": "Mozilla/5.0 test-agent",
       "x-forwarded-for": "9.9.9.9, 10.0.0.1",
-      cookie: "_fbp=fb.1.111.222; _fbc=fb.1.333.444",
+      cookie: "_fbp=fb.1.111.222; _fbc=fb.1.333.444; tf_ad_consent=granted",
       ...extraHeaders,
     },
     body: JSON.stringify(body),
   });
 }
+
+describe("POST /api/pixel-events — الموافقة شرطٌ على الخادم أيضاً", () => {
+  test.each([
+    ["لم يُجب", "_fbp=fb.1.111.222"],
+    ["رفض", "_fbp=fb.1.111.222; tf_ad_consent=denied"],
+    ["قيمة مزوّرة", "tf_ad_consent=yes"],
+  ])("%s: 204 ولا شيء يصل Meta — مهما أرسل المتصفح", async (_label, cookie) => {
+    const response = await POST(
+      makeRequest({ eventName: "PageView", eventId: "evt-x", customData: {} }, { cookie })
+    );
+    expect(response.status).toBe(204);
+    expect(sendCapiEventMock).not.toHaveBeenCalled();
+  });
+});
 
 describe("POST /api/pixel-events — إعادة توجيه أحداث Pixel (غير Purchase) إلى Meta CAPI", () => {
   test("حدث مسموح (AddToCart): يستدعي sendCapiEvent بنفس event_id، content_type/currency مفروضان من الخادم دائماً", async () => {
@@ -105,5 +119,24 @@ describe("POST /api/pixel-events — إعادة توجيه أحداث Pixel (غ�
     const call = sendCapiEventMock.mock.calls[0][0];
     expect(call.customData.content_type).toBe("product");
     expect(call.customData.currency).toBe("MAD");
+  });
+});
+
+describe("POST /api/pixel-events — الجمع مطفأ (حالة الإنتاج منذ 2026-11-01)", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  test("كوكي granted قديمة لا تكفي حين الجمع مطفأ: 204 ولا شيء يصل Meta", async () => {
+    vi.stubEnv("NEXT_PUBLIC_AD_CONSENT_ENABLED", "");
+    const response = await POST(makeRequest({ eventName: "AddToCart", eventId: "evt-off", customData: {} }));
+    expect(response.status).toBe(204);
+    expect(sendCapiEventMock).not.toHaveBeenCalled();
+  });
+
+  test("الجمع مُفعَّل وموافقة صريحة: نفس الحدث يصل CAPI بنفس event_id", async () => {
+    vi.stubEnv("NEXT_PUBLIC_AD_CONSENT_ENABLED", "on");
+    sendCapiEventMock.mockResolvedValue({ ok: true });
+    await POST(makeRequest({ eventName: "InitiateCheckout", eventId: "evt-on", customData: { value: 10 } }));
+    expect(sendCapiEventMock).toHaveBeenCalledTimes(1);
+    expect(sendCapiEventMock.mock.calls[0][0]).toMatchObject({ eventName: "InitiateCheckout", eventId: "evt-on" });
   });
 });

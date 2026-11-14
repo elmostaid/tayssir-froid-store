@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/Link";
 import { redirect } from "next/navigation";
 import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import { ORDER_SOURCE_BADGE_CLASSES, orderSourceLabel } from "@/lib/orders/orderSource";
@@ -6,6 +6,9 @@ import { listAdminOrders, ORDER_STATUSES, type OrderStatus } from "@/lib/queries
 import { ORDER_STATUS_LABELS, ORDER_STATUS_BADGE_CLASSES } from "@/lib/orders/orderStatus";
 import { formatMad } from "@/lib/format";
 import { isPayableTotalFinal, orderPayableTotal } from "@/lib/orders/orderTotals";
+import { countPendingWhatsappLeads } from "@/lib/queries/whatsappLeads";
+import { loadSection } from "@/lib/admin/sectionData";
+import { SectionUnavailable } from "@/components/admin/SectionUnavailable";
 
 export const dynamic = "force-dynamic";
 
@@ -23,26 +26,54 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
   const { q, status, city, from, to, deleted } = await searchParams;
   const validStatus = ORDER_STATUSES.includes(status as OrderStatus) ? (status as OrderStatus) : undefined;
 
-  const orders = await listAdminOrders({
-    query: q,
-    status: validStatus,
-    city,
-    dateFrom: from,
-    dateTo: to,
-  });
+  // استعلامان فقط، فهما دون حدّ التزامن (ثلاثة) ويبقى للـlayout سلوت في
+  // المجمّع. لكن فشل أيٍّ منهما كان يُسقط الصفحة كلها؛ الآن يسقط قسمه وحده،
+  // ولا يُعرَض «0 طلب» أو قائمة فارغة في مكان قائمة لم تصل.
+  const [ordersResult, pendingWhatsappLeadsResult] = await Promise.all([
+    loadSection(
+      () =>
+        listAdminOrders({
+          query: q,
+          status: validStatus,
+          city,
+          dateFrom: from,
+          dateTo: to,
+        }),
+      "orders.list"
+    ),
+    loadSection(() => countPendingWhatsappLeads(), "orders.pendingWhatsappLeads"),
+  ]);
+
+  const orders = ordersResult.ok ? ordersResult.value : null;
+  const pendingWhatsappLeads = pendingWhatsappLeadsResult.ok
+    ? pendingWhatsappLeadsResult.value
+    : null;
 
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-bold text-neutral-800">الطلبات</h1>
-        {owner && (
+        <div className="flex flex-wrap items-center gap-2">
           <Link
-            href="/admin/orders/new"
-            className="min-h-11 rounded-full bg-brand-orange px-4 py-2 text-sm font-semibold text-white"
+            href="/admin/orders/whatsapp"
+            className="flex min-h-9 items-center gap-1.5 rounded-full border border-green-300 bg-green-50 px-3 py-1.5 text-xs font-semibold text-green-700"
           >
-            + إضافة طلب يدوي / واتساب
+            طلبات واتساب
+            {pendingWhatsappLeads !== null && pendingWhatsappLeads > 0 && (
+              <span className="rounded-full bg-green-600 px-1.5 py-0.5 text-[10px] text-white">
+                {pendingWhatsappLeads}
+              </span>
+            )}
           </Link>
-        )}
+          {owner && (
+            <Link
+              href="/admin/orders/new"
+              className="min-h-11 rounded-full bg-brand-orange px-4 py-2 text-sm font-semibold text-white"
+            >
+              + إضافة طلب يدوي / واتساب
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* رسالة نجاح بعد حذف طلب — القائمة أدناه مُعاد جلبها أصلاً
@@ -87,9 +118,11 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
         </button>
       </form>
 
-      <p className="mt-3 text-sm text-neutral-500">{orders.length} طلب</p>
+      {orders !== null && <p className="mt-3 text-sm text-neutral-500">{orders.length} طلب</p>}
 
-      {orders.length === 0 ? (
+      {orders === null ? (
+        <SectionUnavailable label="قائمة الطلبات" />
+      ) : orders.length === 0 ? (
         <p className="mt-6 text-sm text-neutral-500">لا توجد طلبات مطابقة.</p>
       ) : (
         <div className="mt-4 flex flex-col gap-2">
@@ -97,6 +130,15 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
             <Link
               key={order.id}
               href={`/admin/orders/${order.id}`}
+              /*
+               * صفٌّ واحد من بين عشرات في هذه اللائحة. والجلب المسبق
+               * الافتراضي يُطلق طلب `.rsc` لكل صفٍّ يدخل الشاشة — ولا
+               * أحد يفتح إلا واحداً أو اثنين. القياس على نسخة حقيقية:
+               * فتح هذه اللائحة وحدها كان يُطلق 50 نداء مصادقة نحو
+               * Supabase. صفحة التفاصيل ليست ثقيلة ولا بطيئة، فالجلب
+               * المسبق هنا كلفةٌ بلا مقابل.
+               */
+              prefetch={false}
               className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 bg-white p-4"
             >
               <div className="min-w-0">

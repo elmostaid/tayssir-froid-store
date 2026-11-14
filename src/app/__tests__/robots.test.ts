@@ -26,14 +26,30 @@ describe("robots()", () => {
     expect(rule.allow).toEqual(["/product-images/", "/product/", "/feed/"]);
   });
 
-  test("في production حقيقي: يسمح بكل شيء ما عدا /admin", async () => {
+  test("في production حقيقي: يسمح بالمنتجات والتصنيفات والصور والـFeed، ويمنع ما لا يجلب زبوناً", async () => {
     vi.stubEnv("VERCEL_ENV", "production");
 
     const { default: robots } = await import("@/app/robots");
     const result = robots();
 
-    const rule = result.rules as { userAgent?: string | string[]; allow?: string | string[]; disallow?: string | string[] };
-    expect(rule.allow).toBe("/");
-    expect(rule.disallow).toEqual(["/admin"]);
+    type Rule = { userAgent?: string | string[]; allow?: string | string[]; disallow?: string | string[] };
+    const [everyone, nonCustomers] = result.rules as Rule[];
+
+    expect(everyone.userAgent).toBe("*");
+    expect(everyone.allow).toBe("/");
+    expect(everyone.disallow).toEqual(
+      expect.arrayContaining(["/admin", "/api/", "/cart", "/checkout", "/order/", "/search"])
+    );
+    // ما يحتاجه البحث وإعلانات Meta والكاطالوغ يبقى مفتوحاً.
+    for (const open of ["/product/", "/category/", "/img/", "/feed/", "/water-heaters", "/washing-machines"]) {
+      expect((everyone.disallow as string[]).some((path) => path === open || open.startsWith(path))).toBe(false);
+    }
+
+    expect(nonCustomers.disallow).toBe("/");
+    expect(nonCustomers.userAgent).toEqual(expect.arrayContaining(["GPTBot", "Bytespider", "AhrefsBot"]));
+    // روبوتات البحث وروبوتات Meta الإعلانية/الكاطالوغ لا تُمنع أبداً.
+    for (const allowed of ["Googlebot", "Bingbot", "facebookexternalhit", "facebookcatalog"]) {
+      expect(nonCustomers.userAgent).not.toContain(allowed);
+    }
   });
 });

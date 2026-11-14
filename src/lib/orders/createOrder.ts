@@ -1,6 +1,5 @@
 import { sql } from "@/lib/db";
 import { getSettings } from "@/lib/queries/settings";
-import { isFreeDelivery } from "@/lib/delivery";
 import { isValidMoroccanPhone, normalizePhone } from "@/lib/phone";
 import { isRateLimited } from "@/lib/orders/rateLimit";
 import {
@@ -13,12 +12,11 @@ import {
 import { resolveOrderLines, WEBSITE_LINE_RULES } from "@/lib/orders/resolveLines";
 import { notifyNewOrder } from "@/lib/notifications/notifyNewOrder";
 import { sendCapiEvent } from "@/lib/pixel/capi";
-import { writeServerPurchaseEvent } from "@/lib/analytics/serverPurchase";
-import {
-  sendGaPurchaseEvent,
-  isGaMeasurementProtocolConfigured,
-} from "@/lib/ga/measurementProtocol";
-import { runAfterResponse } from "@/lib/afterResponse";
+import { writeServerOrderSubmittedEvent } from "@/lib/analytics/serverPurchase";
+import { resolveFbc } from "@/lib/pixel/fbc";
+import { capiIdentityFromRequest } from "@/lib/pixel/identity";
+import { isAdTrackingAllowed, parseAdConsent } from "@/lib/privacy/consent";
+import { attributionForConsent } from "@/lib/privacy/attribution";
 import { toInternationalDigits } from "@/lib/phone";
 import { getSiteUrl } from "@/lib/siteUrl";
 import { customerAddressOrNull } from "@/lib/orders/customerAddress";
@@ -166,28 +164,54 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
 
     // النسب يُنقّى هنا لا في المتصفح: ما يصل من العميل غير موثوق. تنقية
     // فاشلة تعني NULL — لا استثناء ولا طلباً مرفوضاً.
-    const attribution = sanitizeAttribution(input.attribution);
+    // معرّفات النقر لا تُخزَّن بلا موافقة؛ وسوم UTM تبقى (إحصاء لا يُعرّف أحداً).
+    const adConsent = parseAdConsent(input.requestContext?.adConsent);
+    const attribution = attributionForConsent(sanitizeAttribution(input.attribution), adConsent);
     const attributionFirst = attribution?.first ? sql.json(attribution.first) : null;
     const attributionLast = attribution?.last ? sql.json(attribution.last) : null;
 
-    // التوصيل المجاني يجعل المبلغ نهائياً وقت الطلب.
+    // مصاريف التوصيل غير معلومة وقت الطلب — فتُكتب NULL لا صفراً.
     //
-    // قبل هذا كان طلب الموقع يُحفَظ بـdelivery_fee = NULL وfinal_total =
-    // NULL، لأن الرسوم كانت تُحسَب بعدد الكراتين الذي لا يُعرَف إلا عند
-    // التجهيز؛ فيبقى المبلغ مؤقّتاً في لوحة الإدارة حتى يملأه المدير.
-    // ومع مجانية التوصيل لم يبقَ ما يُنتظَر: ما يدفعه الزبون هو مجموع
-    // المنتجات، فنكتبه صراحةً — صفراً للتوصيل ومجموعاً نهائياً — بدل ترك
-    // حقلين فارغين يوحيان بأن شيئاً ما زال معلَّقاً.
+    // الفرق ليس شكلياً: صفرٌ يعني «الزبون لا يدفع شيئاً مقابل التوصيل»،
+    // وهو بالضبط الوعد الذي أُلغي. وNULL يعني «لم يُحدَّد بعد»، وهو ما
+    // تقوله السياسة الحالية حرفياً: التوصيل متوفّر، ومصاريفه تُحدَّد لكل
+    // طلب عند التأكيد. كتابةُ صفرٍ هنا كانت ستُبقي الوعد حيّاً في
+    // القاعدة وفي بون التحضير وفي كل تقرير، بعد أن اختفى من الواجهة.
     //
-    // والشرط مقصود: لو أعاد المالك الرسوم يوماً من /admin/settings، عاد
-    // السلوك القديم (NULL يملأه المدير) وحده، لأن الموقع حينها لا يعرف
-    // عدد الكراتين فعلاً ولا يجوز أن يخترع رقماً.
+    // وNULL ليس مساراً جديداً: هو ما كان عليه طلب الموقع قبل المجانية،
+    // ولوحة الإدارة تملأه بعد أن يُعرف عدد الكراتين (updateOrderLines
+    // وactions.ts)، وكل قارئ يتعامل معه أصلاً — `coalesce(final_total,
+    // items_subtotal)` في التقارير، و`order.finalTotal &&` في بون
+    // التحضير والوصل.
     //
     // ولا علاقة لهذا بـactual_delivery_cost: ذاك ما ندفعه نحن لشركة
-    // التوصيل، ويبقى NULL («غير مسجَّلة») يسجّله المدير كما كان تماماً.
-    const freeDelivery = isFreeDelivery(settings.deliveryFeePerCartonMad);
-    const deliveryFee = freeDelivery ? 0 : null;
-    const finalTotal = freeDelivery ? subtotal : null;
+    // التوصيل، ويبقى كما هو تماماً للمحاسبة الداخلية.
+    const deliveryFee = null;
+    const finalTotal = null;
+
+    // لقطة هوية جلسة **الزبون** لـConversions API.
+    //
+    // تُحفظ الآن لأن حدث `Purchase` يُرسَل لاحقاً — عند التأكيد التجاري،
+    // من فعل المدير. ولو قُرئت الهوية وقتها لأخذنا IP المدير وUser-Agent
+    // متصفحه وكوكي `_fbp` الخاصة به، فتبدو كل التحويلات من شخص واحد. وهذا
+    // أسوأ من ألّا نُرسل شيئاً: إسنادٌ خاطئ لا يُعلن عن نفسه.
+    //
+    // و`fbc` تُبنى هنا لا هناك: الكوكي حاضرة الآن إن كانت، و`fbclid` مع
+    // لحظته محفوظان في الإسناد — فنُثبّت القيمة الصحيحة في وقتها بدل
+    // محاولة استرجاعها بعد ساعات.
+    //
+    // بلا موافقة لا لقطة إطلاقاً — انظر lib/pixel/identity.ts.
+    const lastTouch = attribution?.last ?? attribution?.first ?? null;
+    const identitySnapshot = capiIdentityFromRequest(input.requestContext, lastTouch);
+    const capiIdentity = identitySnapshot ? sql.json(identitySnapshot) : null;
+
+    // ونفس العلّة في GA4: شراء GA4 انتقل هو أيضاً إلى لحظة التأكيد، فصار
+    // `client_id` و`session_id` يلزمان بعد ساعات من مغادرة الزبون. وهما
+    // كوكيّان في متصفحه لا في متصفح المدير — فيُلتقطان الآن أو لا يوجدان.
+    const gaIdentity = sql.json({
+      clientId: input.requestContext?.gaClientId ?? null,
+      sessionId: input.requestContext?.gaSessionId ?? null,
+    });
 
     const result = await sql.begin(async (trx) => {
       const inserted = await trx<{ id: number; public_reference: string; order_number: string }[]>`
@@ -195,13 +219,15 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
           customer_name, customer_phone, customer_city, customer_address,
           customer_notes, items_subtotal, delivery_fee, final_total,
           status, source, idempotency_key,
-          attribution_first, attribution_last
+          attribution_first, attribution_last, capi_identity, ga_identity,
+          ad_consent, ad_consent_source
         ) values (
           ${input.customer.fullName.trim()}, ${normalizedPhone}, ${input.customer.city.trim()},
           ${customerAddressOrNull(input.customer.address)}, ${input.customer.notes?.trim() || null},
           ${subtotal}, ${deliveryFee}, ${finalTotal},
           'new', 'website', ${input.idempotencyKey},
-          ${attributionFirst}, ${attributionLast}
+          ${attributionFirst}, ${attributionLast}, ${capiIdentity}, ${gaIdentity},
+          ${adConsent}, ${adConsent === "unknown" ? null : "website_banner"}
         )
         on conflict (idempotency_key) do nothing
         returning id, public_reference, order_number
@@ -294,47 +320,26 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     // do nothing`، فإعادة الإرسال بنفس المفتاح ترجع الطلب القائم بلا تسجيل
     // ثانٍ. وطلب ينتظر مراجعة مخزون ليس بيعاً مكتملاً فلا شراء له.
 
-    // أما مَن يملك إرسال شراء GA4 فيُحسم من التهيئة وحدها، لا من كون هذه
-    // المحاولة هي التي أنشأت الطلب: إعادة إرسال بنفس المفتاح ترجع
-    // `isNew:false`، ولو ربطنا الراية بذلك لقالت للمتصفح "أرسِلْ أنت" عن
-    // طلب أرسله الخادم أصلاً — أي شراء مضاعف من حيث أردنا منعه.
-    const gaClientId = input.requestContext?.gaClientId;
-    const gaPurchaseHandledServerSide =
-      !needsReview && isGaMeasurementProtocolConfigured() && Boolean(gaClientId);
-
-    if (result.isNew && !needsReview) {
+    // الطلب وصل وحُفظ. ما يُرسَل هنا هو **إرسال طلب**، لا بيعة: الزبون
+    // يؤكّد في واتساب بعد هذا، وما لا يُؤكَّد يُلغى. حدث `Purchase` انتقل
+    // إلى لحظة التأكيد التجاري (lib/pixel/sendDeferredPurchase.ts).
+    //
+    // ولا شرط `!needsReview` على القياس والإشعار: طلبٌ فيه سطر ينتظر مراجعة
+    // مخزون هو طلب حقيقي وصل، ويجب أن يُسجَّل ويُنبّه عليه أحد. حالته
+    // تُقرأ من `orders.status` عند الحاجة، فلا تضيع المعلومة.
+    if (result.isNew) {
       const itemsCount = lineItems.reduce((sum, line) => sum + line.quantity, 0);
 
       // القياس الداخلي: بعد تثبيت المعاملة عمداً — صفّ قياس داخلها يعني أن
       // خطأ في القياس يُلغي طلباً حقيقياً، وهذا مرفوض هنا كما في كل مسار
       // قياس آخر في المشروع.
-      await writeServerPurchaseEvent(sql, {
+      await writeServerOrderSubmittedEvent(sql, {
         orderId: result.id,
         orderValue: subtotal,
         quantity: itemsCount,
         sessionId: input.requestContext?.analyticsSessionId,
         context: input.requestContext?.analyticsContext,
       });
-
-      // الإرسال نفسه يقع بعد الجواب: لو انتظرناه لأضفنا حتى ثلاث ثوانٍ إلى
-      // زمن جواب يملك الزبون 2.5 ثانية فقط قبل أن يمضي إلى واتساب — أي أن
-      // إصلاح القياس كان سيُفسد رسالة الزبون.
-      if (gaPurchaseHandledServerSide) {
-        runAfterResponse(() =>
-          sendGaPurchaseEvent({
-            transactionId: result.publicReference,
-            value: subtotal,
-            items: lineItems.map((line) => ({
-              item_id: line.skuSnapshot,
-              item_name: line.nameSnapshot,
-              price: line.unitPrice,
-              quantity: line.quantity,
-            })),
-            clientId: gaClientId,
-            sessionId: input.requestContext?.gaSessionId,
-          })
-        );
-      }
 
       const siteUrl = getSiteUrl();
       const base = siteUrl ?? "";
@@ -352,30 +357,41 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
         pickingSlipUrl: `${base}/admin/orders/${result.id}/picking-slip.pdf`,
       });
 
-      // Meta Conversions API — Purchase: نفس "أفضل مجهود" بالضبط (fire-and-
-      // forget، لا يرمي أبداً، ولا يؤثِّر على نتيجة الطلب). result.isNew وحده
-      // (وليس مجرد نجاح createOrder) يضمن إرسالها مرة واحدة فقط للطلب
-      // الحقيقي — إعادة محاولة بنفس idempotencyKey (ضغط مزدوج على الزر
-      // مثلاً) ترجع نفس الطلب الموجود بلا إرسال ثانٍ هنا (وبلا حتى حاجة
-      // لذلك: event_id ثابت = idempotencyKey نفسه يضمن أن Meta نفسها تعتبر
-      // أي إرسال مكرر بنفس القيمة نفس الحدث، وليس Purchase ثانياً).
-      void sendCapiEvent({
-        eventName: "Purchase",
+      // Meta Conversions API — `OrderSubmitted` (حدث مخصَّص).
+      //
+      // ليس `Lead`: ذاك يُصنَّف عند Meta أعلى القُمع فتُحسِّن لكمية رخيصة،
+      // والزبون هنا عمّر النموذج كاملاً على سلّة لها ثمن. وليس `Purchase`:
+      // تلك هي الإشارة التي كانت مبكّرة وتسبّبت في كل التضخيم.
+      //
+      // `event_id` = idempotencyKey، ومعرّف الشراء المؤجَّل مختلف عنه
+      // (`purchase:<orderId>`) عمداً: معرّفٌ واحد لحدثين يعني أن Meta قد
+      // تعتبر أحدهما تكراراً للآخر فتُسقطه.
+      //
+      // وبلا موافقة لا شيء يُرسَل إلى Meta — لا هذا ولا الشراء لاحقاً.
+      if (isAdTrackingAllowed(adConsent)) void sendCapiEvent({
+        eventName: "OrderSubmitted",
         eventId: input.idempotencyKey,
         eventSourceUrl: input.requestContext?.eventSourceUrl,
         userData: {
           phone: toInternationalDigits(normalizedPhone),
+          externalId: toInternationalDigits(normalizedPhone),
           clientIpAddress: input.requestContext?.clientIpAddress,
           clientUserAgent: input.requestContext?.clientUserAgent,
           fbp: input.requestContext?.fbp,
-          fbc: input.requestContext?.fbc,
+          fbc:
+            resolveFbc({
+              cookieFbc: input.requestContext?.fbc,
+              fbclid: lastTouch?.fbclid,
+              fbclidAt: lastTouch?.at,
+              host: input.requestContext?.eventSourceUrl,
+            }) ?? undefined,
         },
         customData: {
           content_ids: lineItems.map((line) => line.skuSnapshot),
           content_type: "product",
           currency: "MAD",
           value: subtotal,
-          num_items: lineItems.reduce((sum, line) => sum + line.quantity, 0),
+          num_items: itemsCount,
           contents: lineItems.map((line) => ({
             id: line.skuSnapshot,
             quantity: line.quantity,
@@ -383,6 +399,13 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
           })),
         },
       });
+
+      // ولا شراء GA4 هنا بعد اليوم. كان يُرسَل من هذا الموضع بالضبط، أي
+      // لحظة وصول الطلب — فكانت GA4 تقول "بيعة" عن طلبٍ لم يؤكّده أحد،
+      // ويختلف رقمها عن رقم Meta بلا سبب مفهوم. صار شراء GA4 يُرسَل من
+      // lib/pixel/sendDeferredPurchase.ts عند التأكيد التجاري، بحرسه الخاص
+      // (`ga_purchase_sent_at`) لأن GA4 لا تُلغي التكرار حسب
+      // `transaction_id` — فحرسٌ عندنا أو إيرادٌ مضاعف، لا ثالث.
     }
 
     return {
@@ -398,7 +421,6 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       // رقم الطلب المقروء — تحتاجه رسالة واتساب لتُحيل الفريق إلى اللوحة
       // بدل سرد المنتجات، فلم يعد يكفي أن يبقى داخل المعاملة.
       orderNumber: result.orderNumber,
-      gaPurchaseHandledServerSide,
     };
   } catch (error) {
     console.error("createOrder: خطأ غير متوقع أثناء إنشاء الطلب", error);

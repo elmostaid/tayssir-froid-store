@@ -166,3 +166,71 @@ describe("describeTouch — وصف مقروء للوحة الإدارة", () => 
     expect(describeTouch(null)).toBe("غير معروف");
   });
 });
+
+describe("مصدر الطلبية: لا ضياع لرقم الإعلان ولا خلط بين إعلانين", () => {
+  const AD_WASHING = "120252323370090742";
+  const AD_HEATERS = "120252323366120742";
+  const metaAd = (ad: string, source = "fb") =>
+    `?utm_source=${source}&utm_medium=paid&utm_campaign=120252323359690742&utm_term=120252323362860742&utm_content=${ad}`;
+
+  test("طلبية 363: إعلان، ثم عودة من m.facebook.com بلا وسوم إلى منتج ⇒ يبقى رقم الإعلان", () => {
+    visit(metaAd(AD_WASHING), "https://m.facebook.com/", "/washing-machines");
+    captureAttribution();
+    visit("", "https://m.facebook.com/", "/product/washing-machine-pulley-10");
+    captureAttribution();
+    const attr = getOrderAttribution()!;
+    expect(attr.last!.utmContent).toBe(AD_WASHING);
+    expect(attr.last!.landingPath).toBe("/washing-machines");
+  });
+
+  test("نقرة على إعلان آخر تأخذ مكان الأول دائماً — آخر نقرة، بلا خلط", () => {
+    visit(metaAd(AD_WASHING), "https://m.facebook.com/", "/washing-machines");
+    captureAttribution();
+    visit(metaAd(AD_HEATERS, "ig"), "https://instagram.com/", "/water-heaters");
+    captureAttribution();
+    const attr = getOrderAttribution()!;
+    expect(attr.first!.utmContent).toBe(AD_WASHING);
+    expect(attr.last!.utmContent).toBe(AD_HEATERS);
+    expect(attr.last!.utmSource).toBe("ig");
+  });
+
+  test("إحالة من شبكة أخرى (جوجل) تأخذ مكان الإعلان كالعادة", () => {
+    visit(metaAd(AD_WASHING), "https://m.facebook.com/", "/washing-machines");
+    captureAttribution();
+    visit("", "https://www.google.com/", "/");
+    captureAttribution();
+    expect(getOrderAttribution()!.last!.referrerHost).toBe("www.google.com");
+    expect(getOrderAttribution()!.last!.utmContent).toBeNull();
+  });
+
+  test("بعد 7 أيام: إحالة فيسبوك عارية تأخذ مكان الإعلان القديم", () => {
+    visit(metaAd(AD_WASHING), "https://m.facebook.com/", "/washing-machines");
+    captureAttribution();
+    const last = JSON.parse(window.localStorage.getItem("tf_attr_last")!);
+    last.at = Date.now() - 8 * 86_400_000;
+    window.localStorage.setItem("tf_attr_last", JSON.stringify(last));
+    visit("", "https://m.facebook.com/", "/product/x");
+    captureAttribution();
+    expect(getOrderAttribution()!.last!.utmContent).toBeNull();
+    expect(getOrderAttribution()!.last!.referrerHost).toBe("m.facebook.com");
+  });
+
+  test("إحالة عارية بعد لمسة غير موسومة تُسجَّل كالعادة (لا حماية لما لا يحمل إعلاناً)", () => {
+    visit("", "https://m.facebook.com/", "/");
+    captureAttribution();
+    visit("", "https://l.instagram.com/", "/product/y");
+    captureAttribution();
+    expect(getOrderAttribution()!.last!.referrerHost).toBe("l.instagram.com");
+  });
+
+  test("وسم لم تعوّضه Meta ({{ad.id}}) لا يُخزَّن كأنه رقم إعلان", () => {
+    visit("?utm_source=facebook&utm_campaign=TF_WATER_HEATERS_OCT2026&utm_content={{ad.id}}&utm_term={{adset.id}}");
+    captureAttribution();
+    const attr = getOrderAttribution()!;
+    expect(attr.last!.utmCampaign).toBe("TF_WATER_HEATERS_OCT2026");
+    expect(attr.last!.utmContent).toBeNull();
+    expect(attr.last!.utmTerm).toBeNull();
+    // والخادم يُسقطه أيضاً لو وصله من متصفح قديم
+    expect(sanitizeTouch({ utmSource: "facebook", utmContent: "{{ad.id}}", at: 1 })!.utmContent).toBeNull();
+  });
+});

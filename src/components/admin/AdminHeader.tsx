@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import Link from "next/link";
+import Link from "@/components/Link";
 import { usePathname } from "next/navigation";
 import { signOutAdmin } from "@/app/admin/actions";
 import type { AdminRole } from "@/lib/auth/requireAdmin";
@@ -23,6 +23,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/admin/products", label: "المنتجات", adminOnly: true },
   { href: "/admin/categories", label: "التصنيفات", adminOnly: true },
   { href: "/admin/featured", label: "الأكثر طلباً", adminOnly: true },
+  { href: "/admin/campaign-images", label: "صور الحملات", adminOnly: true },
   { href: "/admin/customers", label: "الزبائن", adminOnly: true },
   { href: "/admin/reports", label: "التقارير والأرباح", adminOnly: true },
   { href: "/admin/expenses", label: "المصاريف", adminOnly: true },
@@ -39,11 +40,16 @@ function isItemActive(pathname: string, href: string): boolean {
 export function AdminHeader({
   role,
   email,
-  newOrdersCount,
+  iconBadge,
+  menuBadge,
 }: {
   role: AdminRole;
   email: string;
-  newOrdersCount: number;
+  // عقدتان يُصيّرهما الخادم ويبثّهما داخل <Suspense> — لا رقم يُنتظَر قبل
+  // رسم الهيكل. غيابهما (null) هو الحالة الطبيعية حين لا توجد طلبات جديدة
+  // أو حين يتعذّر عدّها؛ الفرق بينهما لا يُعرض للمستخدم كرقم.
+  iconBadge?: React.ReactNode;
+  menuBadge?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
@@ -82,11 +88,7 @@ export function AdminHeader({
               strokeLinecap="round"
             />
           </svg>
-          {newOrdersCount > 0 && (
-            <span className="absolute -end-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-orange px-0.5 text-[10px] font-bold text-white">
-              {newOrdersCount > 9 ? "9+" : newOrdersCount}
-            </span>
-          )}
+          {iconBadge}
         </button>
 
         <div className="min-w-0 flex-1">
@@ -151,11 +153,7 @@ export function AdminHeader({
                       }`}
                     >
                       <span>{item.label}</span>
-                      {item.href === "/admin/orders" && newOrdersCount > 0 && (
-                        <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-brand-orange px-1 text-xs font-semibold text-white">
-                          {newOrdersCount}
-                        </span>
-                      )}
+                      {item.href === "/admin/orders" ? menuBadge : null}
                     </Link>
                   );
                 })}

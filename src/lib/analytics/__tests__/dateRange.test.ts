@@ -1,8 +1,11 @@
 import { describe, expect, test } from "vitest";
 import {
   addDays,
+  ALL_TIME_START_DAY,
+  ANALYTICS_RANGE_PRESETS,
   localDayString,
   parsePreset,
+  REPORT_RANGE_PRESETS,
   resolveRange,
   startOfLocalDay,
 } from "@/lib/analytics/dateRange";
@@ -81,5 +84,57 @@ describe("resolveRange — اختيارات الفترة", () => {
   test("قيمة فترة مخترَعة تُعامَل كالافتراضي", () => {
     expect(parsePreset("../../etc/passwd")).toBe("7d");
     expect(resolveRange("drop table", undefined, undefined, now, TZ).preset).toBe("7d");
+  });
+});
+
+describe("«منذ البداية» — مدى بلا حدّ أعلى للمدة", () => {
+  const now = new Date("2026-09-28T22:20:00Z"); // 23:20 بتوقيت المغرب
+
+  test("يبدأ قبل أي طلب ممكن وينتهي باليوم الحالي", () => {
+    const range = resolveRange("all_time", undefined, undefined, now, TZ);
+    expect(range.preset).toBe("all_time");
+    expect(range.fromDay).toBe(ALL_TIME_START_DAY);
+    expect(range.toDay).toBe("2026-09-28");
+  });
+
+  test("الحدّ الأعلى غير شامل: منتصف ليل الغد المحلي", () => {
+    const range = resolveRange("all_time", undefined, undefined, now, TZ);
+    // 29/09 منتصف الليل بالمغرب (UTC+1) = 23:00 UTC من 28/09.
+    expect(range.to.toISOString()).toBe("2026-09-28T23:00:00.000Z");
+  });
+
+  test("يغطّي طلباً أقدم بسنوات من أي اختيار آخر", () => {
+    const range = resolveRange("all_time", undefined, undefined, now, TZ);
+    const oldOrder = new Date("2026-03-01T09:00:00Z");
+    expect(range.from.getTime()).toBeLessThan(oldOrder.getTime());
+    expect(range.to.getTime()).toBeGreaterThan(oldOrder.getTime());
+    // وأوسع فعلاً من «آخر 30 يوم»، وهو ما كان أقصى المتاح قبل هذا الاختيار.
+    const thirty = resolveRange("30d", undefined, undefined, now, TZ);
+    expect(range.from.getTime()).toBeLessThan(thirty.from.getTime());
+    expect(thirty.from.getTime()).toBeGreaterThan(oldOrder.getTime());
+  });
+
+  test("اسم الاختيار مقبول من الرابط ولا يرتدّ إلى الافتراضي", () => {
+    expect(parsePreset("all_time")).toBe("all_time");
+  });
+
+  test("معروض في التقارير، محجوب عن التحليلات، وcustom خارج الأزرار", () => {
+    expect(REPORT_RANGE_PRESETS).toContain("all_time");
+    expect(ANALYTICS_RANGE_PRESETS).not.toContain("all_time");
+    expect(REPORT_RANGE_PRESETS).not.toContain("custom");
+    expect(ANALYTICS_RANGE_PRESETS).not.toContain("custom");
+    // بقية الاختيارات باقية كما هي في الصفحتين.
+    for (const preset of ["today", "yesterday", "7d", "30d", "month"] as const) {
+      expect(REPORT_RANGE_PRESETS).toContain(preset);
+      expect(ANALYTICS_RANGE_PRESETS).toContain(preset);
+    }
+  });
+
+  test("الاختيارات الأخرى لم تتغيّر بإضافته", () => {
+    expect(resolveRange("30d", undefined, undefined, now, TZ).fromDay).toBe("2026-08-30");
+    expect(resolveRange("month", undefined, undefined, now, TZ).fromDay).toBe("2026-09-01");
+    expect(resolveRange("today", undefined, undefined, now, TZ).fromDay).toBe("2026-09-28");
+    expect(resolveRange("yesterday", undefined, undefined, now, TZ).fromDay).toBe("2026-09-27");
+    expect(resolveRange("7d", undefined, undefined, now, TZ).fromDay).toBe("2026-09-22");
   });
 });

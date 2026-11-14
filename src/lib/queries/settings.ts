@@ -1,6 +1,17 @@
 import { cache } from "react";
 import { unstable_cache } from "next/cache";
-import { sql } from "@/lib/db";
+import { dbGuard, sql } from "@/lib/db";
+import { SECTION_SETTINGS_KEY, parseSectionConfig, type SectionConfig } from "@/lib/campaignSections";
+import {
+  FEATURED_IMAGES_SETTINGS_KEY,
+  parseFeaturedDisplayImages,
+  type FeaturedDisplayImages,
+} from "@/lib/featuredDisplayImages";
+import {
+  CAMPAIGN_IMAGES_SETTINGS_KEY,
+  parseCampaignImageOverrides,
+  type CampaignImageOverrides,
+} from "@/lib/campaignImages";
 import {
   CATALOG_TAG,
   CATALOG_REVALIDATE_SECONDS,
@@ -32,9 +43,10 @@ export type StoreSettings = {
 // تكرار نفس الكائن بحقوله السبعة فكل ملف.
 export const FALLBACK_SETTINGS: StoreSettings = {
   minOrderAmountMad: 1000,
-  // صفر = التوصيل مجاني. الاحتياطي يجب أن يوافق الإعداد الحقيقي، وإلا
-  // أعلن الموقعُ رسومَ توصيل للزبون في اللحظة التي تتعذّر فيها قراءة
-  // الإعدادات — وعدٌ خاطئ يولد من عطل شبكة.
+  // قيمة داخلية لا يراها زبون: لم يعد أي نصّ أو مبلغ في واجهة المتجر
+  // مشتقّاً منها بعد سياسة «التوصيل متوفّر ومصاريفه تُحدَّد عند التأكيد»
+  // (انظر lib/delivery.ts). تبقى هنا لأن الإعداد نفسه باقٍ في القاعدة
+  // وفي لوحة الإدارة، وحذفه من النوع كان سيكسر قراءته بلا فائدة.
   deliveryFeePerCartonMad: 0,
   whatsappNumber: "+212722083458",
   storeCity: "مراكش - حي المحاميد",
@@ -60,10 +72,20 @@ const runSettingsQuery = async () => sql<{ key: string; value: unknown }[]>`
   select key, value from public.settings
 `;
 
-const cachedSettings = unstable_cache(runSettingsQuery, ["store-settings"], {
-  tags: [CATALOG_TAG],
-  revalidate: CATALOG_REVALIDATE_SECONDS,
-});
+// الفحص داخل الدالة المُخزَّنة لنفس السبب المشروح في catalog.ts: تجديد
+// الكاش في الخلفية يُنفِّذها Next خارج أي نداء لـsafeQuery، فلا يمرّ من
+// الفحص إن كان خارجها.
+const cachedSettings = unstable_cache(
+  async () => {
+    await dbGuard.ensureLive();
+    return runSettingsQuery();
+  },
+  ["store-settings"],
+  {
+    tags: [CATALOG_TAG],
+    revalidate: CATALOG_REVALIDATE_SECONDS,
+  }
+);
 
 // نفس المعالجة المشروحة في catalog.ts: خارج سياق Next.js (اختبارات التكامل،
 // سكريبتات tsx) لا يوجد مخزن مؤقّت، فننفّذ الاستعلام مباشرة بدل أن تسقط
@@ -76,6 +98,57 @@ async function querySettings() {
     if (isMissingCacheContext(error)) return runSettingsQuery();
     throw error;
   }
+}
+
+/**
+ * صور بطاقات الحملات اليدوية — من نفس صفوف `settings` المخزَّنة مؤقتاً،
+ * فلا استعلام إضافي على زيارة صفحة الحملة.
+ */
+export const getCampaignImageOverrides = cache(async (): Promise<CampaignImageOverrides> => {
+  const rows = await querySettings();
+  const row = rows.find((candidate) => candidate.key === CAMPAIGN_IMAGES_SETTINGS_KEY);
+  return parseCampaignImageOverrides(row?.value);
+});
+
+/**
+ * نفس القراءة بلا أي كاش — للوحة الإدارة وحدها: بعد الحفظ يجب أن يرى
+ * المدير الصورة الجديدة فوراً، لا بعد دقيقة.
+ */
+export async function getCampaignImageOverridesFresh(): Promise<CampaignImageOverrides> {
+  const [row] = await sql<{ value: unknown }[]>`
+    select value from public.settings where key = ${CAMPAIGN_IMAGES_SETTINGS_KEY}
+  `;
+  return parseCampaignImageOverrides(row?.value);
+}
+
+/** منتجات أقسام صفحة مكينات الصابون — من صفوف الإعدادات المخزَّنة مؤقتاً. */
+export const getCampaignSections = cache(async (): Promise<SectionConfig> => {
+  const rows = await querySettings();
+  const row = rows.find((candidate) => candidate.key === SECTION_SETTINGS_KEY);
+  return parseSectionConfig(row?.value);
+});
+
+/** نفس القراءة بلا كاش — للوحة الإدارة. */
+export async function getCampaignSectionsFresh(): Promise<SectionConfig> {
+  const [row] = await sql<{ value: unknown }[]>`
+    select value from public.settings where key = ${SECTION_SETTINGS_KEY}
+  `;
+  return parseSectionConfig(row?.value);
+}
+
+/** صور العرض في «الأكثر طلباً» — من صفوف الإعدادات المخزَّنة مؤقتاً. */
+export const getFeaturedDisplayImages = cache(async (): Promise<FeaturedDisplayImages> => {
+  const rows = await querySettings();
+  const row = rows.find((candidate) => candidate.key === FEATURED_IMAGES_SETTINGS_KEY);
+  return parseFeaturedDisplayImages(row?.value);
+});
+
+/** نفس القراءة بلا كاش — للوحة الإدارة بعد الحفظ مباشرة. */
+export async function getFeaturedDisplayImagesFresh(): Promise<FeaturedDisplayImages> {
+  const [row] = await sql<{ value: unknown }[]>`
+    select value from public.settings where key = ${FEATURED_IMAGES_SETTINGS_KEY}
+  `;
+  return parseFeaturedDisplayImages(row?.value);
 }
 
 export const getSettings = cache(async (): Promise<StoreSettings> => {

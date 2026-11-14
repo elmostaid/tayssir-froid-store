@@ -8,7 +8,7 @@
 export const ANALYTICS_ENDPOINT = "/api/analytics";
 
 /**
- * الأحداث الثمانية، بنفس ترتيب مسار الزائر. القائمة مغلقة في ثلاثة مواضع
+ * أحداث مسار الزائر، بنفس ترتيبه. القائمة مغلقة في ثلاثة مواضع
  * متطابقة عمداً: هنا، وفي التحقّق داخل /api/analytics، وفي قيد CHECK داخل
  * قاعدة البيانات — فحتى لو أُرسل اسم مخترع من متصفح معدَّل، لا يدخل الجدول.
  *
@@ -25,7 +25,13 @@ export const ANALYTICS_EVENT_NAMES = [
   "cart_view",
   "begin_checkout",
   "whatsapp_from_cart",
+  "order_submitted",
+  "confirm_on_whatsapp",
   "purchase",
+  // اختيار الزائر في شريط الموافقة — وحده ما يقيس نسبة الموافقة، أي كم
+  // بيعةً لن تصل Meta بسبب الرفض لا بسبب عطل.
+  "ad_consent_granted",
+  "ad_consent_denied",
 ] as const;
 
 export type AnalyticsEventName = (typeof ANALYTICS_EVENT_NAMES)[number];

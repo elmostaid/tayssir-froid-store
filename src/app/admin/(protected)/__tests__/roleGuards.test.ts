@@ -224,7 +224,10 @@ describe("الطلبات اليدوية وتعديل محتوى الطلب — �
     const { default: NewManualOrderPage } = await import(
       "@/app/admin/(protected)/orders/new/page"
     );
-    await expectsRedirectTo(() => NewManualOrderPage(), "/admin/orders");
+    await expectsRedirectTo(
+      () => NewManualOrderPage({ searchParams: Promise.resolve({}) }),
+      "/admin/orders"
+    );
   });
 
   test("صفحة إضافة طلب يدوي: Admin لا يُعاد توجيهه", async () => {
@@ -232,7 +235,10 @@ describe("الطلبات اليدوية وتعديل محتوى الطلب — �
     const { default: NewManualOrderPage } = await import(
       "@/app/admin/(protected)/orders/new/page"
     );
-    await expectsNoRedirectTo(() => NewManualOrderPage(), "/admin/orders");
+    await expectsNoRedirectTo(
+      () => NewManualOrderPage({ searchParams: Promise.resolve({}) }),
+      "/admin/orders"
+    );
   });
 
   // الحماية الحقيقية في الخادم: إخفاء الزرّ لا يمنع استدعاء الإجراء مباشرة.

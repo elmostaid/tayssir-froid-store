@@ -1,10 +1,11 @@
-import Image from "next/image";
-import Link from "next/link";
+import Link from "@/components/Link";
 import { getFilteredCategories } from "@/lib/queries/catalog";
 import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 import { safeQuery } from "@/lib/safeQuery";
-import { buildWhatsAppLink } from "@/lib/whatsapp";
+import { ProductImage } from "@/components/ProductImage";
+import { THUMB_WIDTHS } from "@/lib/images/variants";
 import { CartBadge } from "@/components/CartBadge";
+import { HeaderWhatsAppButton } from "@/components/HeaderWhatsAppButton";
 import { MobileNav } from "@/components/MobileNav";
 
 export async function SiteHeader() {
@@ -15,24 +16,45 @@ export async function SiteHeader() {
     safeQuery(() => getSettings(), FALLBACK_SETTINGS, "SiteHeader.getSettings"),
   ]);
 
-  const whatsappLink = buildWhatsAppLink(
-    settings.whatsappNumber,
-    `مرحباً، عندي سؤال بخصوص منتجات ${settings.storeName}.`
-  );
+  // الرابط نفسه يُبنى في المتصفح لحظة الضغط، بمرجع Q- — انظر WhatsAppInquiryLink.
+  const inquiryMessage = `مرحباً، عندي سؤال بخصوص منتجات ${settings.storeName}.`;
 
   return (
     <header className="sticky top-0 z-40 border-b border-neutral-200 bg-white/95 backdrop-blur">
-      <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-2.5">
-        <MobileNav categories={categories} whatsappLink={whatsappLink} />
+      {/* الحشو والفواصل أضيق على الهاتف وحده (قيم الحاسوب محفوظة خلف sm:):
+          القياس على متصفّح حقيقي أثبت أن مجموع عناصر الترويسة كان يفوق عرض
+          شاشة 360px فيُسحق الشعار (إلى 31px على 320px). هذه البكسلات
+          المُحرَّرة هي ما يجعل نصّي «لإتمام الطلب» و«استفسار» يُضافان بلا
+          أن يخسر الشعار أو البحث أو القائمة شيئاً. */}
+      <div className="mx-auto flex max-w-6xl items-center gap-2 px-3 py-2 sm:gap-3 sm:px-4 sm:py-2.5">
+        <MobileNav
+          categories={categories}
+          whatsappNumber={settings.whatsappNumber}
+          inquiryMessage={inquiryMessage}
+        />
 
         <Link href="/" className="flex min-w-0 flex-col items-start gap-0.5">
-          <Image
-            src="/brand/logo-tayssir-froid.png"
+          {/*
+           * الشعار يظهر فوق الطيّة في **كل** صفحة، وأصله PNG بعرض 600
+           * (33 KB) يُعرض بارتفاع 32–36px أي ~101 CSS px عرضاً. نسخة 360
+           * WebP تكفي كثافة 3× بـ~7 KB، والأصل يبقى احتياطاً كبقية الصور.
+           */}
+          <ProductImage
+            storagePath="brand/logo-tayssir-froid.png"
+            resolvedSrc="/brand/logo-tayssir-froid.png"
             alt="Tayssir Froid"
+            widths={THUMB_WIDTHS}
+            sizes="101px"
             width={169}
             height={60}
             priority
-            className="h-8 w-auto sm:h-9"
+            /*
+             * object-contain لا تجميل: الشعار عنصرٌ مرن في صفّ الترويسة،
+             * فعلى الشاشات الضيّقة جداً (320px) يُضغط عرضه — وبلا
+             * object-contain يُمدَّد محتواه فيخرج الشعار **مشوَّهاً**. الآن
+             * يصغر بنسبته محفوظة بدل أن ينشوّه.
+             */
+            className="h-8 w-auto object-contain sm:h-9"
           />
           <span className="hidden text-[11px] text-neutral-500 sm:block">
             قطع غيار التبريد بالجملة — مراكش
@@ -53,11 +75,11 @@ export async function SiteHeader() {
           />
         </form>
 
-        <div className="ms-auto flex shrink-0 items-center gap-2">
+        <div className="ms-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
           <Link
             href="/search"
             aria-label="البحث"
-            className="flex h-11 w-11 items-center justify-center rounded-full border border-neutral-200 text-neutral-700 md:hidden"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-neutral-200 text-neutral-700 md:hidden"
           >
             <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" aria-hidden="true">
               <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth={2} />
@@ -70,18 +92,12 @@ export async function SiteHeader() {
             </svg>
           </Link>
           <CartBadge />
-          <a
-            href={whatsappLink}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="تواصل عبر واتساب"
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-whatsapp text-white shadow-sm transition-colors hover:bg-whatsapp-dark active:scale-95 sm:h-auto sm:w-auto sm:gap-2 sm:px-4 sm:py-2"
-          >
-            <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5 sm:hidden" aria-hidden="true">
-              <path d="M12 2C6.48 2 2 6.48 2 12c0 1.85.5 3.58 1.36 5.07L2 22l5.11-1.34A9.94 9.94 0 0 0 12 22c5.52 0 10-4.48 10-10S17.52 2 12 2Zm0 18c-1.6 0-3.1-.43-4.4-1.19l-.32-.19-3.03.8.81-2.95-.2-.3A7.95 7.95 0 0 1 4 12c0-4.41 3.59-8 8-8s8 3.59 8 8-3.59 8-8 8Zm4.4-5.9c-.24-.12-1.42-.7-1.64-.78-.22-.08-.38-.12-.54.12-.16.24-.62.78-.76.94-.14.16-.28.18-.52.06-.24-.12-1.02-.38-1.94-1.2-.72-.64-1.2-1.44-1.34-1.68-.14-.24-.02-.37.1-.49.11-.11.24-.28.36-.42.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42-.06-.12-.54-1.3-.74-1.78-.2-.47-.4-.4-.54-.41h-.46c-.16 0-.42.06-.64.3-.22.24-.84.82-.84 2s.86 2.32.98 2.48c.12.16 1.7 2.6 4.12 3.64.58.25 1.03.4 1.38.51.58.18 1.11.16 1.53.1.47-.07 1.42-.58 1.62-1.14.2-.56.2-1.04.14-1.14-.06-.1-.22-.16-.46-.28Z" />
-            </svg>
-            <span className="hidden sm:inline">واتساب</span>
-          </a>
+          {/* الاستفسار، لا إتمام الطلب — ويغيب في /checkout. التفاصيل في
+              components/HeaderWhatsAppButton.tsx. */}
+          <HeaderWhatsAppButton
+            whatsappNumber={settings.whatsappNumber}
+            inquiryMessage={inquiryMessage}
+          />
         </div>
       </div>
 

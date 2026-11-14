@@ -1,11 +1,60 @@
 import postgres from "postgres";
+import {
+  ConnectionGuard,
+  QUERY_HARD_TIMEOUT_MS,
+  classifyStatement,
+  readDbResilienceConfig,
+  type StatementKind,
+} from "@/lib/dbResilience";
 
 type SqlClient = ReturnType<typeof postgres>;
 
-// حد زمني حقيقي لكل استعلام على مستوى العميل — أقصر من مهلة safeQuery
-// (15 ثانية) حتى يعمل هذا أولاً دائماً، وأطول قليلاً من statement_timeout
-// (8 ثوان) حتى لا يسبق مهلة الخادم في الحالة التي يعمل فيها الخادم فعلاً.
-const QUERY_HARD_TIMEOUT_MS = 10000;
+// حد زمني حقيقي لكل استعلام على مستوى العميل (QUERY_HARD_TIMEOUT_MS = 10s،
+// معرَّف في dbResilience.ts لأن مهلة تصريف العميل المُقاعَد تُحسب منه) —
+// أقصر من مهلة safeQuery (15 ثانية) حتى يعمل هذا أولاً دائماً.
+
+/**
+ * مدّة عقد الكتابة لعبارة مفردة خارج أي معاملة (38 عبارة في المشروع:
+ * تعديلات لوحة الإدارة، علامات إرسال بيعة Meta، أحداث القياس...).
+ *
+ * العبارة المفردة معاملةٌ ضمنية بنفسها، فمصيرها على مقبس ميت مجهول **قبل**
+ * أي إتلاف من جانبنا، لا بسببه. لذلك يكفي أن تُحمى ما دامت لها أملٌ في
+ * الحسم: إلغاؤها يُطلَب عند 10 ثوان، ويردّ خادم حيّ بعدها بجزء من ثانية.
+ * وبعد ذلك يتوقّف العقد عن منع الاستعادة — وإلا لأقفلت كتابةٌ واحدة
+ * معلَّقة كل قراءات تلك النسخة إلى الأبد، وهو العطل نفسه الذي نحاول
+ * إنهاءه.
+ *
+ * ولماذا 20 ثانية لا 13: لأن القراءة تُصعِّد عند 13 ثانية بالضبط
+ * (10 + مهلة السماح). فلو كان عقد الكتابة 13 ثانية أيضاً، لانتهت حمايةُ
+ * كتابةٍ بدأت في نفس اللحظة **عند** لحظة التصعيد نفسها — فتُقطَع. هذه
+ * ليست حالة نظرية: كتابة وقراءة في نفس الطلب تبدآن في نفس المللي ثانية.
+ * فالعقد أطول من نقطة التصعيد بسبع ثوان، فلا تتزامن النهايتان أبداً.
+ */
+const WRITE_STATEMENT_LEASE_MS = 20000;
+
+/**
+ * مدّة عقد الكتابة لمعاملة `sql.begin` — وهي مسار الطلبيات والمخزون
+ * وتأكيد البيعة. أطول بكثير، ومبنيّة على قياس لا على تقدير:
+ * `transaction_timeout = 45s` على دور `postgres` في الإنتاج، أي أن
+ * الخادم نفسه يرفض إبقاء أي معاملة بعد 45 ثانية. فعند 75 ثانية يكون قد
+ * وقع أحدُ أمرين لا ثالث: الخادم أنهى المعاملة وأرجعها (النتيجة معروفة:
+ * فشل)، أو المقبس ميت والنتيجة مجهولة أصلاً. فالإتلاف بعدها لا يمكن أن
+ * يُحوِّل نجاحاً إلى مجهول.
+ *
+ * و`DB_TRANSACTION_LEASE_MS=off` يُعيد المنع المطلق بلا موعد نهاية.
+ */
+const DEFAULT_TRANSACTION_LEASE_MS = 75000;
+
+function readTransactionLeaseMs(
+  raw: string | undefined = process.env.DB_TRANSACTION_LEASE_MS
+): number {
+  if (raw === undefined || raw.trim() === "") return DEFAULT_TRANSACTION_LEASE_MS;
+  if (raw.trim().toLowerCase() === "off") return Number.POSITIVE_INFINITY;
+  const parsed = Number(raw.trim());
+  if (!Number.isInteger(parsed) || parsed < 1000 || parsed > 600000)
+    return DEFAULT_TRANSACTION_LEASE_MS;
+  return parsed;
+}
 
 type CancellableQuery = {
   then?: unknown;
@@ -39,7 +88,7 @@ type CancellableQuery = {
  * التسليح عند أول then()/catch() فقط يضمن أن الأجزاء لا تُسلَّح ولا
  * تُنفَّذ كاستعلامات مستقلة — وهو ما كان سيحدث لو استدعينا then() مباشرة.
  */
-function boundQueryLifetime<T>(query: T): T {
+function boundQueryLifetime<T>(query: T, kind: StatementKind, client: SqlClient): T {
   const pending = query as CancellableQuery | null;
   if (
     !pending ||
@@ -52,18 +101,46 @@ function boundQueryLifetime<T>(query: T): T {
   const originalThen = pending.then as (...args: unknown[]) => unknown;
   const cancel = pending.cancel.bind(pending);
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let escalationTimer: ReturnType<typeof setTimeout> | undefined;
   let armed = false;
+  let resolved = false;
+  let releaseWriteLease: () => void = () => {};
+  let untrack: () => void = () => {};
 
   const disarm = () => {
+    resolved = true;
     if (timer) {
       clearTimeout(timer);
       timer = undefined;
     }
+    if (escalationTimer) {
+      clearTimeout(escalationTimer);
+      escalationTimer = undefined;
+    }
+  };
+
+  // بدء الاستعلام وانتهاؤه هما «النشاط» الذي يقيس به الحارس الخمول، ومنهما
+  // تُحسب مهلة تصريف هذا العميل إن قوعِد والاستعلام جارٍ عليه.
+  const onSettled = () => {
+    disarm();
+    releaseWriteLease();
+    untrack();
   };
 
   const arm = () => {
     if (armed) return;
     armed = true;
+    untrack = dbGuard.trackQuery(client);
+
+    // عبارة كتابة تأخذ عقداً على **نفس العميل** الذي بُنيت عليه: فلا
+    // يمكن لإتلافٍ سببه تعليق قراءةٍ أخرى أن يقطعها. وهذا هو ما كان
+    // ناقصاً: العقد كان على `sql.begin` وحدها، فبقيت 38 عبارة كتابة
+    // مفردة بلا أي حماية من إتلاف يأتي من مسار القراءة.
+    if (kind === "write") {
+      const lease = dbGuard.leaseForClient(client, WRITE_STATEMENT_LEASE_MS);
+      releaseWriteLease = lease.release;
+    }
+
     timer = setTimeout(() => {
       timer = undefined;
       try {
@@ -72,12 +149,34 @@ function boundQueryLifetime<T>(query: T): T {
         // cancel() نفسه قد يفشل لو كان الاتصال قد مات أصلاً — لا يهم،
         // المقصود ألا يبقى الاتصال محجوزاً، وهذا يتحقق في الحالتين.
       }
+
+      // ⚠️ الفجوة التي كشفها عطل 20 أكتوبر: cancel() لا يرفض الوعد محلياً
+      // إلا إذا كان الاستعلام ما زال في طابور العميل. أما استعلام أُرسل
+      // فعلاً على مقبس ميت، فـcancel() يفتح اتصالاً جديداً ثم ينتظر رداً
+      // لن يأتي — فيبقى الوعد معلَّقاً إلى سقف 300 ثانية، وتبقى عملية
+      // تجديد الكاش في الخلفية (waitUntil) تُمسك النسخة كلها معه.
+      // فنمنح cancel() مهلة قصيرة ليعمل كما ينبغي، ثم إن كان الوعد ما
+      // زال معلَّقاً نُقرّ بأن الاتصال ميت فيُقاعَد **هذا** العميل: لا
+      // يستقبل استعلاماً جديداً، وما يجري عليه سليماً يكتمل، والمعلَّق
+      // يُرفَض عند انتهاء التصريف — راجع dbResilience.ts. ولا يُقاعَد شيء
+      // وهناك معاملة كتابة جارية.
+      // ⚠️ القراءة وحدها تُصعِّد. عبارة الكتابة لا تُتلف العميل بنفسها
+      // أبداً: إلغاؤها عند 10 ثوان يُنهيها على خادم حيّ بإرجاع مؤكَّد
+      // (57014)، وعلى مقبس ميت لا نضيف إليها شيئاً بالإتلاف. فلا يجوز
+      // أن تكون الكتابة هي من يُطلق إتلافاً قد يمسّ كتابةً أخرى.
+      if (kind === "read") {
+        escalationTimer = setTimeout(() => {
+          escalationTimer = undefined;
+          if (resolved) return;
+          dbGuard.noteHangEscalation("query-hang-after-cancel", client);
+        }, readDbResilienceConfig().escalateGraceMs);
+      }
     }, QUERY_HARD_TIMEOUT_MS);
 
     // تنظيف المؤقّت عند انتهاء الاستعلام نجاحاً أو فشلاً. نستعمل then
     // الأصلي (قبل الترقيع) لتفادي أي تسلسل لا نهائي، وكلا المُعالِجَين
     // يُعيد undefined فلا ينشأ رفض غير مُلتقَط من هذا الفرع.
-    Reflect.apply(originalThen, pending, [disarm, disarm]);
+    Reflect.apply(originalThen, pending, [onSettled, onSettled]);
   };
 
   Object.defineProperty(pending, "then", {
@@ -93,21 +192,34 @@ function boundQueryLifetime<T>(query: T): T {
 }
 
 // نتفادى فتح اتصال جديد بقاعدة البيانات مع كل إعادة تحميل ساخنة (hot reload)
-// أثناء التطوير عبر تخزين العميل في global.
+// أثناء التطوير عبر تخزين **الحارس** في global. كان المحفوظ سابقاً هو
+// العميل نفسه؛ وبعد أن صار العميل قابلاً لإعادة الإنشاء، حفظُه في مكان
+// ثانٍ يعني مرجعاً قديماً ينجو من الإتلاف — فنحفظ مالكه بدلاً منه.
 declare global {
-  var __tayssirSql: SqlClient | undefined;
+  var __tayssirDbGuard: ConnectionGuard | undefined;
 }
 
-let cachedClient: SqlClient | undefined;
+/**
+ * الحارس هو المالك الوحيد لعميل postgres.js: هو من يُنشئه، وهو وحده من
+ * يُتلفه ويُعيد إنشاءه. لا نسخة ثانية محفوظة إلى جانبه — فمرجع قديم
+ * محفوظ في مكان آخر هو بالضبط ما يُفرِغ إعادة الإنشاء من معناها.
+ */
+export const dbGuard: ConnectionGuard =
+  globalThis.__tayssirDbGuard ?? new ConnectionGuard({ create: createClient });
+
+if (process.env.NODE_ENV !== "production") {
+  globalThis.__tayssirDbGuard = dbGuard;
+}
 
 // إنشاء العميل الحقيقي مؤجَّل حتى أول استعلام فعلي، بدل وقت استيراد هذا
 // الملف. هذا يسمح بنجاح `next build` (الذي يُحمِّل كل الصفحات لجمع بياناتها
 // حتى الصفحات التي لن تُستدعى فيها أي دالة sql فعلياً) حتى بدون DATABASE_URL،
 // بينما تبقى أي محاولة استعلام حقيقي بدونه تفشل بنفس الرسالة كما كانت.
 function getClient(): SqlClient {
-  if (globalThis.__tayssirSql) return globalThis.__tayssirSql;
-  if (cachedClient) return cachedClient;
+  return dbGuard.current();
+}
 
+function createClient(): SqlClient {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     throw new Error(
@@ -135,10 +247,6 @@ function getClient(): SqlClient {
     );
   }
 
-  cachedClient = client;
-  if (process.env.NODE_ENV !== "production") {
-    globalThis.__tayssirSql = client;
-  }
   return client;
 }
 
@@ -204,6 +312,18 @@ function buildClient(connectionString: string): SqlClient {
   });
 }
 
+/**
+ * الأجزاء الثابتة من قالَب الوسم، إن كان النداء قالَباً أصلاً. نداءات
+ * `sql(rows, ...cols)` و`sql("identifier")` ليست قوالب ولا تُنتج Query،
+ * فتُرجِع null وتُصنَّف كتابةً تحفُّظاً — بلا أي أثر، لأنها لا تُسلَّح.
+ */
+function templateStringsOf(first: unknown): readonly string[] | null {
+  if (!Array.isArray(first)) return null;
+  const raw = (first as { raw?: unknown }).raw;
+  if (!Array.isArray(raw)) return null;
+  return first.filter((part): part is string => typeof part === "string");
+}
+
 export const sql: SqlClient = new Proxy(function () {} as unknown as SqlClient, {
   apply(_target, _thisArg, args) {
     const client = getClient();
@@ -211,12 +331,60 @@ export const sql: SqlClient = new Proxy(function () {} as unknown as SqlClient, 
     // يُلغيه فعلياً بدل تركه يحجز اتصالاً إلى الأبد. أجزاء الاستعلام
     // (fragments) تمرّ من هنا أيضاً لكنها لا تُسلَّح لأنها لا تُنتظَر أبداً.
     return boundQueryLifetime(
-      (client as unknown as (...a: unknown[]) => unknown)(...args)
+      (client as unknown as (...a: unknown[]) => unknown)(...args),
+      classifyStatement(templateStringsOf(args[0])),
+      client
     );
   },
   get(_target, prop, receiver) {
+    if (prop === "begin") return guardedBegin;
     const client = getClient();
     const value = Reflect.get(client as object, prop, receiver);
     return typeof value === "function" ? value.bind(client) : value;
   },
 });
+
+type BeginFn = (...args: unknown[]) => Promise<unknown>;
+
+/**
+ * كل معاملة تمرّ من `sql.begin` تُعلِن نفسها للحارس من بدايتها إلى
+ * نهايتها. هذا هو ما يجعل إعادة إنشاء العميل آمنة على الطلبيات: ما دامت
+ * معاملة كتابة واحدة جارية، لا يُتلَف العميل إطلاقاً — فلا يمكن لأي
+ * آلية في هذا الملف أن تُحوِّل COMMIT مُرسَلاً إلى نتيجة مجهولة.
+ *
+ * ونعدّ كل معاملة كتابةً بلا استثناء (ولا نحاول تمييز معاملات القراءة):
+ * الخطأ في جانب الحَذَر هنا ثمنه تأجيل إتلاف ثوانٍ، وفي الجانب الآخر
+ * ثمنه طلبية.
+ *
+ * ملاحظة مقصودة: الاستعلامات **داخل** المعاملة تُنفَّذ على كائن `trx`
+ * الذي يُمرِّره postgres.js، لا على هذا الوكيل — فلا تمرّ من
+ * boundQueryLifetime ولا تُلغى من جانبنا. حدّها هو مهلة الخادم
+ * (statement_timeout) وانهيار الاتصال، وهذا بنفسه قرار سلامة: إلغاء
+ * استعلام داخل معاملة كتابة من جانب العميل كان سيترك المعاملة في حالة
+ * نصفية.
+ */
+const guardedBegin: BeginFn = function guardedBegin(...args: unknown[]) {
+  // العميل وقفله في عملية واحدة: المعاملة تجري على نفس العميل الذي
+  // رُفع عدّاده بعينه، لا على «العميل الحالي» أيّاً كان وقت الإنهاء.
+  const lease = dbGuard.leaseForWrite(readTransactionLeaseMs());
+  const begin = (lease.client as unknown as Record<string, BeginFn>).begin.bind(
+    lease.client
+  );
+  try {
+    return Promise.resolve(begin(...args)).then(
+      (value) => {
+        lease.release();
+        return value;
+      },
+      (error) => {
+        lease.release();
+        throw error;
+      }
+    );
+  } catch (error) {
+    // begin() قد يرمي تزامنياً (مثلاً عميل أُتلف) — بلا هذا لبقي القفل
+    // مرفوعاً إلى الأبد ولمُنع كل إتلاف لاحق.
+    lease.release();
+    throw error;
+  }
+};

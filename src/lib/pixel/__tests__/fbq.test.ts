@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   trackAddToCart,
   trackInitiateCheckout,
@@ -19,9 +19,37 @@ function mockFetch() {
   return fn;
 }
 
+// كل اختبارات هذا الملف تصف زائراً **وافق** — وحدها الموافقة تفتح Pixel
+// وCAPI. حالة «بلا موافقة» مختبَرة صراحةً في آخر الملف.
+beforeEach(() => {
+  document.cookie = "tf_ad_consent=granted; path=/";
+});
+
 afterEach(() => {
   delete (window as { fbq?: unknown }).fbq;
   vi.unstubAllGlobals();
+  document.cookie = "tf_ad_consent=; Max-Age=0; path=/";
+});
+
+describe("بلا موافقة: لا Pixel ولا CAPI", () => {
+  test("لم يُجب الزائر بعد: لا fbq ولا طلب إلى /api/pixel-events", () => {
+    document.cookie = "tf_ad_consent=; Max-Age=0; path=/";
+    const fbq = mockFbq();
+    const fetchMock = mockFetch();
+    trackPageView();
+    trackViewContent({ sku: "TF-1", name: "منتج", price: 10 });
+    expect(fbq).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("رفض (أو سحب موافقته في نفس الصفحة): Pixel المحمَّل يصمت", () => {
+    document.cookie = "tf_ad_consent=denied; path=/";
+    const fbq = mockFbq();
+    const fetchMock = mockFetch();
+    trackAddToCart({ sku: "TF-1", name: "منتج", price: 10, quantity: 1 });
+    expect(fbq).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("fbq.ts — طبقة نداء Meta Pixel الآمنة + إعادة توجيه CAPI", () => {

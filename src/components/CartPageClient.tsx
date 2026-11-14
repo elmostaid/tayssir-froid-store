@@ -1,38 +1,36 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Image from "next/image";
-import Link from "next/link";
+import Link from "@/components/Link";
 import { useCart } from "@/components/CartProvider";
 import { cartItemKey, snapQuantity } from "@/lib/cart/cartMath";
 import { resolveImageUrl } from "@/lib/images";
-import { resolveCartImageUrls } from "@/app/(storefront)/cart/resolveCartImageUrls";
+import { resolveCartImageSources } from "@/app/(storefront)/cart/resolveCartImageUrls";
 import { formatMad } from "@/lib/format";
 import {
-  isFreeDelivery,
-  deliveryAmountLabel,
-  FREE_DELIVERY_HEADLINE,
+  DELIVERY_AVAILABILITY,
+  DELIVERY_COST_TIMING,
+  deliveryStatusLabel,
 } from "@/lib/delivery";
 import { CartWhatsAppButton } from "@/components/CartWhatsAppButton";
 
 export function CartPageClient({
   whatsappNumber,
   storeName,
-  deliveryFeePerCartonMad,
 }: {
   whatsappNumber: string;
   storeName: string;
-  deliveryFeePerCartonMad: number;
 }) {
   const { items, subtotal, updateQuantity, removeItem, isHydrated } = useCart();
-  const freeDelivery = isFreeDelivery(deliveryFeePerCartonMad);
 
   // السلة (localStorage) لا تخزّن سوى storage_path الخام. نحلّه من جهة
   // الخادم (نفس resolveProductImageUrls المركزي، عبر resolveCartImageUrls)
   // بعد التحميل — قبل أن يصل الرد، أو لصورة لم تُحل بعد، نرجع لـ
   // resolveImageUrl التركيبي القديم (صحيح للصور المحلية القديمة، وهي
   // الغالبية) بدل عدم عرض شيء إطلاقاً.
-  const [imageUrlByPath, setImageUrlByPath] = useState<Record<string, string>>({});
+  const [imageUrlByPath, setImageUrlByPath] = useState<
+    Record<string, { src: string; srcSet: string | null }>
+  >({});
 
   useEffect(() => {
     const paths = Array.from(
@@ -40,7 +38,7 @@ export function CartPageClient({
     );
     if (paths.length === 0) return;
     let cancelled = false;
-    resolveCartImageUrls(paths)
+    resolveCartImageSources(paths)
       .then((result) => {
         if (!cancelled) setImageUrlByPath((prev) => ({ ...prev, ...result }));
       })
@@ -90,14 +88,29 @@ export function CartPageClient({
             >
               <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-neutral-100">
                 {item.imageUrl ? (
-                  <Image
-                    src={imageUrlByPath[item.imageUrl] ?? resolveImageUrl(item.imageUrl)}
-                    alt={item.name}
-                    fill
-                    sizes="80px"
-                    className="object-contain"
-                    loading="lazy"
-                  />
+                  <picture>
+                    {imageUrlByPath[item.imageUrl]?.srcSet && (
+                      <source
+                        type="image/webp"
+                        srcSet={imageUrlByPath[item.imageUrl]!.srcSet!}
+                        sizes="80px"
+                      />
+                    )}
+                    <img
+                      src={imageUrlByPath[item.imageUrl]?.src ?? resolveImageUrl(item.imageUrl)}
+                      alt={item.name}
+                      sizes="80px"
+                      // يلتقطه حارس الصور فـالتخطيط: السلة أكثر مكان لا
+                      // يجوز أن تنكسر فيه صورة — الزبون على بعد خطوة من
+                      // الطلب.
+                      data-img-fallback={
+                        imageUrlByPath[item.imageUrl]?.src ?? resolveImageUrl(item.imageUrl)
+                      }
+                      loading="lazy"
+                      decoding="async"
+                      className="absolute inset-0 h-full w-full object-contain"
+                    />
+                  </picture>
                 ) : null}
               </div>
 
@@ -182,22 +195,14 @@ export function CartPageClient({
           <span className="text-lg font-bold text-neutral-900">{formatMad(subtotal)}</span>
         </div>
         {/* سطر التوصيل هنا أيضاً، لا في إتمام الطلب وحده: من يقرأ مجموعه في
-            السلة يقرّر عندها هل يُكمل، فالمجانية يجب أن تصله قبل الضغط لا
-            بعده. مشتقّة من الإعداد المركزي (lib/delivery.ts). */}
+            السلة يقرّر عندها هل يُكمل، فحقيقةُ أن المجموع ليس نهائياً يجب
+            أن تصله قبل الضغط لا بعده. وحالةٌ لا مبلغ — انظر lib/delivery.ts. */}
         <div className="mt-1 flex items-center justify-between text-sm">
           <span className="text-neutral-600">التوصيل</span>
-          <span
-            className={
-              freeDelivery ? "font-bold text-green-700" : "font-medium text-neutral-800"
-            }
-          >
-            {deliveryAmountLabel(deliveryFeePerCartonMad)}
-          </span>
+          <span className="font-medium text-neutral-800">{deliveryStatusLabel()}</span>
         </div>
         <p className="mt-1 text-xs text-neutral-500">
-          {freeDelivery
-            ? `🚚 ${FREE_DELIVERY_HEADLINE}. المبلغ أعلاه هو ما ستدفعه عند الاستلام.`
-            : "هذا المجموع لا يشمل مصاريف التوصيل، والتي تُحسب لاحقاً حسب عدد الكرطونات بعد تجهيز الطلب."}
+          {`🚚 ${DELIVERY_AVAILABILITY}. ${DELIVERY_COST_TIMING}، فالمجموع أعلاه لا يشملها بعد.`}
         </p>
 
         {/* طمأنة قصيرة قبل زر إتمام الطلب: الخطوة التالية واضحة وما بقاش
@@ -207,12 +212,14 @@ export function CartPageClient({
           ساليت الاختيار؟ كمّل معلوماتك ورسل الطلب لواتساب، وحنا نتكلفو بالباقي ✅
         </p>
 
-        {/* طريقان لا واحد، والأول يبقى الأول.
-            «إتمام الطلب» يحتفظ بلونه ووزنه لأنه وحده ما يُنشئ طلباً حقيقياً
-            برقم وحجز مخزون وبون تحضير. وتحته مخرجٌ لمن لن يملأ نموذجاً:
-            القياس على تسعة أيام يقول إن متصفّح فيسبوك الداخلي (أكبر مصدر
-            زبنائنا) يُنهي 20% مما يبدأه، مقابل 60% من متصفّح إنستغرام —
-            والفارق الوحيد بينهما هو من يُكمل ثلاثة حقول داخل تطبيق. */}
+        {/* مسارٌ واحد للشراء، ومخرجٌ صغير للسؤال.
+            كان الزرّان متساويين في الوزن تقريباً، فصار زرّ واتساب مسار
+            الطلب الفعلي: 17 سلّة ذهبت إليه، **واحدة** منها رُبطت بطلب
+            حقيقي، و14 بقيت "pending" بقيمة 17,427 درهماً. والرسالة تصل بلا
+            اسم ولا هاتف ولا مدينة، فتبدأ المحادثة من "بشحال؟" لا من تأكيد.
+            وهو كذلك ما يُغرق واتساب برسائل عامة لا تُغلَق.
+            «إتمام الطلب» وحده يُنشئ طلباً برقم وحجز مخزون وبون تحضير —
+            فيبقى هو CTA، ويُقاس عنده InitiateCheckout ثم OrderSubmitted. */}
         <div className="mt-3 flex flex-col gap-2">
           <Link
             href="/checkout"
@@ -221,15 +228,19 @@ export function CartPageClient({
             إتمام الطلب
           </Link>
 
-          <CartWhatsAppButton
-            whatsappNumber={whatsappNumber}
-            storeName={storeName}
-            deliveryFeePerCartonMad={deliveryFeePerCartonMad}
-          />
-
           <p className="text-center text-xs text-neutral-500">
-            نبعثو ليك الطلبية جاهزة فواتساب، ونكملو معاك الاسم والمدينة تما.
+            تعمّر معلوماتك فخطوة واحدة، وتأكد الطلب على واتساب من بعد.
           </p>
+
+          {/* مفصول بخطّ عن مسار الطلب عمداً: هذا للسؤال، لا للشراء. */}
+          <div className="mt-2 border-t border-neutral-200 pt-3 text-center">
+            <CartWhatsAppButton
+              whatsappNumber={whatsappNumber}
+              storeName={storeName}
+              label="عندك سؤال على هاد المنتجات؟ راسلنا على واتساب"
+              className="inline-flex min-h-11 items-center justify-center gap-2 text-sm font-semibold text-whatsapp-dark underline decoration-whatsapp/40 underline-offset-4 transition-colors hover:text-whatsapp"
+            />
+          </div>
 
           <Link
             href="/"

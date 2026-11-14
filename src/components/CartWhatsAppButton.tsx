@@ -1,12 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useCart } from "@/components/CartProvider";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
-import {
-  buildCartWhatsAppMessage,
-  randomOrderReference,
-} from "@/lib/orders/orderMessage";
+import { buildCartWhatsAppMessage, orderReferenceFromKey } from "@/lib/orders/orderMessage";
+import { getOrCreateWhatsappLeadKey } from "@/lib/orders/whatsappLeadKey";
 import { getOrderAttribution } from "@/lib/attribution/capture";
 import { trackAnalyticsEvent } from "@/lib/analytics/track";
 
@@ -33,30 +31,47 @@ import { trackAnalyticsEvent } from "@/lib/analytics/track";
  * **ولماذا يُسجَّل حدثاً مستقلاً.** `whatsapp_from_cart` ليس تزييناً: بدونه
  * لا نعرف هل أضاف هذا المسار طلبات أم سحبها من النموذج فقط. الحدث يُرسَل
  * قبل مغادرة الصفحة عبر sendBeacon (طبقة القياس نفسها)، فينجو من الانتقال.
+ *
+ * **ولماذا يُسجَّل الآن في قاعدة البيانات أيضاً.** كانت هذه السلة تُبنى في
+ * الرابط فقط ولا تصل لوحة الإدارة إطلاقاً إن لم يُكمل الزبون المحادثة أو
+ * لم يُدخلها أحد يدوياً — طلبيات كاملة تضيع بصمت. الآن نُرسل نفس السلة
+ * (بأسعار محسوبة من القاعدة، لا من المتصفح) إلى /api/whatsapp-leads بمفتاح
+ * idempotency ثابت لهذه السلة تحديداً (انظر lib/orders/whatsappLeadKey.ts)
+ * قبل فتح واتساب — مع keepalive:true وبلا انتظار الجواب، بنفس فلسفة
+ * webCheckout.ts: لا شيء يجوز أن يؤخّر أو يمنع فتح واتساب. لا Purchase ولا
+ * حجز مخزون هنا: فقط دليل أن السلة وصلت، بحالة «واتساب — بانتظار بيانات
+ * الزبون» حتى تتحوّل إلى طلب حقيقي من لوحة الإدارة.
  */
 export function CartWhatsAppButton({
   whatsappNumber,
   storeName,
-  deliveryFeePerCartonMad,
   className,
   label = "أكمل الطلب عبر واتساب",
 }: {
   whatsappNumber: string;
   storeName: string;
   /** رسوم التوصيل المُعدَّة — تحدّد سطر الخاتمة في الرسالة. */
-  deliveryFeePerCartonMad: number;
   className?: string;
   /** نصّ الزر. `null` يعني أيقونة وحدها — للشريط الضيّق أسفل الشاشة. */
   label?: string | null;
 }) {
   const { items, subtotal } = useCart();
 
-  // مرجع ثابت لعمر المكوّن: الزبون الذي يضغط مرتين يصل برسالتين تحملان نفس
-  // المرجع، فيعرف البائع أنها طلبية واحدة لا اثنتان.
-  const [reference] = useState(randomOrderReference);
+  // مفتاح ثابت لمحتوى هذه السلة تحديداً — محفوظ في localStorage لا في عمر
+  // المكوّن وحده، فيبقى نفسه عبر الرجوع للصفحة وإعادة الضغط (انظر
+  // lib/orders/whatsappLeadKey.ts). null قبل أن تُحمَّل السلة من التخزين
+  // المحلي (items فارغة لحظياً)، حتى لا نولّد ونكتب مفتاحاً لسلة فارغة
+  // فنمحو المفتاح الحقيقي المحفوظ من زيارة سابقة.
+  const idempotencyKey = useMemo(
+    () => (items.length === 0 ? null : getOrCreateWhatsappLeadKey(items)),
+    [items]
+  );
+  // المرجع (W-XXXXXXXX) يُشتقّ من idempotencyKey بنفس الدالة المستعملة في
+  // كل رسائل الطلب الأخرى، فضغطتان بنفس المفتاح تصلان دائماً بنفس المرجع.
+  const reference = idempotencyKey ? orderReferenceFromKey(idempotencyKey) : null;
 
   const href = useMemo(() => {
-    if (items.length === 0) return null;
+    if (items.length === 0 || !reference) return null;
 
     // المصدر يُقرأ من آخر لمسة إعلانية محفوظة. لا نرسل مُعرّف النقرة نفسه
     // (fbclid) في رسالة واتساب — سطر مقروء يكفي لمعرفة أي قناة باعت، وحمل
@@ -77,11 +92,10 @@ export function CartWhatsAppButton({
         items,
         subtotal,
         whatsappNumber,
-        deliveryFeePerCartonMad,
         attributionNote,
       })
     );
-  }, [items, subtotal, whatsappNumber, storeName, deliveryFeePerCartonMad, reference]);
+  }, [items, subtotal, whatsappNumber, storeName, reference]);
 
   if (!href) return null;
 
@@ -92,9 +106,38 @@ export function CartWhatsAppButton({
       rel="noopener noreferrer"
       aria-label={label ?? "أكمل الطلب عبر واتساب"}
       onClick={() => {
-        // لا try/catch هنا: trackAnalyticsEvent لا ترمي أبداً بحكم تصميمها،
-        // ولا شيء في هذا المعالج يجوز أن يمنع فتح واتساب.
+        // لا try/catch حول trackAnalyticsEvent: لا ترمي أبداً بحكم تصميمها،
+        // ولا شيء في هذا المعالج يجوز أن يمنع فتح واتساب (لا هذا السطر ولا
+        // ما يليه).
         trackAnalyticsEvent("whatsapp_from_cart", { cartValue: subtotal });
+
+        // تسجيل السلة قبل فتح واتساب — بلا انتظار الجواب ولا preventDefault:
+        // الرابط أعلاه (href) يفتح واتساب بشكل طبيعي عبر سلوك <a> الافتراضي
+        // فور انتهاء هذا المعالج؛ fetch نفسه يُرسَل الآن، وkeepalive يضمن
+        // إتمامه حتى بعد أن يغادر المتصفح الصفحة إلى واتساب.
+        if (idempotencyKey && typeof fetch === "function") {
+          try {
+            void fetch("/api/whatsapp-leads", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              keepalive: true,
+              body: JSON.stringify({
+                cartItems: items.map((item) => ({
+                  productId: item.productId,
+                  variantId: item.variantId,
+                  quantity: item.quantity,
+                })),
+                idempotencyKey,
+                attribution: getOrderAttribution(),
+              }),
+            }).catch(() => {
+              // أفضل مجهود — رسالة واتساب تحمل الطلبية كاملة على أي حال،
+              // فحتى فشل هذا التسجيل لا يُضيّع الطلبية على الزبون.
+            });
+          } catch {
+            // متصفح لا يدعم keepalive أو منع الطلب — نتجاهل بصمت.
+          }
+        }
       }}
       className={
         className ??

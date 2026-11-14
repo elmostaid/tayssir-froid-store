@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { unstable_cache } from "next/cache";
 import { sql } from "@/lib/db";
+import { dbGuard } from "@/lib/db";
 import { safeQuery } from "@/lib/safeQuery";
 import { ServiceUnavailableError } from "@/lib/serviceUnavailable";
 import {
@@ -74,10 +75,25 @@ function cachedCatalogQuery<Args extends unknown[], Result>(
   keyParts: string[],
   run: (...args: Args) => Promise<Result>
 ): (...args: Args) => Promise<Result> {
-  const cached = unstable_cache(run, keyParts, {
-    tags: [CATALOG_TAG],
-    revalidate: CATALOG_REVALIDATE_SECONDS,
-  });
+  // ⚠️ التدوير بعد الخمول هنا، **داخل** الدالة المُخزَّنة، لا خارجها فقط.
+  //
+  // `safeQuery` تُغلِّف **البحث في المخزن المؤقّت** لا الاستعلام: عند
+  // **تجديد الكاش في الخلفية** يُنفِّذ Next `run` من تلقائه خارج أي نداء
+  // لـ`safeQuery`. وهذا التجديد هو أكثر ما يكون جارياً لحظة تجميد الدالة
+  // بعد الجواب — فبعد الاستئناف يجب أن يبدأ على مقابس جديدة. سطر واحد
+  // يُغطّي كل استعلامات الفهرس المُخزَّنة، ولا يرسل شيئاً إلى القاعدة: إن
+  // لم تمرّ فجوة خمول فلا شيء يحدث — راجع dbResilience.ts.
+  const cached = unstable_cache(
+    async (...args: Args): Promise<Result> => {
+      await dbGuard.ensureLive();
+      return run(...args);
+    },
+    keyParts,
+    {
+      tags: [CATALOG_TAG],
+      revalidate: CATALOG_REVALIDATE_SECONDS,
+    }
+  );
 
   return async (...args: Args): Promise<Result> => {
     try {
@@ -424,6 +440,43 @@ export async function getProducts(
     return rows;
   } catch (error) {
     failQuery("getProducts", error);
+  }
+}
+
+/**
+ * منتجات تصنيف ظاهرة، مرتّبة بالطلب: الوحدات المطلوبة في الطلبيات غير
+ * الملغاة/المرتجعة، ثم ترتيب المدير. لأقسام صفحة مكينات الصابون
+ * (lib/campaignSections.ts) — منها تُكمَل الخانات التي لم يخترها المدير.
+ *
+ * التصنيف الأكبر 115 منتجاً، فالحدّ 200 يغطّي التصنيف كاملاً، وتحت نفس
+ * كاش الكتالوج (60 ثانية بوسم catalog) فلا تلمس الزيارات المتتالية القاعدة.
+ */
+const queryCategoryProductsByDemand = cachedCatalogQuery(
+  ["catalog-category-products-by-demand"],
+  async (categorySlug: string) => sql<(CatalogProduct & { demand_units: number })[]>`
+    select p.*, coalesce(d.units, 0)::int as demand_units
+    from public.catalog_products p
+    left join (
+      select oi.product_id, sum(oi.quantity) as units
+      from public.order_items oi
+      join public.orders o on o.id = oi.order_id
+      where o.status not in ('cancelled', 'returned')
+      group by oi.product_id
+    ) d on d.product_id = p.id
+    where p.category_slug = ${categorySlug}
+    order by coalesce(d.units, 0) desc, p.sort_order asc, p.created_at desc
+    limit 200
+  `
+);
+
+export async function getCategoryProductsByDemand(
+  categorySlug: string
+): Promise<(CatalogProduct & { demand_units: number })[]> {
+  if (!hasDatabase) return (await getPreviewProducts({ categorySlug, limit: 200, sort: "newest" })).map((p) => ({ ...p, demand_units: 0 }));
+  try {
+    return await queryCategoryProductsByDemand(categorySlug);
+  } catch (error) {
+    failQuery("getCategoryProductsByDemand", error);
   }
 }
 

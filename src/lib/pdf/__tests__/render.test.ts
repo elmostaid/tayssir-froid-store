@@ -38,6 +38,13 @@ const fixtureOrder: AdminOrderDetail = {
   finalTotal: null,
   source: "website",
   createdAt: new Date().toISOString(),
+  metaPurchaseAcceptedAt: null,
+  metaPurchaseError: null,
+  metaPurchaseAttempts: 0,
+  metaPurchaseActionSource: null,
+  originReference: null,
+  adConsent: "unknown",
+  adConsentSource: null,
 };
 
 const fixtureItems: AdminOrderItem[] = [
@@ -107,7 +114,6 @@ describe("توليد ملفات PDF (بون التحضير ووصل الزبون
             customerName: fixtureOrder.customerName,
             customerCity: fixtureOrder.customerCity,
             itemsSubtotal: fixtureOrder.itemsSubtotal,
-            deliveryFeePerCartonMad: 45,
             items: receiptItems,
           })
         ),

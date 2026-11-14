@@ -41,11 +41,68 @@ const TOUCH_KEYS = [
   "fbclid", "gclid", "ttclid", "landingPath", "referrerHost",
 ] as const;
 
+/**
+ * وسم ديناميكي لم تعوّضه Meta (مثل `{{ad.id}}`). يحدث في بعض المواضع:
+ * القيمة حرفياً هي القالب. تخزينه يوهم بمصدر معروف وهو ليس كذلك، فيُعامَل
+ * كغياب للقيمة.
+ */
+export function isUnfilledMacro(value: string): boolean {
+  return /^\{\{[^{}]*\}\}$/.test(value.trim());
+}
+
 function trimmed(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const text = value.trim();
-  if (!text) return null;
+  if (!text || isUnfilledMacro(text)) return null;
   return text.slice(0, MAX_ATTRIBUTION_VALUE_LENGTH);
+}
+
+/** المدة التي تُحمى فيها لمسة إعلانية من زيارة إحالة عارية من نفس الشبكة. */
+export const PAID_TOUCH_PROTECTION_MS = 7 * 86_400_000;
+
+const META_SOURCES = new Set(["facebook", "fb", "ig", "instagram", "meta", "messenger", "an", "audience_network"]);
+const META_HOST = /(^|\.)(facebook\.com|fb\.com|fb\.me|instagram\.com|messenger\.com)$/i;
+
+/** شبكة اللمسة: `meta` لفيسبوك/إنستغرام/ماسنجر، وإلا null. */
+export function touchNetwork(touch: Pick<AttributionTouch, "utmSource" | "referrerHost" | "fbclid">): "meta" | null {
+  const source = touch.utmSource?.trim().toLowerCase();
+  if (source && META_SOURCES.has(source)) return "meta";
+  if (touch.fbclid) return "meta";
+  if (touch.referrerHost && META_HOST.test(touch.referrerHost)) return "meta";
+  return null;
+}
+
+/** هل تحمل اللمسة وسوم حملة أو معرّف نقرة (أي نقرة على إعلان بعينه)؟ */
+export function hasCampaignTags(touch: AttributionTouch): boolean {
+  return Boolean(
+    touch.utmSource || touch.utmMedium || touch.utmCampaign || touch.utmContent ||
+      touch.utmTerm || touch.fbclid || touch.gclid || touch.ttclid
+  );
+}
+
+/**
+ * هل تبقى آخر لمسة محفوظة بدل اللمسة الجديدة؟
+ *
+ * نعم فقط حين تكون الجديدة إحالة عارية (بلا أي وسم) من **نفس الشبكة** التي
+ * جاءت منها لمسة إعلانية موسومة قبل أقل من 7 أيام. مثال حقيقي (طلبية 363):
+ * زبون نقر إعلان مكينات الصابون، ثم عاد في اليوم التالي من m.facebook.com
+ * بلا وسوم إلى صفحة منتج — فمُحي رقم الإعلان من الطلبية. الإحالة العارية لا
+ * تقول أي إعلان، فلا تُسقط معلومة أدقّ منها.
+ *
+ * ولا خلط بين إعلانين: أي نقرة على إعلان آخر تحمل وسومها، فتأخذ مكانها
+ * دائماً (آخر نقرة). وإحالة من شبكة أخرى (جوجل مثلاً) تأخذ مكانها أيضاً.
+ */
+export function shouldKeepPreviousTouch(
+  next: AttributionTouch,
+  previous: AttributionTouch | null,
+  now: number = Date.now()
+): boolean {
+  if (!previous) return false;
+  if (hasCampaignTags(next)) return false;
+  if (!hasCampaignTags(previous)) return false;
+  if (now - previous.at > PAID_TOUCH_PROTECTION_MS) return false;
+  const network = touchNetwork(next);
+  return network !== null && network === touchNetwork(previous);
 }
 
 /**

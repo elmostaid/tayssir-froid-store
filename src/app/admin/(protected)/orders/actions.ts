@@ -6,9 +6,17 @@ import { sql } from "@/lib/db";
 import { parseDeliveryCostInput } from "@/lib/orders/deliveryCost";
 import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import { ORDER_STATUSES, type OrderStatus } from "@/lib/queries/adminOrders";
-import { RESTOCKING_STATUSES } from "@/lib/orders/orderStatus";
+import {
+  RESTOCKING_STATUSES,
+  SALE_CONFIRMED_STATUSES,
+  CANCELLATION_REASONS,
+  CANCELLATION_REASON_REQUIRING_NOTE,
+  type CancellationReason,
+} from "@/lib/orders/orderStatus";
+import { sendDeferredPurchase } from "@/lib/pixel/sendDeferredPurchase";
 import { revalidateCatalog } from "@/lib/queries/catalogCache";
 import { createManualOrder } from "@/lib/orders/createManualOrder";
+import { convertWhatsappLeadToOrder } from "@/lib/orders/convertWhatsappLead";
 import { updateOrderLines } from "@/lib/orders/updateOrderLines";
 import { isManualOrderSource } from "@/lib/orders/orderSource";
 import type { LineRequest } from "@/lib/orders/resolveLines";
@@ -25,6 +33,33 @@ import {
 } from "@/lib/orders/importOrder";
 
 export type OrderActionState = { error: string | null };
+
+/**
+ * يقرأ سبب الإلغاء من النموذج ويتحقّق منه.
+ *
+ * السبب إلزامي على كل إلغاء: بدونه لا يُجاب سؤال "لماذا نخسر الطلبات"
+ * بأرقام، وهو السؤال الذي أوجب هذا العمود. و`other` وحده يُلزَم بملاحظة —
+ * سبب "آخر" بلا شرح لا يُجيب شيئاً. القاعدة تفرض الأمرين كذلك
+ * (`orders_cancellation_reason_values`، `orders_cancellation_other_needs_note`)
+ * فلا تمرّ قيمة فاسدة لو تغيّرت الواجهة.
+ */
+function readCancellationReason(
+  formData: FormData,
+  note: string | null
+): { reason: CancellationReason } | { error: string } {
+  const raw = String(formData.get("cancellationReason") ?? "").trim();
+  if (!raw) return { error: "اختر سبب الإلغاء." };
+  if (!(CANCELLATION_REASONS as readonly string[]).includes(raw)) {
+    return { error: "سبب الإلغاء غير معروف." };
+  }
+  const reason = raw as CancellationReason;
+  if (reason === CANCELLATION_REASON_REQUIRING_NOTE) {
+    if (!note || note.trim().length < 3) {
+      return { error: "«سبب آخر» يحتاج ملاحظة توضّحه." };
+    }
+  }
+  return { reason };
+}
 
 
 export async function updateOrderStatus(
@@ -43,20 +78,97 @@ export async function updateOrderStatus(
   }
 
   if (RESTOCKING_STATUSES.includes(status as OrderStatus)) {
-    return restockOrderInternal(orderId, admin.email, note, status as "cancelled" | "returned");
+    const parsed = readCancellationReason(formData, note);
+    if ("error" in parsed) return { error: parsed.error };
+    return restockOrderInternal(
+      orderId,
+      admin.email,
+      note,
+      status as "cancelled" | "returned",
+      parsed.reason
+    );
   }
 
+  // `confirmed_at` يُثبَّت عند **أول** وصول إلى حالة تعني أن البيعة تمّت،
+  // ولا يُكتب فوقه بعدها: طلبٌ رجع إلى confirmed بعد تصحيح حالة لم يُبَع
+  // مرتين، و`coalesce` تحفظ اللحظة الأولى. وهذا العمود هو `event_time`
+  // لحدث الشراء، فانحرافه يعني إسناداً في وقت لم يقع فيه شيء.
+  const isSaleConfirmed = SALE_CONFIRMED_STATUSES.includes(status as OrderStatus);
+
   await sql.begin(async (trx) => {
-    await trx`update public.orders set status = ${status} where id = ${orderId}`;
+    if (isSaleConfirmed) {
+      await trx`
+        update public.orders
+        set status = ${status}, confirmed_at = coalesce(confirmed_at, now())
+        where id = ${orderId}
+      `;
+    } else {
+      await trx`update public.orders set status = ${status} where id = ${orderId}`;
+    }
     await trx`
       insert into public.order_status_history (order_id, status, note, changed_by)
       values (${orderId}, ${status}, ${note}, ${admin.email})
     `;
   });
 
+  // حدث الشراء **بعد** تثبيت المعاملة لا داخلها: نداء شبكة إلى Meta داخل
+  // معاملةٍ يعني أن تعثُّر القياس يُلغي تغيير حالة حقيقياً. والدالة نفسها
+  // تحمل الحارس (`meta_purchase_sent_at`) ولا ترمي أبداً، فاستدعاؤها على
+  // كل انتقال آمن: تخرج صامتةً إن لم تكن البيعة قد تمّت أو كانت أُرسلت.
+  if (isSaleConfirmed) {
+    void sendDeferredPurchase(orderId);
+  }
+
   revalidatePath("/admin/orders");
   revalidatePath(`/admin/orders/${orderId}`);
   return { error: null };
+}
+
+/**
+ * إعادة إرسال بيعةٍ مؤكَّدة تعثّر تسليمها إلى Meta.
+ *
+ * موجود لأن الحرس يُستهلك قبل النداء: فشل الشبكة يُحرّر الحجز تلقائياً
+ * ليُعاد على أول تغيير حالة لاحق — لكن طلباً وصل `delivered` ولن يلمسه أحد
+ * بعدها كان سيبقى بلا بيعة إلى الأبد. هذا الزرّ هو المحاولة اليدوية.
+ *
+ * وهو آمن للتكرار: `event_id` حتمي (`purchase:<id>`) فأي وصول مزدوج
+ * تُسقطه Meta نفسها. ولذلك يُصفَّر عدّاد المحاولات هنا: من يضغط الزرّ قد
+ * أصلح العطب، فلا معنى لأن يمنعه سقفٌ كان يحمي من المطاردة الآلية.
+ */
+export async function retryDeferredPurchase(orderId: number): Promise<OrderActionState> {
+  const admin = await getAdminUser();
+  if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+  // إجراء قياس يمسّ ما تراه Meta — لصاحب الحساب، لا لكل من يُحدِّث الحالات.
+  if (!isOwnerAdmin(admin)) {
+    return { error: "إعادة إرسال البيعة مقصورة على صاحب الحساب (Admin)." };
+  }
+  if (!Number.isInteger(orderId) || orderId <= 0) return { error: "بيانات غير صالحة." };
+
+  await sql`
+    update public.orders
+    set meta_purchase_sent_at = null, meta_purchase_attempts = 0
+    where id = ${orderId} and meta_purchase_accepted_at is null
+  `;
+
+  const outcome = await sendDeferredPurchase(orderId);
+  revalidatePath(`/admin/orders/${orderId}`);
+
+  if (outcome.sent) return { error: null };
+  if (outcome.reason === "already_sent") return { error: null };
+
+  const why: Record<string, string> = {
+    no_consent: "لا موافقة مسجَّلة من الزبون على مشاركة بياناته مع Meta — لا يُرسَل شيء.",
+    offline_disabled:
+      "مبيعات خارج الموقع لا تُرسَل إلى Meta بعد (META_OFFLINE_PURCHASES_ENABLED مُطفأ حتى إذن CNDP).",
+    unknown_channel: "قناة الطلب غير معروفة — لا نخمّن قناة لـMeta.",
+    too_old: "البيعة تأكّدت قبل أكثر من سبعة أيام — Meta لا تقبلها، ولا نرسل بأثر رجعي.",
+    not_a_sale: "الطلب ليس في حالة بيعة مؤكَّدة.",
+    nothing_to_send: "لا سطر محجوز في هذا الطلب.",
+    order_not_found: "الطلب غير موجود.",
+    attempts_exhausted: "استُنفدت المحاولات.",
+    delivery_failed: `لم تقبل Meta الحدث: ${outcome.error ?? "سبب غير معروف"}`,
+  };
+  return { error: why[outcome.reason] ?? "تعذّرت إعادة الإرسال." };
 }
 
 // مصاريف التوصيل قابلة للتعديل يدوياً من الإدارة (تُحدَّد بعد تجهيز الطلب
@@ -169,7 +281,10 @@ export async function cancelOrderAction(
   const note = String(formData.get("note") ?? "").trim() || null;
   if (!orderId) return { error: "بيانات غير صالحة." };
 
-  return restockOrderInternal(orderId, admin.email, note, "cancelled");
+  const parsed = readCancellationReason(formData, note);
+  if ("error" in parsed) return { error: parsed.error };
+
+  return restockOrderInternal(orderId, admin.email, note, "cancelled", parsed.reason);
 }
 
 const RESTOCK_MOVEMENT_REASON: Record<"cancelled" | "returned", string> = {
@@ -192,7 +307,8 @@ async function restockOrderInternal(
   orderId: number,
   adminEmail: string,
   note: string | null,
-  targetStatus: "cancelled" | "returned"
+  targetStatus: "cancelled" | "returned",
+  reason: CancellationReason | null
 ): Promise<OrderActionState> {
   try {
     await sql.begin(async (trx) => {
@@ -237,7 +353,15 @@ async function restockOrderInternal(
         `;
       }
 
-      await trx`update public.orders set status = ${targetStatus} where id = ${orderId}`;
+      // السبب والملاحظة يُحفظان على الطلب نفسه، لا في السجل وحده: السجل
+      // `ON DELETE CASCADE`، والتقارير تحتاج عموداً تجمع عليه مباشرة.
+      await trx`
+        update public.orders
+        set status = ${targetStatus},
+            cancellation_reason = ${reason},
+            cancellation_note = ${note}
+        where id = ${orderId}
+      `;
       await trx`
         insert into public.order_status_history (order_id, status, note, changed_by)
         values (
@@ -301,7 +425,7 @@ export type DeleteOrderResult =
  * الترتيب داخل معاملة واحدة مع قفل الصف (`for update`): إما أن يقع كل ذلك
  * أو لا شيء منه — لا طلب يُحذف بلا سجل، ولا مخزون يُرجَع لطلب بقي.
  */
-export async function deleteOrder(orderId: number): Promise<DeleteOrderResult> {
+export async function deleteOrder(orderId: number, reason: string): Promise<DeleteOrderResult> {
   const admin = await getAdminUser();
   if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
   if (!isOwnerAdmin(admin)) {
@@ -309,6 +433,13 @@ export async function deleteOrder(orderId: number): Promise<DeleteOrderResult> {
   }
   if (!Number.isInteger(orderId) || orderId < 1) {
     return { error: "رقم الطلب غير صالح." };
+  }
+  // سببٌ مكتوب، لا راية. 38 حذفاً سابقاً لا يُعرف لأيّها سبب، وهذا بالضبط
+  // ما لا يجوز تكراره: الحذف يمحو السطور وسجل الحالات، فالسبب هو كل ما
+  // سيبقى.
+  const deletionReason = typeof reason === "string" ? reason.trim() : "";
+  if (deletionReason.length < 10) {
+    return { error: "اكتب سبب الحذف النهائي (عشرة أحرف على الأقل)." };
   }
 
   let orderNumber: string;
@@ -335,6 +466,12 @@ export async function deleteOrder(orderId: number): Promise<DeleteOrderResult> {
         from public.orders where id = ${orderId} for update
       `;
       if (!order) throw new Error("ORDER_NOT_FOUND");
+      // الحذف النهائي ليس طريقة الإلغاء: يُنهى الطلب أولاً (ملغى أو راجع —
+      // فيُرجَع المخزون ويُسجَّل السبب والتاريخ)، ثم يُحذف إن كان لا بدّ.
+      // بهذا لا تُفقد الحقيقة التجارية أبداً قبل أن تُسجَّل.
+      if (!RESTOCKING_STATUSES.includes(order.status as OrderStatus)) {
+        throw new Error("NOT_CANCELLED");
+      }
 
       const items = await trx<
         {
@@ -394,13 +531,13 @@ export async function deleteOrder(orderId: number): Promise<DeleteOrderResult> {
           order_id, order_number, public_reference, source, status_at_deletion,
           customer_name, customer_phone, customer_city,
           items_subtotal, final_total, order_created_at,
-          items, stock_restored, restored_units, deleted_by
+          items, stock_restored, restored_units, deleted_by, reason
         ) values (
           ${order.id}, ${order.order_number}, ${order.public_reference}, ${order.source},
           ${order.status}, ${order.customer_name}, ${order.customer_phone},
           ${order.customer_city}, ${order.items_subtotal}, ${order.final_total},
           ${order.created_at}, ${sql.json(items)}, ${restoredUnits > 0}, ${restoredUnits},
-          ${admin.email}
+          ${admin.email}, ${deletionReason}
         )
       `;
 
@@ -410,6 +547,12 @@ export async function deleteOrder(orderId: number): Promise<DeleteOrderResult> {
   } catch (error) {
     if (error instanceof Error && error.message === "ORDER_NOT_FOUND") {
       return { error: "الطلب غير موجود (ربما حُذف مسبقاً)." };
+    }
+    if (error instanceof Error && error.message === "NOT_CANCELLED") {
+      return {
+        error:
+          "ألغِ الطلب أولاً (أو سجّله راجعاً) بسبب مُصرَّح، ثم احذفه. الحذف ليس طريقة الإلغاء.",
+      };
     }
     console.error("deleteOrder: خطأ غير متوقع", error);
     return { error: "تعذّر حذف الطلب حالياً بسبب مشكلة تقنية. لم يُحذف أي شيء." };
@@ -503,6 +646,10 @@ export async function createManualOrderAction(
     createdByEmail: auth.email,
     items: readLines(formData),
     acknowledgeBelowCost: formData.get("acknowledgeBelowCost") === "on",
+    origin: { reference: String(formData.get("originReference") ?? "") || null },
+    adConsentDeclared: formData.get("adConsentDeclared") === "on",
+    // نفس المفتاح مع كل إعادة إرسال من نفس النموذج — راجع createManualOrder.
+    idempotencyKey: String(formData.get("idempotencyKey") ?? "") || null,
   });
 
   if (!result.ok) {
@@ -512,6 +659,56 @@ export async function createManualOrderAction(
   // المخزون تغيّر فعلاً، فصفحات الكتالوج العامة يجب أن تعكسه.
   revalidateCatalog();
   revalidatePath("/admin/orders");
+  revalidatePath("/admin");
+  redirect(`/admin/orders/${result.orderId}`);
+}
+
+/**
+ * تحويل whatsapp_lead إلى طلب حقيقي (TF-2026-XXXX)، عبر createManualOrder
+ * نفسه (المصدر يُحسم هنا حصراً كـ'whatsapp'، بلا اعتماد على أي قيمة يرسلها
+ * النموذج). الحماية الحقيقية من تحويل مزدوج (ضغطتان متزامنتان) في
+ * convertWhatsappLeadToOrder نفسه — تحديث SQL ذرّي واحد، لا هنا.
+ */
+export async function convertWhatsappLeadAction(
+  _prevState: OrderEditState,
+  formData: FormData
+): Promise<OrderEditState> {
+  const auth = await requireOwner();
+  if ("error" in auth) return { error: auth.error };
+
+  const leadId = Number(formData.get("leadId"));
+  if (!Number.isInteger(leadId) || leadId <= 0) return { error: "الطلب غير صالح." };
+
+  const feeRaw = String(formData.get("deliveryFee") ?? "").trim();
+  const deliveryFee = feeRaw === "" ? 0 : Number(feeRaw);
+
+  const parsedCost = parseDeliveryCostInput(String(formData.get("actualDeliveryCost") ?? ""));
+  if (!parsedCost.ok) return { error: parsedCost.message };
+
+  const result = await convertWhatsappLeadToOrder({
+    leadId,
+    customer: {
+      fullName: String(formData.get("fullName") ?? ""),
+      phone: String(formData.get("phone") ?? ""),
+      city: String(formData.get("city") ?? ""),
+      address: String(formData.get("address") ?? ""),
+      notes: String(formData.get("notes") ?? "") || null,
+    },
+    deliveryFee,
+    actualDeliveryCost: parsedCost.value,
+    createdByEmail: auth.email,
+    items: readLines(formData),
+    acknowledgeBelowCost: formData.get("acknowledgeBelowCost") === "on",
+    adConsentDeclared: formData.get("adConsentDeclared") === "on",
+  });
+
+  if (!result.ok) {
+    return { error: result.errors[0]?.message ?? "تعذّر تحويل الطلب.", fieldErrors: result.errors };
+  }
+
+  revalidateCatalog();
+  revalidatePath("/admin/orders");
+  revalidatePath("/admin/orders/whatsapp");
   revalidatePath("/admin");
   redirect(`/admin/orders/${result.orderId}`);
 }

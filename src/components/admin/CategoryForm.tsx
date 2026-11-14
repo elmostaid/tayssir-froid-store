@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useActionState } from "react";
-import Link from "next/link";
+import Link from "@/components/Link";
 import type { CategoryFormState } from "@/app/admin/(protected)/categories/actions";
 import type { AdminCategory } from "@/lib/queries/adminCategories";
 import { slugify } from "@/lib/slugify";

@@ -1,5 +1,9 @@
 import Script from "next/script";
-import { GA_MEASUREMENT_ID } from "@/lib/analytics/config";
+import { GA_MEASUREMENT_ID, isAnalyticsEnabled } from "@/lib/analytics/config";
+import { AD_CONSENT_MAX_AGE_DAYS } from "@/lib/privacy/consent";
+
+/** ستة أشهر بالثواني — نفس حدّ CNDP المطبَّق على كوكي الموافقة. */
+const GA_COOKIE_MAX_AGE_SECONDS = AD_CONSENT_MAX_AGE_DAYS * 86_400;
 
 /**
  * «وسم Google» الأساسي (gtag.js) لـGoogle Analytics 4 — هو نفسه المقتطف
@@ -21,7 +25,23 @@ import { GA_MEASUREMENT_ID } from "@/lib/analytics/config";
  * (dataLayer/gtag من جهة، fbq من جهة أخرى)، فوجود أحدهما لا يؤثِّر إطلاقاً
  * على الآخر.
  */
+/**
+ * إحصاء زيارات فقط — لا إشهار ولا ملف شخصي.
+ *
+ * مداولة CNDP D-939-2025 تُعفي من الموافقة المسبقة «إعداد إحصاءات التصفّح
+ * وقياس الجمهور **دون إنشاء ملف شخصي**»، وتستثني صراحةً الإشهار المخصَّص.
+ * فـGA4 هنا مقيَّد بما يبقيه داخل الإعفاء: إشارات Google (ربط الحسابات عبر
+ * الأجهزة) مُطفأة، وتخصيص الإعلانات مُطفأ، ووضع الموافقة يرفض افتراضياً كل
+ * تخزين إشهاري. وما عدا ذلك (Meta) وراء شريط الموافقة.
+ *
+ * و`cookie_expires`: كوكي `_ga` تعيش سنتين افتراضياً، والمداولة نفسها
+ * (الفقرة 5) تحدّ بيانات الكوكيز بستة أشهر.
+ */
 export function GoogleAnalytics() {
+  // الإنتاج وحده. في المعاينة لا يُحمَّل السكريبت ولا يُرسَل أي حدث، فلا
+  // تختلط حركة الاختبار بأرقام الموقع الحقيقي. راجع isAnalyticsEnabled.
+  if (!isAnalyticsEnabled()) return null;
+
   return (
     <>
       <Script
@@ -33,8 +53,18 @@ export function GoogleAnalytics() {
         {`
 window.dataLayer = window.dataLayer || [];
 function gtag(){dataLayer.push(arguments);}
+gtag('consent', 'default', {
+  ad_storage: 'denied',
+  ad_user_data: 'denied',
+  ad_personalization: 'denied',
+  analytics_storage: 'granted'
+});
 gtag('js', new Date());
-gtag('config', '${GA_MEASUREMENT_ID}');
+gtag('config', '${GA_MEASUREMENT_ID}', {
+  allow_google_signals: false,
+  allow_ad_personalization_signals: false,
+  cookie_expires: ${GA_COOKIE_MAX_AGE_SECONDS}
+});
         `}
       </Script>
     </>

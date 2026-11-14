@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useActionState } from "react";
-import Link from "next/link";
+import Link from "@/components/Link";
 import type { ProductFormState } from "@/app/admin/(protected)/products/actions";
 import { generateProductSku } from "@/app/admin/(protected)/products/actions";
 import type { AdminProduct } from "@/lib/queries/adminProducts";

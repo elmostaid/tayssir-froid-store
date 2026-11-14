@@ -1,9 +1,9 @@
-import Image from "next/image";
-import Link from "next/link";
+import Link from "@/components/Link";
 import type { CatalogProduct } from "@/lib/types";
 import { resolveProductImageUrl } from "@/lib/storage/resolveProductImageUrl";
 import { formatMad } from "@/lib/format";
 import { ProductCardActions } from "@/components/ProductCardActions";
+import { ProductImage } from "@/components/ProductImage";
 
 // مكوّن خادمي async (نمط Next.js App Router قياسي): يحل رابط الصورة من جهة
 // الخادم (محلي للصور القديمة، أو Supabase Storage الحقيقي للصور المرفوعة
@@ -16,9 +16,16 @@ export async function ProductCard({
   hasVariants = false,
   whatsappNumber,
   priority = false,
+  displayImageUrl = null,
 }: {
   product: CatalogProduct;
   imageUrl: string | null;
+  /**
+   * صورة عرضٍ خاصة بهذه البطاقة وحدها (قسم «الأكثر طلباً»، تُختار من لوحة
+   * الإدارة). تُغيّر ما يُرى على البطاقة فقط: السلة وصفحة المنتج تبقى على
+   * صورة المنتج (`imageUrl`). لا نسخ WebP لها — تُرفع مصغَّرة أصلاً.
+   */
+  displayImageUrl?: string | null;
   hasVariants?: boolean;
   whatsappNumber: string;
   /**
@@ -29,7 +36,8 @@ export async function ProductCard({
   priority?: boolean;
 }) {
   const isUnavailable = product.status === "out_of_stock" || product.stock_quantity <= 0;
-  const resolvedImageUrl = imageUrl ? await resolveProductImageUrl(imageUrl) : null;
+  const shownImagePath = displayImageUrl ?? imageUrl;
+  const resolvedImageUrl = shownImagePath ? await resolveProductImageUrl(shownImagePath) : null;
 
   return (
     <div className="flex flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white transition-shadow hover:shadow-md">
@@ -37,14 +45,17 @@ export async function ProductCard({
         href={`/product/${product.slug}`}
         className="group relative block aspect-square w-full bg-neutral-100"
       >
-        {resolvedImageUrl ? (
-          <Image
-            src={resolvedImageUrl}
+        {resolvedImageUrl && shownImagePath ? (
+          // `fill` السابق كان يضبط الموضع المطلق بنفسه؛ هنا نكتبه صراحةً
+          // فالبطاقة مربّعة (aspect-square) ولا يتغيّر تخطيطها بحرف واحد.
+          <ProductImage
+            storagePath={shownImagePath}
+            resolvedSrc={resolvedImageUrl}
+            widths={displayImageUrl ? null : undefined}
             alt={product.name_ar}
-            fill
             sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 220px"
-            className="object-cover object-center transition-transform group-hover:scale-[1.03]"
-            {...(priority ? { priority: true } : { loading: "lazy" as const })}
+            priority={priority}
+            className="absolute inset-0 h-full w-full object-cover object-center transition-transform group-hover:scale-[1.03]"
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-xs text-neutral-400">

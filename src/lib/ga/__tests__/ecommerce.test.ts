@@ -3,9 +3,9 @@ import {
   trackGaViewItem,
   trackGaAddToCart,
   trackGaBeginCheckout,
-  trackGaPurchase,
   __resetGaQueueForTests,
 } from "@/lib/ga/ecommerce";
+import * as ecommerceModule from "@/lib/ga/ecommerce";
 
 function mockGtag() {
   const fn = vi.fn();
@@ -96,22 +96,14 @@ describe("GA4 ecommerce — أحداث فقط، بالقيم والمنتجات 
     expect(gtag.mock.calls[0][2].value).toBe(40);
   });
 
-  test("purchase: transaction_id ومجموع وعملة MAD وكل المنتجات", () => {
-    const gtag = mockGtag();
-    trackGaPurchase({
-      transactionId: "TF-2026-0042",
-      items: [{ sku: "A", name: "أ", price: 100, quantity: 3 }],
-      value: 300,
-    });
-
-    const [, name, params] = gtag.mock.calls[0];
-    expect(name).toBe("purchase");
-    expect(params).toEqual({
-      transaction_id: "TF-2026-0042",
-      currency: "MAD",
-      value: 300,
-      items: [{ item_id: "A", item_name: "أ", price: 100, quantity: 3 }],
-    });
+  test("هذه الطبقة لا تملك purchase إطلاقاً", () => {
+    // كانت `trackGaPurchase` هنا، تُطلق "purchase" من المتصفح لحظة إرسال
+    // الطلب — أي بيعةٌ تُعلَن قبل أن يؤكّدها أحد، ومعها حرسٌ موهوم: تعليقها
+    // كان يقول إن GA4 تستبعد التكرار حسب `transaction_id`، وذلك سلوك
+    // Universal Analytics لا GA4. حُذفت، والشراء يُرسَل الآن من الخادم عند
+    // التأكيد (lib/pixel/sendDeferredPurchase.ts) بحرس `ga_purchase_sent_at`.
+    const api = ecommerceModule as Record<string, unknown>;
+    expect(api.trackGaPurchase).toBeUndefined();
   });
 
   test("لا يُرسَل أبداً config ولا js — أي page_view ثانٍ مستحيل من هذه الطبقة", () => {
@@ -119,9 +111,8 @@ describe("GA4 ecommerce — أحداث فقط، بالقيم والمنتجات 
     trackGaViewItem({ sku: "A", name: "أ", price: 1 });
     trackGaAddToCart({ sku: "A", name: "أ", price: 1, quantity: 1 });
     trackGaBeginCheckout({ items: [{ sku: "A", name: "أ", price: 1, quantity: 1 }] });
-    trackGaPurchase({ transactionId: "T1", items: [{ sku: "A", name: "أ", price: 1, quantity: 1 }] });
 
-    expect(gtag.mock.calls).toHaveLength(4);
+    expect(gtag.mock.calls).toHaveLength(3);
     for (const call of gtag.mock.calls) {
       expect(call[0]).toBe("event");
       expect(call[1]).not.toBe("page_view");

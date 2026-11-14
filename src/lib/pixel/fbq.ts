@@ -2,6 +2,13 @@
 // أي كود خادم (Server Component/Server Action). كل دالة هنا لا تفعل شيئاً
 // بصمت إذا لم يُحمَّل سكريبت Pixel بعد (NEXT_PUBLIC_META_PIXEL_ID غير مضبوط،
 // أو حاجب إعلانات، أو السكريبت لم يُنفَّذ بعد) — بلا أي استثناء يُسقط الصفحة.
+import { getOrderAttribution } from "@/lib/attribution/capture";
+import {
+  AD_CONSENT_EVENT,
+  isAdTrackingAllowed,
+  readAdConsentFromDocument,
+} from "@/lib/privacy/consent";
+
 declare global {
   interface Window {
     fbq?: (...args: unknown[]) => void;
@@ -23,14 +30,77 @@ export type PixelContentItem = {
   price: number;
 };
 
+/**
+ * آخر لمسة إعلانية محفوظة (أو الأولى إن غابت) — للـfbclid ولحظته.
+ *
+ * لا يرمي أبداً: التخزين المحلي قد يكون محجوباً، وفشل القياس لا يجوز أن
+ * يُعطّل تفاعلاً في الواجهة.
+ */
+function adTouch(): { fbclid: string | null; at: number } | null {
+  try {
+    const attribution = getOrderAttribution();
+    const touch = attribution?.last ?? attribution?.first ?? null;
+    if (!touch?.fbclid) return null;
+    return { fbclid: touch.fbclid, at: touch.at };
+  } catch {
+    return null;
+  }
+}
+
 function newEventId(): string {
   return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
     : `evt-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+/**
+ * تحميل Pixel — يُستدعى بعد الموافقة وحدها (PixelPageViewTracker).
+ *
+ * نفس شيفرة Meta الرسمية حرفياً، منقولة من سكريبت مضمَّن إلى دالة: تعرّف
+ * `fbq` طابوراً فوراً (فالأحداث قبل وصول fbevents.js لا تضيع) ثم تُنزّل
+ * المكتبة. مرة واحدة: وجود `window.fbq` يعني أنها حُمّلت.
+ */
+export function ensureMetaPixelLoaded(pixelId: string): void {
+  if (typeof window === "undefined" || typeof document === "undefined") return;
+  if (typeof window.fbq === "function") return;
+  if (!isAdTrackingAllowed(readAdConsentFromDocument())) return;
+  type FbqStub = ((...args: unknown[]) => void) & {
+    callMethod?: (...args: unknown[]) => void;
+    queue: unknown[][];
+    push: FbqStub;
+    loaded: boolean;
+    version: string;
+  };
+  const stub = function (...args: unknown[]) {
+    if (stub.callMethod) stub.callMethod(...args);
+    else stub.queue.push(args);
+  } as FbqStub;
+  stub.push = stub;
+  stub.loaded = true;
+  stub.version = "2.0";
+  stub.queue = [];
+  window.fbq = stub;
+  (window as unknown as { _fbq?: FbqStub })._fbq ??= stub;
+  const script = document.createElement("script");
+  script.async = true;
+  script.src = "https://connect.facebook.net/en_US/fbevents.js";
+  document.head.appendChild(script);
+  stub("init", pixelId);
+}
+
+// سحب الموافقة في نفس الصفحة: Pixel المحمَّل يُبلَّغ بالسحب أيضاً (واجهة
+// Meta الرسمية `fbq('consent', 'revoke')`)، لا الصمت من جهتنا وحده.
+if (typeof window !== "undefined") {
+  window.addEventListener(AD_CONSENT_EVENT, (event) => {
+    if ((event as CustomEvent<string>).detail === "granted") return;
+    if (typeof window.fbq === "function") window.fbq("consent", "revoke");
+  });
+}
+
 function callFbq(eventName: string, params: Record<string, unknown>, eventId: string): void {
   if (typeof window === "undefined" || typeof window.fbq !== "function") return;
+  // من سحب موافقته في نفس الصفحة: Pixel محمَّل، لكن لا حدث بعد السحب.
+  if (!isAdTrackingAllowed(readAdConsentFromDocument())) return;
   window.fbq("track", eventName, params, { eventID: eventId });
 }
 
@@ -39,10 +109,19 @@ function callFbq(eventName: string, params: Record<string, unknown>, eventId: st
 // لا يظهر للزبون إطلاقاً ولا يؤثِّر على fbq() نفسها (نُفِّذت أصلاً قبله).
 function relayToCapi(eventName: string, eventId: string, customData: Record<string, unknown>): void {
   if (typeof window === "undefined" || typeof fetch !== "function") return;
+  // الخادم يرفض بلا موافقة على أي حال (api/pixel-events)؛ هنا نتفادى الطلب.
+  if (!isAdTrackingAllowed(readAdConsentFromDocument())) return;
+  // الـfbclid يُمرَّر مع كل حدث لسبب واحد: `fbc` على الخادم كان يُقرأ من
+  // كوكي `_fbc` فقط، وهي كوكي تكتبها Meta Pixel نفسها. فإذا حُجبت الـPixel
+  // وصل الحدث بلا إسناد لأي إعلان ولم يظهر في تقارير الحملة. والقيمة محفوظة
+  // عندنا أصلاً (lib/attribution)، فنُعطيها للخادم ليبنيها عند غياب الكوكي.
+  const touch = adTouch();
   const body = JSON.stringify({
     eventName,
     eventId,
     eventSourceUrl: window.location.href,
+    fbclid: touch?.fbclid ?? undefined,
+    fbclidAt: touch?.at ?? undefined,
     customData,
   });
   fetch(CAPI_RELAY_URL, {
@@ -151,4 +230,36 @@ export function trackPurchase(params: { items: PixelContentItem[]; value: number
     },
     params.eventId
   );
+}
+
+/**
+ * ضغط "أكّد طلبي على واتساب" من صفحة نجاح الطلب.
+ *
+ * حدث مخصَّص لا قياسي: `Lead` يُصنَّف عند Meta أعلى القُمع فتُحسِّن لكمية
+ * رخيصة، والزبون هنا عمّر النموذج وحُفظ له طلب حقيقي بثمن. وليس `Purchase`
+ * قطعاً — تلك إشارة التأكيد التجاري وتُرسَل من الخادم وحده.
+ *
+ * `eventId` مشتقّ من مرجع الطلب لا عشوائي: الزر قد يُضغط مرتين (الزبون
+ * يعود من واتساب فيضغط ثانيةً)، ومعرّف ثابت يجعل Meta تعتبرهما حدثاً واحداً.
+ *
+ * والإرسال "أفضل مجهود" مع `keepalive` لأن الصفحة تغادر إلى واتساب فوراً
+ * بعده — انظر relayToCapi.
+ */
+export function trackConfirmOnWhatsApp(params: {
+  items: PixelContentItem[];
+  value: number;
+  /** مرجع الطلب (TF-YYYY-NNNN) — يُشتقّ منه event_id ثابت. */
+  orderReference: string;
+}): void {
+  const eventId = `confirm-wa:${params.orderReference}`;
+  const customData = {
+    content_ids: params.items.map((i) => i.sku),
+    content_type: CONTENT_TYPE,
+    contents: contentsFromItems(params.items),
+    num_items: params.items.reduce((sum, i) => sum + i.quantity, 0),
+    currency: CURRENCY,
+    value: params.value,
+  };
+  callFbq("ConfirmOnWhatsApp", customData, eventId);
+  relayToCapi("ConfirmOnWhatsApp", eventId, customData);
 }
