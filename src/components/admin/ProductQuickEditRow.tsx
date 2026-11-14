@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/Link";
 import { useActionState, useState, useTransition } from "react";
 import { isPubliclyVisibleStatus } from "@/lib/catalog/visibility";
 import type { ProductFormState } from "@/app/admin/(protected)/products/actions";

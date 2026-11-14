@@ -1,6 +1,6 @@
 import { displayCustomerAddress } from "@/lib/orders/customerAddress";
 import { describeTouch } from "@/lib/attribution/types";
-import Link from "next/link";
+import Link from "@/components/Link";
 import { notFound, redirect } from "next/navigation";
 import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import { getEditableOrderLines } from "@/lib/queries/adminProductSearch";

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/Link";
 import { getPreviewCategories, getPreviewProducts } from "@/lib/previewCatalog";
 import { PreviewProductCard } from "@/components/preview/PreviewProductCard";
 

@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { getSiteUrl, isProductionDeployment } from "@/lib/siteUrl";
+import { NON_CUSTOMER_CRAWLERS, PRODUCTION_DISALLOW } from "@/lib/robotsRules";
 
 // نمنع الفهرسة افتراضياً (Preview على Vercel، التطوير المحلي، أو أي بيئة لم
 // تُؤكَّد بعد كـ Production حقيقي) ولا نسمح بها إلا في نشر Vercel Production
@@ -16,11 +17,17 @@ export default function robots(): MetadataRoute.Robots {
 
   if (allowIndexing) {
     return {
-      rules: {
-        userAgent: "*",
-        allow: "/",
-        disallow: ["/admin"],
-      },
+      rules: [
+        {
+          userAgent: "*",
+          allow: "/",
+          disallow: PRODUCTION_DISALLOW,
+        },
+        {
+          userAgent: NON_CUSTOMER_CRAWLERS,
+          disallow: "/",
+        },
+      ],
       sitemap: siteUrl ? `${siteUrl}/sitemap.xml` : undefined,
     };
   }

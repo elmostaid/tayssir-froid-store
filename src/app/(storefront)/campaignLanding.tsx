@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/Link";
 import { getProducts, getProductIdsWithVariants } from "@/lib/queries/catalog";
 import type { CatalogProduct } from "@/lib/types";
 import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";

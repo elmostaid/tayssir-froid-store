@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/Link";
 import type { CatalogProduct } from "@/lib/types";
 import { resolveProductImageUrl } from "@/lib/storage/resolveProductImageUrl";
 import { formatMad } from "@/lib/format";

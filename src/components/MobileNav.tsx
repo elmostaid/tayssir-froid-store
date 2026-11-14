@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import Link from "next/link";
+import Link from "@/components/Link";
 import type { Category } from "@/lib/types";
 import { WhatsAppInquiryLink } from "@/components/WhatsAppInquiryLink";
 

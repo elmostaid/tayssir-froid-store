@@ -13,7 +13,7 @@ import { getExpensesTotal } from "@/lib/queries/adminExpenses";
 import { expenseCategoryLabel } from "@/lib/expenses/expenseCategories";
 import { formatMad } from "@/lib/format";
 import { deliveryMargin } from "@/lib/orders/deliveryCost";
-import Link from "next/link";
+import Link from "@/components/Link";
 import { inBatches, loadSection } from "@/lib/admin/sectionData";
 import {
   CANCELLATION_REASON_LABELS,

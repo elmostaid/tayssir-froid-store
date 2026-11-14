@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import Link from "next/link";
+import Link from "@/components/Link";
 import { usePathname } from "next/navigation";
 import { signOutAdmin } from "@/app/admin/actions";
 import type { AdminRole } from "@/lib/auth/requireAdmin";

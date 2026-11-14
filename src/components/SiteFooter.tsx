@@ -1,6 +1,6 @@
 import Image from "next/image";
 import { WhatsAppInquiryLink } from "@/components/WhatsAppInquiryLink";
-import Link from "next/link";
+import Link from "@/components/Link";
 import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
 import { safeQuery } from "@/lib/safeQuery";
 import { DELIVERY_AVAILABILITY, DELIVERY_COST_TIMING } from "@/lib/delivery";

@@ -1,5 +1,5 @@
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/components/Link";
 import { CartProvider } from "@/components/CartProvider";
 import { PreviewCartBadge } from "@/components/preview/PreviewCartBadge";
 

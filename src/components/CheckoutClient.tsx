@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import Link from "next/link";
+import Link from "@/components/Link";
 import { useCart } from "@/components/CartProvider";
 import { formatMad } from "@/lib/format";
 import { cartItemKey } from "@/lib/cart/cartMath";

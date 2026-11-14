@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/Link";
 import { ProductImage } from "@/components/ProductImage";
 import { CARD_WIDTHS, THUMB_WIDTHS } from "@/lib/images/variants";
 import type { CampaignTab } from "@/app/(storefront)/campaignLanding";

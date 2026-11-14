@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/Link";
 import { useCart } from "@/components/CartProvider";
 import { cartItemKey, snapQuantity } from "@/lib/cart/cartMath";
 import { resolveImageUrl } from "@/lib/images";
