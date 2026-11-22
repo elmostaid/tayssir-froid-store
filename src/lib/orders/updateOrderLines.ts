@@ -207,13 +207,45 @@ export async function updateOrderLines(
         await recordStockMovement(trx, target, input.orderId, -delta, "manual_adjustment");
       }
 
+      // ثمن الشراء التاريخي يبقى كما سُجِّل يوم أُضيفت القطعة إلى الطلب.
+      //
+      // السطور تُحذف وتُعاد كتابتها أسفله، و`nextLines` تحمل ثمن الشراء
+      // **الحالي** من الكتالوغ (resolveOrderLines). بدون هذا، أي تعديل لكمية
+      // أو ثمن بيع كان يستبدل تكلفة يوم الطلب بتكلفة يوم التعديل، فيتغيّر ربح
+      // الطلب القديم بأثر رجعي كلما تغيّر ثمن الشراء في الكتالوغ.
+      //
+      // القطعة الموجودة سابقاً تحتفظ بقيمتها المحفوظة حرفياً — حتى `null`
+      // (طلب سبق حفظ التكلفة): كتابة ثمن اليوم مكانها كانت ستقدّمه تاريخياً
+      // مؤكَّداً، بينما صفحة الطلب تعرضه تقديراً موسوماً. القطعة الجديدة
+      // وحدها تأخذ ثمن اليوم، لأن اليوم هو فعلاً يوم إضافتها.
+      const savedCosts = await trx<
+        { product_id: number | null; variant_id: number | null; purchase_price_snapshot: string | null }[]
+      >`
+        select product_id, variant_id, purchase_price_snapshot from public.order_items
+        where order_id = ${input.orderId}
+        order by (purchase_price_snapshot is null), id
+      `;
+      const historicalCost = new Map<string, number | null>();
+      for (const row of savedCosts) {
+        const key = stockKey(row.product_id, row.variant_id);
+        if (historicalCost.has(key)) continue;
+        historicalCost.set(
+          key,
+          row.purchase_price_snapshot === null ? null : Number(row.purchase_price_snapshot)
+        );
+      }
+
       await trx`delete from public.order_items where order_id = ${input.orderId}`;
       for (const line of nextLines) {
-        const reason = unreserved.get(stockKey(line.productId, line.variantId)) ?? null;
+        const key = stockKey(line.productId, line.variantId);
+        const reason = unreserved.get(key) ?? null;
+        const stored = historicalCost.has(key)
+          ? { ...line, purchasePriceSnapshot: historicalCost.get(key) ?? null }
+          : line;
         await insertOrderItem(
           trx,
           input.orderId,
-          line,
+          stored,
           reason === null ? "reserved" : "out_of_stock",
           reason
         );

@@ -117,7 +117,7 @@ export function OrderProfitPanel({
         </dd>
 
         <dt className="border-t border-neutral-200 pt-1.5 font-semibold text-neutral-800">
-          الربح بعد المصاريف المعروفة
+          الربح بعد التوصيل
         </dt>
         <dd className="border-t border-neutral-200 pt-1.5 text-left tabular-nums">
           {profit.netProfitMad === null ? (
@@ -176,9 +176,12 @@ export function OrderProfitPanel({
         )}
         {profit.deliveryCostMad === null && (
           <p className="text-neutral-500">
-            سجّل تكلفة التوصيل الفعلية أسفل قسم المنتجات ليكتمل الربح بعد المصاريف.
+            سجّل تكلفة التوصيل الفعلية أسفل قسم المنتجات ليكتمل الربح بعد التوصيل.
           </p>
         )}
+        <p className="font-semibold text-neutral-600">
+          ليس ربحاً صافياً نهائياً: تكلفة الإعلانات والمصاريف العامة غير محسوبة هنا.
+        </p>
         <p className="text-neutral-400">
           للمتابعة الداخلية فقط. التقارير تحسب الطلبات المسلَّمة وحدها، وهذا الرقم لا يُضاف إليها.
         </p>
