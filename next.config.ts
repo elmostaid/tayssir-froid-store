@@ -25,6 +25,9 @@ function supabaseStorageRemotePattern(): NonNullable<NextConfig["images"]>["remo
 }
 
 const nextConfig: NextConfig = {
+  // قارئ فواتير التوصيل (pdfjs-dist) يُحمَّل بـrequire عادي على الخادم بدل
+  // تجميعه: الحزمة تحمّل وحدة الـworker ديناميكياً، والتجميع يكسر ذلك.
+  serverExternalPackages: ["pdfjs-dist"],
   // مسارات توليد PDF (بون التحضير ووصل الزبون) تقرأ ملفات الخط العربي محلياً
   // عبر path.join(process.cwd(), ...) وقت التشغيل بدل import ثابت، وقد لا
   // يكتشفها تتبّع الملفات التلقائي لـVercel دائماً — نضمن تضمينها صراحةً.

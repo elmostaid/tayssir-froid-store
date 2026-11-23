@@ -1,0 +1,91 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
+import { parseMadToCents } from "@/lib/settlements/money";
+import {
+  applySettlements,
+  markInvoiceBankReceived,
+  rollbackInvoice,
+} from "@/lib/settlements/settlementStore";
+
+/**
+ * إجراءات صفحة «تسويات التوصيل». كلها لصاحب الحساب وحده، وكلها تُعيد التحقق
+ * من الصلاحية من جهة الخادم (إخفاء الرابط في القائمة ليس حماية).
+ *
+ * لا شيء هنا يستدعي `updateOrderStatus` ولا `sendDeferredPurchase`: التسليم من
+ * فاتورة توصيل لا يُرسل Purchase إلى Meta.
+ */
+
+async function requireOwner() {
+  const admin = await getAdminUser();
+  if (!admin) redirect("/admin/login");
+  if (!isOwnerAdmin(admin)) redirect("/admin/orders");
+  return admin;
+}
+
+function ids(formData: FormData, key: string): number[] {
+  return formData
+    .getAll(key)
+    .map((v) => Number(v))
+    .filter((n) => Number.isInteger(n) && n > 0);
+}
+
+function revalidateOrders() {
+  revalidatePath("/admin/settlements");
+  revalidatePath("/admin/orders");
+  revalidatePath("/admin/reports");
+}
+
+export async function applySettlementsAction(formData: FormData) {
+  const admin = await requireOwner();
+  const readyOrderIds = ids(formData, "ready");
+  const approvedOrderIds = ids(formData, "approve");
+  if (readyOrderIds.length === 0 && approvedOrderIds.length === 0) {
+    redirect("/admin/settlements?notice=none");
+  }
+  let applied = 0;
+  let skipped = 0;
+  let failure: string | null = null;
+  try {
+    const res = await applySettlements({ readyOrderIds, approvedOrderIds, actor: admin.email });
+    applied = res.applied.length;
+    skipped = res.skipped.length;
+  } catch (error) {
+    console.error("applySettlementsAction", error);
+    failure = error instanceof Error ? error.message : "تعذّر التطبيق.";
+  }
+  revalidateOrders();
+  if (failure) redirect(`/admin/settlements?error=${encodeURIComponent(failure)}`);
+  redirect(`/admin/settlements?applied=${applied}&skipped=${skipped}`);
+}
+
+export async function rollbackInvoiceAction(formData: FormData) {
+  const admin = await requireOwner();
+  const invoiceId = Number(formData.get("invoiceId"));
+  if (!Number.isInteger(invoiceId) || invoiceId <= 0) redirect("/admin/settlements");
+  const res = await rollbackInvoice(invoiceId, admin.email);
+  revalidateOrders();
+  if (!res.ok) redirect(`/admin/settlements/${invoiceId}?error=${encodeURIComponent(res.error ?? "")}`);
+  const kept = res.kept.map((k) => `${k.orderNumber}: ${k.detail}`).join("\n");
+  redirect(
+    `/admin/settlements/${invoiceId}?rolledBack=${res.revertedOrders.length}` +
+      (kept ? `&kept=${encodeURIComponent(kept.slice(0, 1500))}` : "")
+  );
+}
+
+export async function markBankAction(formData: FormData) {
+  const admin = await requireOwner();
+  const invoiceId = Number(formData.get("invoiceId"));
+  if (!Number.isInteger(invoiceId) || invoiceId <= 0) redirect("/admin/settlements");
+  const clear = formData.get("clear") === "1";
+  const cents = clear ? null : parseMadToCents(String(formData.get("amount") ?? ""));
+  if (!clear && (cents === null || cents < 0)) {
+    redirect(`/admin/settlements/${invoiceId}?error=${encodeURIComponent("المبلغ غير صالح.")}`);
+  }
+  await markInvoiceBankReceived(invoiceId, cents, admin.email);
+  revalidatePath("/admin/settlements");
+  revalidatePath(`/admin/settlements/${invoiceId}`);
+  redirect(`/admin/settlements/${invoiceId}`);
+}

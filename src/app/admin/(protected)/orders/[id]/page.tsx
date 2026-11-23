@@ -24,6 +24,8 @@ import { DeleteOrderButton } from "@/components/admin/DeleteOrderButton";
 import { RetryPurchaseButton } from "@/components/admin/RetryPurchaseButton";
 import { CopyDeliveryInfoButton } from "@/components/admin/CopyDeliveryInfoButton";
 import { OrderProfitPanel } from "@/components/admin/OrderProfitPanel";
+import { CarrierSettlementNote } from "@/components/admin/settlements/CarrierSettlementNote";
+import { getOrderSettlement } from "@/lib/settlements/settlementStore";
 import { buildCustomerWhatsAppLink } from "@/lib/whatsapp";
 import { toInternationalDigits } from "@/lib/phone";
 import { getSettings, FALLBACK_SETTINGS } from "@/lib/queries/settings";
@@ -45,12 +47,16 @@ export default async function AdminOrderDetailPage({ params }: Props) {
   if (!order) notFound();
 
   const owner = isOwnerAdmin(admin);
-  const [items, history, settings, editableLines] = await Promise.all([
+  const [items, history, settings, editableLines, carrierSettlement] = await Promise.all([
     getAdminOrderItems(orderId),
     getAdminOrderStatusHistory(orderId),
     safeQuery(() => getSettings(), FALLBACK_SETTINGS, "adminOrderDetail.getSettings"),
     // ثمن الشراء داخل هذه السطور سرّي، فلا نجلبها أصلاً لغير Owner/Admin.
     owner ? getEditableOrderLines(orderId) : Promise.resolve([]),
+    // تسوية شركة التوصيل (إن وُجدت). safeQuery: غياب جداول التسويات لا يكسر صفحة الطلب.
+    owner
+      ? safeQuery(() => getOrderSettlement(orderId), null, "adminOrderDetail.getOrderSettlement")
+      : Promise.resolve(null),
   ]);
 
   const needsReviewItems = items.filter((item) => item.lineStatus !== "reserved");
@@ -367,6 +373,7 @@ export default async function AdminOrderDetailPage({ params }: Props) {
           actualDeliveryCost={order.actualDeliveryCost}
         />
       )}
+      {owner && carrierSettlement && <CarrierSettlementNote settlement={carrierSettlement} />}
 
       {owner && (
         <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-4">
