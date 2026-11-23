@@ -77,6 +77,10 @@ export type OrderVerdict = {
   reasons: string[];
   /** لماذا الثقة متوسطة لا عالية. */
   confidenceNotes: string[];
+  /** سبب المطابقة: الأدلة التي ربطت الكرطونات بهذه الطلبية، سطراً سطراً. */
+  evidence: string[];
+  /** معلَّمة مسبقاً للتطبيق؟ الثقة العالية وحدها — المتوسطة يختارها المالك. */
+  preselect: boolean;
   willSetDelivered: boolean;
   willSetCost: boolean;
   costConflict: boolean;
@@ -152,13 +156,54 @@ function cityOf(parcels: OpenParcel[], order: CandidateOrder): CityCheck {
   return "unknown";
 }
 
+function matchEvidence(
+  order: CandidateOrder,
+  parcels: OpenParcel[],
+  codCents: Cents,
+  city: CityCheck
+): string[] {
+  const out = ["الهاتف مطابق (آخر 9 أرقام)."];
+  if (order.finalTotalCents !== null) {
+    out.push(
+      codCents === order.finalTotalCents
+        ? `المحصَّل ${mad(codCents)} = المبلغ النهائي ديال الطلبية بالضبط.`
+        : `المحصَّل ${mad(codCents)} من ${mad(order.finalTotalCents)}.`
+    );
+  }
+  const created = dayNumber(order.createdAt);
+  const days = parcels
+    .map((p) => (p.pickupDate ? dayNumber(p.pickupDate) - created : null))
+    .filter((d): d is number => d !== null);
+  if (days.length > 0) {
+    const lo = Math.min(...days);
+    const hi = Math.max(...days);
+    out.push(`الاستلام من بعد الطلبية بـ${lo === hi ? lo : `${lo}–${hi}`} يوم.`);
+  }
+  out.push(
+    city === "match"
+      ? "المدينة مطابقة."
+      : city === "differ"
+        ? "المدينة مختلفة."
+        : "المدينة ما تقارناتش."
+  );
+  out.push(
+    order.cartonCount === null
+      ? `${parcels.length} كرطونة — العدد ما مسجلش فالطلبية.`
+      : `${parcels.length} من ${order.cartonCount} كرطونات المسجلة.`
+  );
+  return out;
+}
+
 export function judgeOrder(order: CandidateOrder, parcels: OpenParcel[]): OrderVerdict {
   const codCents = sum(parcels, "codCents");
   const feeCents = sum(parcels, "feeCents");
   const city = cityOf(parcels, order);
   const reasons: string[] = [];
   const confidenceNotes: string[] = [];
+  const evidence = matchEvidence(order, parcels, codCents, city);
   const base = {
+    evidence,
+    preselect: false,
     order,
     parcels,
     codCents,
@@ -242,14 +287,19 @@ export function judgeOrder(order: CandidateOrder, parcels: OpenParcel[]): OrderV
       `تكلفة التوصيل المسجلة بيدك ${mad(order.actualDeliveryCostCents!)} والفاتورة ${mad(feeCents)} — كتبقى ديالك حتى توافق.`
     );
 
-  if (known === null) confidenceNotes.push("عدد الكرطونات ما مسجلش فالطلبية، فالمبلغ وحده هو الدليل.");
+  if (known === null)
+    confidenceNotes.push(
+      "عدد الكرطونات ما مسجلش فالطلبية: ممكن تكون كرطونة بلا تحصيل مازال ما وصلاتش. سجّل العدد فصفحة الطلبية باش تولي الثقة عالية، ولا اختارها بيدك إلا كنتي متأكد."
+    );
   if (city === "unknown") confidenceNotes.push("المدينة ما قدرتش تتقارن.");
   const confidence: Confidence = known !== null && city === "match" ? "high" : "medium";
 
+  const kind: OrderVerdictKind = reasons.length > 0 ? "decide" : "ready";
   return {
     ...base,
-    kind: reasons.length > 0 ? "decide" : "ready",
+    kind,
     confidence,
+    preselect: kind === "ready" && confidence === "high",
     willSetDelivered: order.status !== "delivered",
     willSetCost: order.actualDeliveryCostCents === null || costConflict,
     costConflict,

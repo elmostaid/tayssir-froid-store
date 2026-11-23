@@ -19,6 +19,7 @@ import { OrderStatusForm } from "@/components/admin/OrderStatusForm";
 import { OrderNoteForm } from "@/components/admin/OrderNoteForm";
 import { DeliveryFeeForm } from "@/components/admin/DeliveryFeeForm";
 import { ActualDeliveryCostForm } from "@/components/admin/ActualDeliveryCostForm";
+import { CartonCountForm } from "@/components/admin/CartonCountForm";
 import { CopyBonButton } from "@/components/admin/CopyBonButton";
 import { DeleteOrderButton } from "@/components/admin/DeleteOrderButton";
 import { RetryPurchaseButton } from "@/components/admin/RetryPurchaseButton";
@@ -335,6 +336,13 @@ export default async function AdminOrderDetailPage({ params }: Props) {
           <div className="mt-2 flex items-center justify-between border-t border-neutral-200 pt-2 text-base font-bold">
             <span>المبلغ الإجمالي عند الاستلام</span>
             <span className="text-brand-orange">{formatMad(order.finalTotal)}</span>
+          </div>
+        )}
+
+        {/* عدد الكرطونات: اختياري، يُعرف بعد التغليف — للخدامة والمالك معاً. */}
+        {!editLockedReason && (
+          <div className="mt-4 border-t border-neutral-200 pt-4">
+            <CartonCountForm orderId={order.id} current={order.cartonCount} />
           </div>
         )}
 

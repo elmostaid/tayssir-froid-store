@@ -48,13 +48,25 @@ describe("محرّك المطابقة", () => {
       willSetDelivered: true,
       willSetCost: true,
     });
-    expect(r.orders[0].confidenceNotes.join()).toMatch(/عدد الكرطونات/);
+    expect(r.orders[0].confidenceNotes.join()).toMatch(/كرطونة بلا تحصيل/);
+    // الثقة المتوسطة لا تُعلَّم مسبقاً — المالك يختارها.
+    expect(r.orders[0].preselect).toBe(false);
+    expect(r.orders[0].evidence.join("\n")).toMatch(/الهاتف مطابق/);
+    expect(r.orders[0].evidence.join("\n")).toMatch(/بالضبط/);
+    expect(r.orders[0].evidence.join("\n")).toMatch(/بعد الطلبية بـ2 يوم/);
   });
 
   it("عدد الكرطونات مسجَّل ومطابق والمدينة مطابقة → ثقة عالية", () => {
     const o = order({ finalTotalCents: 140000, cartonCount: 2 });
     const r = matchParcels([parcel({ codCents: 70000 }), parcel({ codCents: 70000, feeCents: 9000 })], [o]);
-    expect(r.orders[0]).toMatchObject({ kind: "ready", confidence: "high", feeCents: 12500 });
+    expect(r.orders[0]).toMatchObject({ kind: "ready", confidence: "high", feeCents: 12500, preselect: true });
+    expect(r.orders[0].evidence.join("\n")).toMatch(/2 من 2 كرطونات/);
+  });
+
+  it("تحتاج قراراً لا تُعلَّم مسبقاً حتى لو كانت ثقتها عالية", () => {
+    const o = order({ finalTotalCents: 63500, cartonCount: 1, actualDeliveryCostCents: 2000 });
+    const r = matchParcels([parcel({ codCents: 63500 })], [o]);
+    expect(r.orders[0]).toMatchObject({ kind: "decide", confidence: "high", preselect: false });
   });
 
   it("6 كرطونات × 718 = 4,308 → مكتملة بمجموع رسوم الست", () => {

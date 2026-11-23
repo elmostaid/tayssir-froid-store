@@ -120,6 +120,8 @@ beforeAll(async () => {
   await seedOrder("C", { phone: phone(3), city: "سطيحات", total: 1400, fee: 70, cost: 20 });
   await seedOrder("D", { phone: phone(4), city: "فاس", total: 500 });
   await seedOrder("E", { phone: phone(5), city: "Fes", total: 4308, cartons: 6 });
+  // F: تُسوّى بالفاتورة 2 الأحدث وحدها — التراجع عن الفاتورة 1 لا يجوز أن يمسّها.
+  await seedOrder("F", { phone: phone(6), city: "ارفود", total: 931 });
 });
 
 afterAll(async () => {
@@ -254,14 +256,16 @@ describe("تسوية فواتير التوصيل — المسار الكامل �
   test("فاتورة 2 تحمل الكرطونة الباقية: الطلبية الموزعة تكتمل بمجموع رسوم الفاتورتين", async () => {
     await upload(`FCT-${RUN}-2`, [
       { code: code("B3"), pickup: "2026-11-20", phone: phone(2), cityLines: ["Tarfaya"], cod: 280, fee: 35 },
+      { code: code("F1"), pickup: "2026-11-20", phone: phone(6), cityLines: ["Erfoud"], cod: 931, fee: 40 },
     ]);
     const v = await verdictFor(orders.B);
     expect(v).toMatchObject({ kind: "ready", codCents: 211000, feeCents: 10500 });
     expect(new Set(v!.parcels.map((p) => p.invoiceNumber))).toEqual(new Set([`FCT-${RUN}-1`, `FCT-${RUN}-2`]));
 
-    const res = await store.applySettlements({ readyOrderIds: [orders.B], approvedOrderIds: [], actor: ACTOR });
-    expect(res.applied).toHaveLength(1);
+    const res = await store.applySettlements({ readyOrderIds: [orders.B, orders.F], approvedOrderIds: [], actor: ACTOR });
+    expect(res.applied).toHaveLength(2);
     expect(await orderState(orders.B)).toMatchObject({ status: "delivered", actual_delivery_cost: "105.00" });
+    expect(await orderState(orders.F)).toMatchObject({ status: "delivered", actual_delivery_cost: "40.00" });
   });
 
   test("التراجع عن الفاتورة 1 يعكس كل ما بُني عليها — ومنها B التي اكتملت بالفاتورة 2", async () => {
@@ -279,6 +283,17 @@ describe("تسوية فواتير التوصيل — المسار الكامل �
     // الحالة رجعت، والتكلفة التي عدّلها المالك بعدنا بقيت.
     expect(await orderState(orders.E)).toMatchObject({ status: "shipped", actual_delivery_cost: "199.00" });
     expect(r.kept.map((k) => k.detail).join()).toMatch(/تكلفة التوصيل تبدلات/);
+
+    // F سُوّيت بالفاتورة 2 الأحدث وحدها: لا حالتها ولا تكلفتها ولا تسويتها تتأثر.
+    expect(await orderState(orders.F)).toMatchObject({ status: "delivered", actual_delivery_cost: "40.00" });
+    const [fSettlement] = await sql<{ reverted_at: Date | null }[]>`
+      select reverted_at from public.carrier_order_settlements where order_id = ${orders.F}
+    `;
+    expect(fSettlement.reverted_at).toBeNull();
+    const [{ n: fHist }] = await sql<{ n: number }[]>`
+      select count(*)::int as n from public.order_status_history where order_id = ${orders.F}
+    `;
+    expect(fHist).toBe(1);
 
     // كرطونة الفاتورة 2 عادت مفتوحة، فـB تنتظر من جديد 1,830 الناقصة.
     expect(await verdictFor(orders.B)).toMatchObject({ kind: "waiting", missingCents: 183000 });
@@ -332,7 +347,7 @@ describe("تسوية فواتير التوصيل — المسار الكامل �
     expect(deferredSpy).not.toHaveBeenCalled();
     expect(await stock()).toBe(stockBefore);
     expect(await itemsSnapshot()).toEqual(itemsBefore);
-    for (const key of ["A", "B", "C", "D", "E"]) {
+    for (const key of ["A", "B", "C", "D", "E", "F"]) {
       const o = await orderState(orders[key]);
       expect(Number(o.items_subtotal) + Number(o.delivery_fee)).toBe(Number(o.final_total));
     }

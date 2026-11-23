@@ -6,6 +6,7 @@ import { computeOrderProfit } from "@/lib/orders/orderProfit";
 import type { OrderVerdict } from "@/lib/settlements/matching";
 import { computeBoard, listInvoices, loadProfitLines } from "@/lib/settlements/settlementStore";
 import { PendingSubmit } from "@/components/admin/settlements/PendingSubmit";
+import { ApplyButton, SelectAll } from "@/components/admin/settlements/SelectionControls";
 import { applySettlementsAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -74,8 +75,18 @@ function OrderLine({
           ))}
         </ul>
       )}
-      {v.kind === "ready" && v.confidenceNotes.length > 0 && (
-        <p className="mt-1 text-[11px] text-neutral-500">{v.confidenceNotes.join(" ")}</p>
+      {(v.kind === "ready" || v.kind === "decide") && v.confidenceNotes.length > 0 && (
+        <p className="mt-1 text-[11px] text-amber-800">{v.confidenceNotes.join(" ")}</p>
+      )}
+      {(v.kind === "ready" || v.kind === "decide") && (
+        <details className="mt-1 text-[11px] text-neutral-500">
+          <summary className="cursor-pointer select-none">علاش تطابقات؟</summary>
+          <ul className="mt-1 list-disc ps-4">
+            {v.evidence.map((e) => (
+              <li key={e}>{e}</li>
+            ))}
+          </ul>
+        </details>
       )}
       {v.parcels.some((p) => p.invoiceId !== v.parcels[0].invoiceId) && (
         <p className="mt-1 text-[11px] text-neutral-500">
@@ -133,6 +144,7 @@ export default async function SettlementsPage({ searchParams }: { searchParams: 
   };
 
   const readyProfit = ready.map(profitOf);
+  const readyHigh = ready.filter((v) => v.confidence === "high").length;
   const readyProfitKnown = readyProfit.every((p) => p !== null);
   const readyTotals = {
     cod: ready.reduce((s, v) => s + v.codCents, 0),
@@ -256,9 +268,16 @@ export default async function SettlementsPage({ searchParams }: { searchParams: 
               {!readyProfitKnown && (
                 <p className="mt-1 text-[11px] text-amber-700">* بعض الطلبيات ناقصها ثمن الشراء، ما دخلاتش فالمجموع.</p>
               )}
+              <p className="mt-2 text-xs text-neutral-600">
+                {readyHigh} بثقة عالية (معلَّمة) · {ready.length - readyHigh} بثقة متوسطة (ما معلَّماش — راجعها
+                واختارها).
+              </p>
+              <div className="mt-2">
+                <SelectAll name="ready" label={`اختار جميع الجاهزة (${ready.length})`} />
+              </div>
               <ul className="mt-2">
                 {ready.map((v, i) => (
-                  <OrderLine key={v.order.id} v={v} profit={readyProfit[i]} input={{ name: "ready", checked: true }} />
+                  <OrderLine key={v.order.id} v={v} profit={readyProfit[i]} input={{ name: "ready", checked: v.preselect }} />
                 ))}
               </ul>
             </>
@@ -283,12 +302,7 @@ export default async function SettlementsPage({ searchParams }: { searchParams: 
 
         {(ready.length > 0 || decide.length > 0) && (
           <div className="sticky bottom-0 z-10 -mx-4 mt-4 border-t border-neutral-200 bg-white/95 px-4 py-3 backdrop-blur">
-            <PendingSubmit
-              pendingText="كنطبّق…"
-              className="min-h-12 w-full rounded-full bg-brand-turquoise px-5 text-base font-bold text-white disabled:bg-neutral-300"
-            >
-              طبّق على الطلبيات المختارة
-            </PendingSubmit>
+            <ApplyButton />
           </div>
         )}
       </form>

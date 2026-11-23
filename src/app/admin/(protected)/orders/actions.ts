@@ -777,3 +777,36 @@ export async function importOrderDraftAction(
 
   return buildOrderDraft(parsed.value);
 }
+
+/**
+ * عدد الكرطونات — اختياري، يُعرف فقط بعد التغليف ولا يمنع إنشاء الطلب.
+ *
+ * فائدته في تسويات التوصيل: بدونه، مجموع مبالغ الكرطونات وحده هو الدليل على
+ * اكتمال الطلب (ثقة «متوسطة»، فقد تبقى كرطونة بلا تحصيل لم تصل). وبه تصير
+ * المطابقة «عالية» حين يصل العدد كاملاً بالمبلغ الكامل.
+ *
+ * متاح للخدامة أيضاً: من يغلّف هو من يعرف العدد، وليس حقلاً مالياً. الخانة
+ * الفارغة تعيده «غير مسجَّل» (NULL) لا صفراً.
+ */
+export async function updateCartonCount(
+  _prevState: OrderActionState,
+  formData: FormData
+): Promise<OrderActionState> {
+  const admin = await getAdminUser();
+  if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
+
+  const orderId = Number(formData.get("orderId"));
+  if (!orderId) return { error: "الطلب غير موجود." };
+
+  const raw = String(formData.get("cartonCount") ?? "").trim();
+  const count = raw === "" ? null : Number(raw);
+  if (count !== null && (!Number.isInteger(count) || count < 1 || count > 200)) {
+    return { error: "عدد الكرطونات خاصو يكون رقم صحيح بين 1 و200، ولا خليه فارغ." };
+  }
+
+  await sql`update public.orders set carton_count = ${count} where id = ${orderId}`;
+
+  revalidatePath(`/admin/orders/${orderId}`);
+  revalidatePath("/admin/settlements");
+  return { error: null };
+}
