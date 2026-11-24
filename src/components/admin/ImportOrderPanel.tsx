@@ -38,12 +38,22 @@ export function ImportOrderPanel({
   function read(json: string) {
     setErrors([]);
     startTransition(async () => {
-      const result = await importOrderDraftAction(json);
-      if (result.ok) {
-        setErrors([]);
-        onDraft(result.draft, result.warnings);
-      } else {
-        setErrors(result.errors);
+      // فشل الشبكة هنا كان يصعد إلى حدّ الخطأ ويُسقط صفحة الطلب كلها.
+      try {
+        const result = await importOrderDraftAction(json);
+        if (result.ok) {
+          setErrors([]);
+          onDraft(result.draft, result.warnings);
+        } else {
+          setErrors(result.errors);
+        }
+      } catch {
+        setErrors([
+          {
+            field: "network",
+            message: "تعذّر الاتصال بالخادم أثناء قراءة البون. تحقّق من الإنترنت وعاود المحاولة.",
+          },
+        ]);
       }
     });
   }

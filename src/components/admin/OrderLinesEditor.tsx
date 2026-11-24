@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState } from "react";
 import { formatMad } from "@/lib/format";
 import { searchProductsAction } from "@/app/admin/(protected)/orders/actions";
 import type { ProductSearchResult } from "@/lib/queries/adminProductSearch";
@@ -30,6 +30,10 @@ export type EditableLine = {
   reservedQuantity: number;
 };
 
+const SEARCH_DEBOUNCE_MS = 300;
+const SEARCH_OFFLINE_MESSAGE =
+  "تعذّر الاتصال بالخادم أثناء البحث (الإنترنت أو الخادم). المنتجات والمعلومات اللي دخلتي باقية — عاود المحاولة.";
+
 function Money({ value, muted }: { value: number; muted?: boolean }) {
   return (
     <span className={`tabular-nums ${muted ? "text-neutral-500" : "font-semibold text-neutral-800"}`}>
@@ -45,34 +49,81 @@ export function OrderLinesEditor({
   // صفحة تفاصيل الطلب تحمل أصلاً نموذجاً مستقلاً للتوصيل وحده. تسمية
   // مختلفة هنا تمنع أن يبدو الحقلان نفس الشيء مرتين على الشاشة نفسها.
   deliveryFeeLabel = "مصاريف التوصيل",
+  onChange,
 }: {
   initialLines: EditableLine[];
   initialDeliveryFee: number;
   disabled?: boolean;
   deliveryFeeLabel?: string;
+  /** يُبلَّغ به الأب عند كل تغيير (لحفظ مسودّة الطلب اليدوي). اختياري. */
+  onChange?: (lines: EditableLine[], deliveryFee: number) => void;
 }) {
   const [lines, setLines] = useState<EditableLine[]>(initialLines);
   const [deliveryFee, setDeliveryFee] = useState(initialDeliveryFee);
   const [term, setTerm] = useState("");
   const [results, setResults] = useState<ProductSearchResult[]>([]);
   const [searchError, setSearchError] = useState<string | null>(null);
-  const [isSearching, startSearch] = useTransition();
+  const [isSearching, setIsSearching] = useState(false);
+  // مُتحكَّم فيه: React 19 يُعيد ضبط الحقول غير المتحكَّم فيها بعد كل إرسال
+  // نموذج، فكان الإقرار يُمحى بعد حفظ فاشل ويُرفض الحفظ التالي بلا سبب ظاهر.
+  const [acknowledgedBelowCost, setAcknowledgedBelowCost] = useState(false);
 
-  function runSearch(value: string) {
-    setTerm(value);
+  useEffect(() => {
+    onChange?.(lines, deliveryFee);
+  }, [lines, deliveryFee, onChange]);
+
+  // ## البحث لا يُسقط الصفحة أبداً
+  //
+  // كان كل حرف يُطلق إجراء خادم داخل startTransition بلا معالجة أخطاء:
+  // أيّ فشل واحد (انقطاع الإنترنت لحظة، مهلة قاعدة بيانات، جواب 500)
+  // يُرمى داخل الانتقال فيصعد إلى حدّ الخطأ الجذري — «This page couldn't
+  // load» — وتضيع كل بيانات الطلبية. الآن:
+  //   1. انتظار 300ms بعد آخر حرف (طلب واحد للكلمة بدل طلب لكل حرف).
+  //   2. رقم تسلسلي: جوابٌ قديم يصل متأخّراً لا يكتب فوق نتيجة أحدث.
+  //   3. try/catch: الفشل رسالة صغيرة تحت الخانة مع «عاود»، والسطور باقية.
+  const searchSeq = useRef(0);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+      searchSeq.current += 1;
+    },
+    []
+  );
+
+  async function doSearch(query: string) {
+    const id = ++searchSeq.current;
+    setIsSearching(true);
     setSearchError(null);
-    if (value.trim().length < 2) {
-      setResults([]);
-      return;
-    }
-    startSearch(async () => {
-      const response = await searchProductsAction(value);
+    try {
+      const response = await searchProductsAction(query);
+      if (id !== searchSeq.current) return;
       if (response.ok) setResults(response.results);
       else {
         setResults([]);
         setSearchError(response.error);
       }
-    });
+    } catch {
+      if (id !== searchSeq.current) return;
+      setResults([]);
+      setSearchError(SEARCH_OFFLINE_MESSAGE);
+    } finally {
+      if (id === searchSeq.current) setIsSearching(false);
+    }
+  }
+
+  function runSearch(value: string) {
+    setTerm(value);
+    setSearchError(null);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    const query = value.trim();
+    if (query.length < 2) {
+      searchSeq.current += 1;
+      setIsSearching(false);
+      setResults([]);
+      return;
+    }
+    searchTimer.current = setTimeout(() => void doSearch(query), SEARCH_DEBOUNCE_MS);
   }
 
   function addProduct(product: ProductSearchResult) {
@@ -143,7 +194,20 @@ export function OrderLinesEditor({
           className="min-h-11 w-full rounded-lg border border-neutral-300 px-3 text-sm disabled:bg-neutral-100"
         />
         {isSearching && <p className="mt-1 text-[11px] text-neutral-500">جارٍ البحث…</p>}
-        {searchError && <p className="mt-1 text-[11px] text-red-600">{searchError}</p>}
+        {searchError && (
+          <p className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-red-600">
+            <span>{searchError}</span>
+            {term.trim().length >= 2 && (
+              <button
+                type="button"
+                onClick={() => void doSearch(term.trim())}
+                className="rounded-full border border-red-300 px-2 py-0.5 font-semibold"
+              >
+                عاود البحث
+              </button>
+            )}
+          </p>
+        )}
         {results.length > 0 && (
           <ul className="mt-2 max-h-64 overflow-y-auto rounded-lg border border-neutral-200 bg-white">
             {results.map((product) => (
@@ -348,6 +412,8 @@ export function OrderLinesEditor({
               <input
                 type="checkbox"
                 name="acknowledgeBelowCost"
+                checked={acknowledgedBelowCost}
+                onChange={(event) => setAcknowledgedBelowCost(event.target.checked)}
                 disabled={disabled}
                 className="mt-0.5 h-4 w-4 shrink-0 accent-red-600"
               />

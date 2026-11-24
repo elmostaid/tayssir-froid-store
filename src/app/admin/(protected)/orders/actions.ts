@@ -582,8 +582,24 @@ export type OrderEditState = {
  * كميةً — تلك صلاحية Owner/Admin وحدها، كما هي مصاريف التوصيل والتقارير
  * أصلاً. الفحص هنا في الخادم لا في الواجهة: إخفاء زرّ ليس حماية.
  */
+/**
+ * رسالة الانقطاع المؤقت (قاعدة البيانات أو الشبكة). إجراءات صفحة الطلب
+ * اليدوي **تُرجعها ولا ترمي**: الرمي من إجراء خادم يصعد في المتصفح إلى حدّ
+ * الخطأ فتسقط الصفحة كلها («This page couldn't load») وتضيع بيانات الطلبية
+ * المُدخلة. والإعادة آمنة: مفتاح المحاولة يمنع أي تكرار.
+ */
+const TRANSIENT_ERROR_MESSAGE =
+  "انقطع الاتصال بقاعدة البيانات مؤقتاً. المعلومات اللي دخلتي باقية — عاود المحاولة بعد لحظة (ما غاديش تتسجل الطلبية جوج مرات).";
+
 async function requireOwner(): Promise<{ email: string } | { error: string }> {
-  const admin = await getAdminUser();
+  let admin;
+  try {
+    admin = await getAdminUser();
+  } catch (error) {
+    // getAdminUser يقرأ admin_profiles من القاعدة — مهلة اتصال هنا ليست «غير مصرَّح».
+    console.error("requireOwner: تعذّر التحقق من الحساب", error);
+    return { error: TRANSIENT_ERROR_MESSAGE };
+  }
   if (!admin) return { error: "غير مصرَّح بهذا الإجراء." };
   if (!isOwnerAdmin(admin)) {
     return { error: "إنشاء الطلبات وتعديل محتواها مقصور على صاحب الحساب (Admin)." };
@@ -632,25 +648,33 @@ export async function createManualOrderAction(
   const parsedCost = parseDeliveryCostInput(String(formData.get("actualDeliveryCost") ?? ""));
   if (!parsedCost.ok) return { error: parsedCost.message };
 
-  const result = await createManualOrder({
-    customer: {
-      fullName: String(formData.get("fullName") ?? ""),
-      phone: String(formData.get("phone") ?? ""),
-      city: String(formData.get("city") ?? ""),
-      address: String(formData.get("address") ?? ""),
-      notes: String(formData.get("notes") ?? "") || null,
-    },
-    source,
-    deliveryFee,
-    actualDeliveryCost: parsedCost.value,
-    createdByEmail: auth.email,
-    items: readLines(formData),
-    acknowledgeBelowCost: formData.get("acknowledgeBelowCost") === "on",
-    origin: { reference: String(formData.get("originReference") ?? "") || null },
-    adConsentDeclared: formData.get("adConsentDeclared") === "on",
-    // نفس المفتاح مع كل إعادة إرسال من نفس النموذج — راجع createManualOrder.
-    idempotencyKey: String(formData.get("idempotencyKey") ?? "") || null,
-  });
+  let result: Awaited<ReturnType<typeof createManualOrder>>;
+  try {
+    result = await createManualOrder({
+      customer: {
+        fullName: String(formData.get("fullName") ?? ""),
+        phone: String(formData.get("phone") ?? ""),
+        city: String(formData.get("city") ?? ""),
+        address: String(formData.get("address") ?? ""),
+        notes: String(formData.get("notes") ?? "") || null,
+      },
+      source,
+      deliveryFee,
+      actualDeliveryCost: parsedCost.value,
+      createdByEmail: auth.email,
+      items: readLines(formData),
+      acknowledgeBelowCost: formData.get("acknowledgeBelowCost") === "on",
+      origin: { reference: String(formData.get("originReference") ?? "") || null },
+      adConsentDeclared: formData.get("adConsentDeclared") === "on",
+      // نفس المفتاح مع كل إعادة إرسال من نفس النموذج — راجع createManualOrder.
+      idempotencyKey: String(formData.get("idempotencyKey") ?? "") || null,
+    });
+  } catch (error) {
+    // createManualOrder يلتقط أخطاء المعاملة نفسها، لكن البحث المسبق بمفتاح
+    // المحاولة يقع قبلها وقد يرمي عند مهلة اتصال. الإعادة بنفس المفتاح آمنة.
+    console.error("createManualOrderAction: خطأ اتصال", error);
+    return { error: TRANSIENT_ERROR_MESSAGE };
+  }
 
   if (!result.ok) {
     return { error: result.errors[0]?.message ?? "تعذّر حفظ الطلب.", fieldErrors: result.errors };
@@ -685,22 +709,28 @@ export async function convertWhatsappLeadAction(
   const parsedCost = parseDeliveryCostInput(String(formData.get("actualDeliveryCost") ?? ""));
   if (!parsedCost.ok) return { error: parsedCost.message };
 
-  const result = await convertWhatsappLeadToOrder({
-    leadId,
-    customer: {
-      fullName: String(formData.get("fullName") ?? ""),
-      phone: String(formData.get("phone") ?? ""),
-      city: String(formData.get("city") ?? ""),
-      address: String(formData.get("address") ?? ""),
-      notes: String(formData.get("notes") ?? "") || null,
-    },
-    deliveryFee,
-    actualDeliveryCost: parsedCost.value,
-    createdByEmail: auth.email,
-    items: readLines(formData),
-    acknowledgeBelowCost: formData.get("acknowledgeBelowCost") === "on",
-    adConsentDeclared: formData.get("adConsentDeclared") === "on",
-  });
+  let result: Awaited<ReturnType<typeof convertWhatsappLeadToOrder>>;
+  try {
+    result = await convertWhatsappLeadToOrder({
+      leadId,
+      customer: {
+        fullName: String(formData.get("fullName") ?? ""),
+        phone: String(formData.get("phone") ?? ""),
+        city: String(formData.get("city") ?? ""),
+        address: String(formData.get("address") ?? ""),
+        notes: String(formData.get("notes") ?? "") || null,
+      },
+      deliveryFee,
+      actualDeliveryCost: parsedCost.value,
+      createdByEmail: auth.email,
+      items: readLines(formData),
+      acknowledgeBelowCost: formData.get("acknowledgeBelowCost") === "on",
+      adConsentDeclared: formData.get("adConsentDeclared") === "on",
+    });
+  } catch (error) {
+    console.error("convertWhatsappLeadAction: خطأ اتصال", error);
+    return { error: TRANSIENT_ERROR_MESSAGE };
+  }
 
   if (!result.ok) {
     return { error: result.errors[0]?.message ?? "تعذّر تحويل الطلب.", fieldErrors: result.errors };
@@ -753,7 +783,15 @@ export async function searchProductsAction(
 ): Promise<{ ok: true; results: ProductSearchResult[] } | { ok: false; error: string }> {
   const auth = await requireOwner();
   if ("error" in auth) return { ok: false, error: auth.error };
-  return { ok: true, results: await searchProductsForOrder(term) };
+  try {
+    return { ok: true, results: await searchProductsForOrder(term) };
+  } catch (error) {
+    console.error("searchProductsAction: تعذّر البحث", error);
+    return {
+      ok: false,
+      error: "تعذّر البحث الآن (اتصال قاعدة البيانات). المنتجات المضافة باقية — عاود المحاولة.",
+    };
+  }
 }
 
 /**
@@ -775,7 +813,12 @@ export async function importOrderDraftAction(
   const parsed = parseOrderJson(rawJson);
   if (!parsed.ok) return { ok: false, errors: parsed.errors };
 
-  return buildOrderDraft(parsed.value);
+  try {
+    return await buildOrderDraft(parsed.value);
+  } catch (error) {
+    console.error("importOrderDraftAction: تعذّرت المطابقة", error);
+    return { ok: false, errors: [{ field: "network", message: TRANSIENT_ERROR_MESSAGE }] };
+  }
 }
 
 /**

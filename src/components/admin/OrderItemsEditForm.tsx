@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { unstable_rethrow } from "next/navigation";
 import { updateOrderLinesAction, type OrderEditState } from "@/app/admin/(protected)/orders/actions";
 import { OrderLinesEditor, type EditableLine } from "@/components/admin/OrderLinesEditor";
 
@@ -23,7 +24,22 @@ export function OrderItemsEditForm({
   lockedReason: string | null;
 }) {
   const [open, setOpen] = useState(false);
-  const [state, formAction, pending] = useActionState(updateOrderLinesAction, initialState);
+  // نفس حماية الطلب اليدوي: انقطاع الشبكة أثناء الحفظ يصير رسالة، لا سقوطاً
+  // للصفحة كلها («This page couldn't load») مع ضياع التعديلات.
+  const [state, formAction, pending] = useActionState(
+    async (prev: OrderEditState, formData: FormData): Promise<OrderEditState> => {
+      try {
+        return await updateOrderLinesAction(prev, formData);
+      } catch (error) {
+        unstable_rethrow(error);
+        return {
+          error:
+            "ما وصلش التعديل للخادم (الإنترنت أو الخادم). التعديلات باقية فالنموذج — عاود الضغط على الحفظ.",
+        };
+      }
+    },
+    initialState
+  );
 
   if (lockedReason) {
     return (
