@@ -5,8 +5,9 @@ import { formatMad } from "@/lib/format";
 import { computeOrderProfit } from "@/lib/orders/orderProfit";
 import type { OrderVerdict } from "@/lib/settlements/matching";
 import { computeBoard, listInvoices, loadProfitLines } from "@/lib/settlements/settlementStore";
-import { PendingSubmit } from "@/components/admin/settlements/PendingSubmit";
 import { ApplyButton, SelectAll } from "@/components/admin/settlements/SelectionControls";
+import { SafeActionForm } from "@/components/admin/settlements/SafeActionForm";
+import { UploadInvoiceForm } from "@/components/admin/settlements/UploadInvoiceForm";
 import { applySettlementsAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -214,32 +215,9 @@ export default async function SettlementsPage({ searchParams }: { searchParams: 
         </div>
       )}
 
-      <form
-        action="/admin/settlements/upload"
-        method="post"
-        encType="multipart/form-data"
-        className="mt-4 rounded-xl border-2 border-brand-orange/30 bg-white p-4"
-      >
-        <label className="block text-base font-bold text-neutral-800" htmlFor="invoice">
-          رفع فاتورة
-        </label>
-        <input
-          id="invoice"
-          name="invoice"
-          type="file"
-          accept="application/pdf,.pdf"
-          required
-          className="mt-3 block w-full text-sm file:me-3 file:min-h-11 file:rounded-full file:border-0 file:bg-neutral-100 file:px-4 file:font-semibold"
-        />
-        <PendingSubmit
-          pendingText="كنقرا الفاتورة…"
-          className="mt-3 min-h-12 w-full rounded-full bg-brand-orange px-5 text-base font-bold text-white disabled:bg-neutral-300"
-        >
-          ارفع واقرا
-        </PendingSubmit>
-      </form>
+      <UploadInvoiceForm />
 
-      <form action={applySettlementsAction} className="mt-4">
+      <SafeActionForm action={applySettlementsAction} className="mt-4">
         <section className="rounded-xl border border-neutral-200 bg-white p-4">
           <h2 className="text-base font-bold text-neutral-800">
             جاهزة للتطبيق <span className="text-neutral-400">({ready.length})</span>
@@ -305,7 +283,7 @@ export default async function SettlementsPage({ searchParams }: { searchParams: 
             <ApplyButton />
           </div>
         )}
-      </form>
+      </SafeActionForm>
 
       {waiting.length > 0 && (
         <details className="mt-4 rounded-xl border border-neutral-200 bg-white p-4" open={waiting.length <= 5}>

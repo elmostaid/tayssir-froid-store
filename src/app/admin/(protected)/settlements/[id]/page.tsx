@@ -4,6 +4,7 @@ import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import { formatMad } from "@/lib/format";
 import { getInvoice } from "@/lib/settlements/settlementStore";
 import { PendingSubmit } from "@/components/admin/settlements/PendingSubmit";
+import { SafeActionForm } from "@/components/admin/settlements/SafeActionForm";
 import { markBankAction, rollbackInvoiceAction } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -85,7 +86,7 @@ export default async function InvoicePage({
       <section className="mt-3 rounded-xl border border-neutral-200 bg-white p-3">
         <h2 className="text-sm font-bold text-neutral-800">وصول الفلوس للبنك</h2>
         {inv.bankReceivedAt ? (
-          <form action={markBankAction} className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm">
+          <SafeActionForm action={markBankAction} className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm">
             <span className="text-green-800">
               وصل {formatMad(inv.bankReceivedAmount ?? 0)} — {inv.bankReceivedAt.slice(0, 10)}
               {inv.bankReceivedAmount !== null && inv.bankReceivedAmount !== inv.totalNet && (
@@ -99,9 +100,9 @@ export default async function InvoicePage({
             <PendingSubmit pendingText="…" className="text-xs font-semibold text-neutral-500 underline">
               إلغاء
             </PendingSubmit>
-          </form>
+          </SafeActionForm>
         ) : active ? (
-          <form action={markBankAction} className="mt-2 flex gap-2">
+          <SafeActionForm action={markBankAction} className="mt-2 flex gap-2">
             <input type="hidden" name="invoiceId" value={inv.id} />
             <input
               name="amount"
@@ -116,7 +117,7 @@ export default async function InvoicePage({
             >
               وصلات الفلوس للبنك
             </PendingSubmit>
-          </form>
+          </SafeActionForm>
         ) : (
           <p className="mt-1 text-xs text-neutral-500">—</p>
         )}
@@ -175,7 +176,7 @@ export default async function InvoicePage({
             كملات بفاتورة أخرى. إلا بدلتي شي حاجة بيدك من بعد، كتبقى كما هي. الفاتورة ما كتتمسحش، وتقدر
             تعاود ترفعها من بعد.
           </p>
-          <form action={rollbackInvoiceAction} className="mt-3">
+          <SafeActionForm action={rollbackInvoiceAction} className="mt-3">
             <input type="hidden" name="invoiceId" value={inv.id} />
             <PendingSubmit
               pendingText="كنتراجع…"
@@ -183,7 +184,7 @@ export default async function InvoicePage({
             >
               أكّد التراجع
             </PendingSubmit>
-          </form>
+          </SafeActionForm>
         </details>
       )}
     </div>

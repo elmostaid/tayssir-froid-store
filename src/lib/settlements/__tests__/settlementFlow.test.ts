@@ -96,10 +96,12 @@ async function stock() {
   return p.stock_quantity;
 }
 
+let snapshotOrderIds: number[] = [];
 async function itemsSnapshot() {
+  // نفس الطلبيات في اللقطتين (قبل/بعد): طلبية أُضيفت لاحقاً في اختبار آخر لا تُقارَن.
   return sql`
     select order_id, unit_price_snapshot, quantity, line_total, purchase_price_snapshot, line_status
-    from public.order_items where order_id = any(${Object.values(orders)}) order by order_id, id
+    from public.order_items where order_id = any(${snapshotOrderIds}) order by order_id, id
   `;
 }
 
@@ -154,6 +156,7 @@ describe("تسوية فواتير التوصيل — المسار الكامل �
 
   test("فاتورة 1 متعددة الصفحات: التسجيل لا يغيّر أي طلبية، والمطابقة تفرز الحالات", async () => {
     stockBefore = await stock();
+    snapshotOrderIds = Object.values(orders);
     itemsBefore = await itemsSnapshot();
     const { r, parsed } = await upload(`FCT-${RUN}-1`, invoice1, { rowsPerPage: 4 });
     expect(parsed.pageCount).toBeGreaterThan(1);
@@ -342,12 +345,32 @@ describe("تسوية فواتير التوصيل — المسار الكامل �
     expect(await verdictFor(orders.A)).toMatchObject({ kind: "ready" });
   });
 
+  test("ضغطتان متزامنتان على «طبّق» (ضغط مزدوج أو إعادة بعد انقطاع) ⇒ تسوية واحدة فقط", async () => {
+    await seedOrder("G", { phone: phone(7), city: "ارفود", total: 931 });
+    await upload(`FCT-${RUN}-G`, [
+      { code: code("G1"), pickup: "2026-11-21", phone: phone(7), cityLines: ["Erfoud"], cod: 931, fee: 35 },
+    ]);
+    const [a, b] = await Promise.all([
+      store.applySettlements({ readyOrderIds: [orders.G], approvedOrderIds: [], actor: ACTOR }),
+      store.applySettlements({ readyOrderIds: [orders.G], approvedOrderIds: [], actor: ACTOR }),
+    ]);
+    expect(a.applied.length + b.applied.length).toBe(1);
+    expect(a.skipped.length + b.skipped.length).toBe(1);
+    const [{ n }] = await sql<{ n: number }[]>`
+      select count(*)::int as n from public.carrier_order_settlements where order_id = ${orders.G}
+    `;
+    expect(n).toBe(1);
+    const hist = await sql`select 1 from public.order_status_history where order_id = ${orders.G}`;
+    expect(hist).toHaveLength(1);
+    expect(await orderState(orders.G)).toMatchObject({ status: "delivered", actual_delivery_cost: "35.00" });
+  });
+
   test("لا Purchase، ولا مخزون، ولا أثمنة تغيّرت طوال المسار", async () => {
     expect(capiSpy).not.toHaveBeenCalled();
     expect(deferredSpy).not.toHaveBeenCalled();
     expect(await stock()).toBe(stockBefore);
     expect(await itemsSnapshot()).toEqual(itemsBefore);
-    for (const key of ["A", "B", "C", "D", "E", "F"]) {
+    for (const key of ["A", "B", "C", "D", "E", "F", "G"]) {
       const o = await orderState(orders[key]);
       expect(Number(o.items_subtotal) + Number(o.delivery_fee)).toBe(Number(o.final_total));
     }
