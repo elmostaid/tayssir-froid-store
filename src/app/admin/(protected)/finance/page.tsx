@@ -160,6 +160,16 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
           <Row label="التوصيل اللي خلّصو الزبناء" value={realized.deliveryChargedCents} />
           <Row label="التوصيل الحقيقي (من الفواتير)" value={realized.deliveryRealCents} minus />
           <Row label="ربح الطلبيات" value={realized.profitCents} strong />
+          <div className="mb-1 rounded-lg bg-neutral-50 px-2 text-xs">
+            <div className="flex justify-between py-1 text-green-800">
+              <span>منها فلوسها وصلات للبنك</span>
+              <span className="tabular-nums">{mad(realized.bankedProfitCents)}</span>
+            </div>
+            <div className="flex justify-between py-1 text-amber-800">
+              <span>منها فلوسها مازال عند شركة التوصيل</span>
+              <span className="tabular-nums">{mad(realized.pendingProfitCents)}</span>
+            </div>
+          </div>
           <Row label={`خسائر الرجعات (${returns.items.length})`} value={returns.lossCents} minus />
           <Row label="الإشهار المسجَّل" value={expenses.advertisingCents} minus />
           <Row label="مصاريف أخرى مسجلة" value={expenses.totalCents - expenses.advertisingCents} minus />
@@ -267,6 +277,9 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
                 <p className="mt-0.5 text-[11px] text-neutral-500">
                   تحصّل {mad(o.collectedCents)} · السلعة {mad(o.cogsCents)} · توصيل {mad(o.deliveryRealCents)} ·{" "}
                   <span dir="ltr">{o.invoiceNumber}</span>
+                </p>
+                <p className={`text-[11px] font-semibold ${o.banked ? "text-green-800" : "text-amber-700"}`}>
+                  {o.banked ? "الفلوس وصلات للبنك" : "الفلوس مازال عند شركة التوصيل"}
                 </p>
               </li>
             ))}

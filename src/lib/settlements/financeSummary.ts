@@ -76,6 +76,8 @@ export type RealizedOrder = {
   deliveryChargedCents: Cents;
   deliveryRealCents: Cents;
   profitCents: Cents;
+  /** كل فواتير كرطوناتها سُجّل وصول فلوسها للبنك. */
+  banked: boolean;
 };
 
 export type ExcludedOrder = { orderId: number; orderNumber: string; reason: string };
@@ -112,6 +114,10 @@ export type FinanceSummary = {
     deliveryChargedCents: Cents;
     deliveryRealCents: Cents;
     profitCents: Cents;
+    /** ربح طلبيات وصلات فلوسها للبنك. */
+    bankedProfitCents: Cents;
+    /** ربح طلبيات مسلّمة بفاتورة، وفلوسها مازال عند شركة التوصيل. */
+    pendingProfitCents: Cents;
     excluded: ExcludedOrder[];
   };
   returns: { items: ReturnLoss[]; lossCents: Cents };
@@ -184,11 +190,19 @@ export async function getFinanceSummary(period: Period): Promise<FinanceSummary>
       parcel_count: number;
       invoice_number: string;
       invoice_day: string;
+      banked: boolean;
     }[]
   >`
     select s.order_id, o.order_number, o.status as order_status, o.delivery_fee,
       s.outcome, s.cod_total, s.fee_total, s.parcel_count,
-      i.invoice_number, x.day::text as invoice_day
+      i.invoice_number, x.day::text as invoice_day,
+      -- طلبية كرطوناتها فعدة فواتير: فلوسها «وصلات» غير إلا وصلات كل فاتورة.
+      coalesce((
+        select bool_and(pi.bank_received_at is not null)
+        from public.carrier_parcels pp
+        join public.carrier_invoices pi on pi.id = pp.invoice_id
+        where pp.id = any(s.parcel_ids)
+      ), false) as banked
     from public.carrier_order_settlements s
     join public.carrier_invoices i on i.id = s.invoice_id
     cross join lateral (
@@ -274,6 +288,7 @@ export async function getFinanceSummary(period: Period): Promise<FinanceSummary>
       deliveryChargedCents: madToCents(p.deliveryCollectedMad),
       deliveryRealCents: cents(s.fee_total),
       profitCents: madToCents(p.netProfitMad),
+      banked: s.banked === true,
     });
   }
 
@@ -334,6 +349,8 @@ export async function getFinanceSummary(period: Period): Promise<FinanceSummary>
       deliveryChargedCents: sumOf("deliveryChargedCents"),
       deliveryRealCents: sumOf("deliveryRealCents"),
       profitCents: profit,
+      bankedProfitCents: realizedOrders.filter((o) => o.banked).reduce((acc, o) => acc + o.profitCents, 0),
+      pendingProfitCents: realizedOrders.filter((o) => !o.banked).reduce((acc, o) => acc + o.profitCents, 0),
       excluded,
     },
     returns: { items: returnItems, lossCents: returnLoss },

@@ -234,6 +234,21 @@ describe("الملخص المالي", () => {
     expect(f.cash.shippedNoInvoice.expectedCents - shippedBefore.expectedCents).toBe(80000);
   });
 
+  test("الربح كيتقسم: فلوسو وصلات للبنك / مازال عند الشركة", async () => {
+    const received = await getFinanceSummary(MARCH);
+    expect(received.realized).toMatchObject({ bankedProfitCents: 84500, pendingProfitCents: 0 });
+    expect(received.realized.orders.every((o) => o.banked)).toBe(true);
+
+    // نلغي تسجيل البنك: نفس الربح، ولكن كامل كيولي «مازال عند الشركة».
+    await store.markInvoiceBankReceived(firstInvoice, null, ACTOR);
+    const pending = await getFinanceSummary(MARCH);
+    expect(pending.realized).toMatchObject({ profitCents: 84500, bankedProfitCents: 0, pendingProfitCents: 84500 });
+    expect(pending.cash.bankReceivedCents).toBe(0);
+
+    await store.markInvoiceBankReceived(firstInvoice, 291500, ACTOR, "2031-03-15");
+    expect((await getFinanceSummary(MARCH)).realized.bankedProfitCents).toBe(84500);
+  });
+
   test("التراجع عن الفاتورة 1 كيحيّد ربحها ورجعتها من الملخص", async () => {
     const r = await store.rollbackInvoice(firstInvoice, ACTOR);
     expect(r.ok).toBe(true);

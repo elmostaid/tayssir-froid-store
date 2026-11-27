@@ -99,8 +99,15 @@ describe("«منذ البداية» — مدى بلا حدّ أعلى للمدة
 
   test("الحدّ الأعلى غير شامل: منتصف ليل الغد المحلي", () => {
     const range = resolveRange("all_time", undefined, undefined, now, TZ);
-    // 29/09 منتصف الليل بالمغرب (UTC+1) = 23:00 UTC من 28/09.
-    expect(range.to.toISOString()).toBe("2026-09-28T23:00:00.000Z");
+    // منتصف ليل 29/09 بتوقيت المغرب. المغرب رجع لـUTC+0 فـ20 شتنبر 2026
+    // (tzdata 2026e)، فالقيمة بـUTC كتختلف حسب نسخة tzdata ديال البيئة:
+    // 23:00 من 28/09 (نسخة قديمة، UTC+1) أو 00:00 من 29/09 (نسخة حديثة).
+    // المهم هو المعنى: منتصف الليل المحلي بالضبط، ديال نهار 29.
+    expect(["2026-09-28T23:00:00.000Z", "2026-09-29T00:00:00.000Z"]).toContain(range.to.toISOString());
+    const local = new Intl.DateTimeFormat("en-GB", {
+      timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    }).format(range.to);
+    expect(local).toBe("29/09/2026, 00:00");
   });
 
   test("يغطّي طلباً أقدم بسنوات من أي اختيار آخر", () => {
