@@ -37,6 +37,27 @@ function order(over: Partial<CandidateOrder> & { finalTotalCents: number | null 
 }
 
 describe("محرّك المطابقة", () => {
+  it("مدينة ما قدرتش تتقارن → ماشي «مؤكدة»، كتبقى للمراجعة برمز city_unknown", () => {
+    const o = order({ finalTotalCents: 30000, cartonCount: 1, city: null as unknown as string });
+    const r = matchParcels([parcel({ codCents: 30000 })], [o]);
+    expect(r.orders[0]).toMatchObject({ kind: "decide", city: "unknown", preselect: false });
+    expect(r.orders[0].issues).toEqual(["city_unknown"]);
+    expect(r.orders[0].reasons.join()).toMatch(/ما قدرتش تتقارن/);
+  });
+
+  it("تكلفة يدوية مختلفة + تقريب → رموز manual_cost وrounding (موافقة سريعة)", () => {
+    const o = order({ finalTotalCents: 50100, cartonCount: 1, actualDeliveryCostCents: 2000 });
+    const r = matchParcels([parcel({ codCents: 50000 })], [o]);
+    expect(r.orders[0]).toMatchObject({ kind: "decide", roundingCents: -100, costConflict: true });
+    expect([...r.orders[0].issues].sort()).toEqual(["manual_cost", "rounding"]);
+  });
+
+  it("مدينة مختلفة → رمز city_differ (ماشي موافقة سريعة)", () => {
+    const o = order({ finalTotalCents: 41000, cartonCount: 1, city: "El Jadida" });
+    const r = matchParcels([parcel({ codCents: 41000, city: "Agadir" })], [o]);
+    expect(r.orders[0].issues).toContain("city_differ");
+  });
+
   it("كرطونة واحدة بمبلغ مطابق → جاهزة، ثقة متوسطة لأن عدد الكرطونات غير مسجَّل", () => {
     const o = order({ finalTotalCents: 63500 });
     const r = matchParcels([parcel({ codCents: 63500 })], [o]);
@@ -48,9 +69,11 @@ describe("محرّك المطابقة", () => {
       willSetDelivered: true,
       willSetCost: true,
     });
-    expect(r.orders[0].confidenceNotes.join()).toMatch(/كرطونة بلا تحصيل/);
-    // الثقة المتوسطة لا تُعلَّم مسبقاً — المالك يختارها.
-    expect(r.orders[0].preselect).toBe(false);
+    expect(r.orders[0].confidenceNotes.join()).toMatch(/الاكتمال ما موثقش/);
+    // قرار المالك 2026-11-27: المطابقة المؤكدة بلا عدد كرطونات كتعلَّم وكتتطبّق جماعياً؛
+    // الفرق (الاكتمال ما موثقش) كيبقى فـconfidence.
+    expect(r.orders[0].preselect).toBe(true);
+    expect(r.orders[0].issues).toEqual([]);
     expect(r.orders[0].evidence.join("\n")).toMatch(/الهاتف مطابق/);
     expect(r.orders[0].evidence.join("\n")).toMatch(/بالضبط/);
     expect(r.orders[0].evidence.join("\n")).toMatch(/بعد الطلبية بـ2 يوم/);

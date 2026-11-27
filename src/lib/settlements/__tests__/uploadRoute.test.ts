@@ -21,10 +21,14 @@ const { buildFakeOzonExpressPdf } = await import("./fakeOzonExpressPdf");
 const RUN = String(Date.now()).slice(-6);
 const numbers: string[] = [];
 
-function request(bytes: Uint8Array | null, name = "f.pdf") {
+function request(bytes: Uint8Array | null, name = "f.pdf", json = false) {
   const form = new FormData();
   if (bytes) form.set("invoice", new File([Buffer.from(bytes)], name, { type: "application/pdf" }));
-  return new NextRequest("http://localhost/admin/settlements/upload", { method: "POST", body: form });
+  return new NextRequest("http://localhost/admin/settlements/upload", {
+    method: "POST",
+    body: form,
+    headers: json ? { "x-upload-mode": "json" } : {},
+  });
 }
 
 function pdf(number: string, overrideTotals?: { frais?: number; net?: number }) {
@@ -115,5 +119,39 @@ describe("رفع فاتورة", () => {
     expect(loc.searchParams.get("uploaded")).toBeTruthy();
     expect(loc.searchParams.get("problems")).toMatch(/Total Colis/);
     expect(await invoiceCarrier(number)).toEqual([{ carrier: "ozonexpress", total_cod: "1132.00", total_net: "1007.00" }]);
+  });
+
+  test("وضع JSON (الرفع المتعدد): دفعة من الشركتين، ملف خايب ما كيوقفش الباقي، والإعادة ما كتكررش", async () => {
+    const big = pdf(`FCT-${RUN}-J1`);
+    const ozNumber = `VRT-N-${RUN}-J2`;
+    numbers.push(ozNumber);
+    const oz = buildFakeOzonExpressPdf({
+      number: ozNumber,
+      parcels: [{ code: `KS${RUN}000009`, suffix: "RM", phone: `0622${RUN}`, city: "Tanger", cod: 300, fee: 35, pickup: "2026-10-23", delivery: "2026-10-24" }],
+    });
+    const bad = new TextEncoder().encode("not a pdf");
+    const batch = [big, bad, oz];
+    const out = [];
+    for (const f of batch) {
+      const res = await POST(request(f, "x.pdf", true));
+      expect(res.headers.get("content-type")).toMatch(/json/);
+      out.push(await res.json());
+    }
+    expect(out[0]).toMatchObject({ status: "created", carrier: "bigdelivery", invoiceNumber: `FCT-${RUN}-J1`, parcels: 1 });
+    expect(out[1]).toMatchObject({ status: "rejected" });
+    expect(out[1].message).toMatch(/ماشي PDF/);
+    expect(out[2]).toMatchObject({ status: "created", carrier: "ozonexpress", invoiceNumber: ozNumber });
+    // إعادة رفع الدفعة كاملة (مثلاً من بعد انقطاع الإنترنت): «سبق رفعها»، بلا تكرار.
+    const again = await (await POST(request(big, "x.pdf", true))).json();
+    expect(again).toMatchObject({ status: "already", invoiceId: out[0].invoiceId });
+    expect(await invoiceCount(`FCT-${RUN}-J1`)).toBe(1);
+    expect(await invoiceCount(ozNumber)).toBe(1);
+  });
+
+  test("وضع JSON بلا جلسة: 401 JSON ماشي تحويل", async () => {
+    role = null;
+    const res = await POST(request(pdf(`FCT-${RUN}-J3`), "x.pdf", true));
+    expect(res.status).toBe(401);
+    expect((await res.json()).status).toBe("rejected");
   });
 });

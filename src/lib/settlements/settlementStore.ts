@@ -7,6 +7,7 @@ import {
   type MatchingResult,
   type OpenParcel,
   type OrderVerdict,
+  QUICK_ISSUES,
 } from "./matching";
 import { centsToDb, dbMoneyToCents, type Cents } from "./money";
 
@@ -289,6 +290,7 @@ export async function computeBoard(db: Db = sql, lock = false): Promise<Matching
       if (held.length === 0) continue;
       v.invoiceWarningPending = true;
       v.preselect = false;
+      v.issues.push("statement_warning");
       v.reasons.push(`الكشف ${held.join(" + ")} فيه فرق فالمجاميع ما وافقتيش عليه — شوفو ووافق عليه من صفحة الكشف قبل التطبيق.`);
       if (v.kind === "ready") v.kind = "decide";
     }
@@ -317,6 +319,13 @@ export type ApplyInput = {
   approvedOrderIds: number[];
   /** من «رجعات» — تأكيد المالك أن الكرطونات رجعات، فتُسجَّل رسومها خسارة. */
   returnOrderIds?: number[];
+  /**
+   * «موافقة سريعة» (قرار المالك 2026-11-27): طلبيات «تحتاج قرارك» اللي المشاكل
+   * ديالها كلها من {تكلفة يدوية مختلفة، تقريب صغير} وما فيها حتى شي آخر (المدينة
+   * مطابقة، ماشي ربط يدوي، ماشي متأخرة، الحالة مُرسَلة، الكشف موافَق عليه).
+   * أي طلبية فيها مشكل آخر ما كتطبّقش من هنا حتى لو جات فالقائمة.
+   */
+  quickOrderIds?: number[];
   actor: string;
 };
 
@@ -340,6 +349,7 @@ export async function applySettlements(input: ApplyInput): Promise<ApplyResult> 
   const ready = new Set(input.readyOrderIds);
   const approved = new Set(input.approvedOrderIds);
   const returns = new Set(input.returnOrderIds ?? []);
+  const quick = new Set(input.quickOrderIds ?? []);
   return sql.begin(async (trx) => {
     await LOCK_SQL(trx);
     const board = await computeBoard(trx, true);
@@ -352,6 +362,7 @@ export async function applySettlements(input: ApplyInput): Promise<ApplyResult> 
       const eligible =
         (v.kind === "ready" && (ready.has(id) || approved.has(id))) ||
         (v.kind === "decide" && approved.has(id)) ||
+        (v.kind === "decide" && quick.has(id) && isQuickApprovable(v)) ||
         (v.kind === "return" && returns.has(id));
       // فرق فمجاميع الكشف ما وافقش عليه المالك: ما كتطبّقش، حتى لو اختارها.
       if (!eligible || v.invoiceWarningPending) continue;
@@ -359,7 +370,7 @@ export async function applySettlements(input: ApplyInput): Promise<ApplyResult> 
       applied.push(await applyOne(trx, v, input.actor, v.kind === "ready" ? "auto" : "approved"));
     }
 
-    const skipped = [...new Set([...ready, ...approved, ...returns])]
+    const skipped = [...new Set([...ready, ...approved, ...returns, ...quick])]
       .filter((id) => !handled.has(id))
       .map((id) => ({
         orderId: id,
@@ -367,6 +378,18 @@ export async function applySettlements(input: ApplyInput): Promise<ApplyResult> 
       }));
     return { applied, skipped };
   });
+}
+
+/** واش طلبية «تحتاج قرارك» تدخل فـ«الموافقة السريعة» (تكلفة يدوية/تقريب فقط). */
+export function isQuickApprovable(v: OrderVerdict): boolean {
+  return (
+    v.kind === "decide" &&
+    !v.invoiceWarningPending &&
+    !v.manual &&
+    v.city === "match" &&
+    v.issues.length > 0 &&
+    v.issues.every((i) => QUICK_ISSUES.has(i))
+  );
 }
 
 async function applyOne(
@@ -526,6 +549,84 @@ export async function unlinkParcels(parcelIds: number[]): Promise<number> {
 // التراجع
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// كرطونة زايدة لطلبية مسوّاة
+// ---------------------------------------------------------------------------
+
+export type ExtraResult = { ok: true; orderNumber: string; addedCents: Cents } | { ok: false; error: string };
+
+/**
+ * كرطونة زايدة (تحصيل 0) وصلات من بعد ما تسوّات الطلبية: تكلفتها الحقيقية
+ * كتتزاد على **نفس** التسوية (fee_total، parcel_ids) وعلى تكلفة التوصيل ديال
+ * الطلبية. لا تسوية جديدة، لا مبيعات، لا ربح زايد، لا تبديل فالحالة.
+ *
+ * الحماية: كيتعاود الحساب داخل المعاملة؛ المجموعة خاصها تكون نفسها اللي
+ * اقترحها المحرك (extraFor = هاد الطلبية)؛ الكرطونات كتتحجز بـsettlement_id
+ * (ما تتحسبش جوج مرات)؛ التغيير مكتوب فـcarrier_settlement_changes فالتراجع
+ * عن أي فاتورة من الجوج كيرجعو.
+ */
+export async function addExtraParcelsToSettlement(
+  parcelIds: number[],
+  orderId: number,
+  actor: string
+): Promise<ExtraResult> {
+  const ids = [...new Set(parcelIds)].sort((a, b) => a - b);
+  if (ids.length === 0) return { ok: false, error: "ما اخترتي حتى كرطونة." };
+  return sql.begin(async (trx) => {
+    await LOCK_SQL(trx);
+    const board = await computeBoard(trx, true);
+    const group = board.parcelGroups.find(
+      (g) => g.kind === "extra" && g.extraFor?.id === orderId && g.parcels.some((p) => ids.includes(p.id))
+    );
+    const groupIds = group ? group.parcels.map((p) => p.id).sort((a, b) => a - b) : [];
+    if (!group || groupIds.join(",") !== ids.join(",")) {
+      return { ok: false as const, error: "الكرطونات تبدلات من بعد ما عرضناها — عاود حمّل الصفحة." };
+    }
+    const stl = await trx<{ id: number; outcome: string; fee_total: string }[]>`
+      select id, outcome, fee_total from public.carrier_order_settlements
+      where order_id = ${orderId} and reverted_at is null
+      for update
+    `;
+    if (stl.length !== 1 || stl[0].outcome !== "delivered") {
+      return { ok: false as const, error: "الطلبية ما عندهاش تسوية تسليم فعّالة — ما تزادش شي." };
+    }
+    const settlementId = Number(stl[0].id);
+    const addedCents = group.parcels.reduce((a, p) => a + p.feeCents, 0);
+
+    const claimed = await trx`
+      update public.carrier_parcels set settlement_id = ${settlementId}
+      where id = any(${ids}) and active and settlement_id is null
+    `;
+    if (claimed.count !== ids.length) throw new Error("تعارض: كرطونة تحسبات فعملية أخرى. عاود المحاولة.");
+
+    await trx`
+      update public.carrier_order_settlements
+      set parcel_ids = parcel_ids || ${ids}::bigint[],
+        parcel_count = parcel_count + ${ids.length},
+        fee_total = fee_total + ${centsToDb(addedCents)}::numeric
+      where id = ${settlementId}
+    `;
+
+    const cur = await trx<{ actual_delivery_cost: string | null; order_number: string; status: string }[]>`
+      select actual_delivery_cost, order_number, status from public.orders where id = ${orderId} for update
+    `;
+    const oldCost = cur[0].actual_delivery_cost === null ? null : centsToDb(dbMoneyToCents(cur[0].actual_delivery_cost)!);
+    const newCost = centsToDb((dbMoneyToCents(cur[0].actual_delivery_cost) ?? 0) + addedCents);
+    await trx`update public.orders set actual_delivery_cost = ${newCost} where id = ${orderId}`;
+    await logChange(trx, settlementId, orderId, "actual_delivery_cost", oldCost, newCost, actor);
+    const invoices = [...new Set(group.parcels.map((p) => p.invoiceNumber))].join(" + ");
+    await trx`
+      insert into public.order_status_history (order_id, status, note, changed_by)
+      values (
+        ${orderId}, ${cur[0].status},
+        ${`كرطونة زايدة من فاتورة ${invoices} (${ids.length}): تكلفة التوصيل +${centsToDb(addedCents)} درهم على التسوية رقم ${settlementId}. الحالة والمبيعات ما تبدلوش.`},
+        ${actor}
+      )
+    `;
+    return { ok: true as const, orderNumber: cur[0].order_number, addedCents };
+  });
+}
+
 export type RollbackResult = {
   ok: boolean;
   error?: string;
@@ -635,6 +736,7 @@ async function revertSettlement(
           continue;
         }
         await trx`update public.orders set status = ${c.old_value} where id = ${orderId} and status = ${c.new_value}`;
+        if (current[0]) current[0].status = c.old_value as string;
         await trx`
           insert into public.order_status_history (order_id, status, note, changed_by)
           values (${orderId}, ${c.old_value}, ${`${reason} — رجعت الحالة كما كانت قبل التسوية`}, ${actor})
@@ -650,6 +752,9 @@ async function revertSettlement(
         await trx`
           update public.orders set actual_delivery_cost = ${c.old_value}::numeric where id = ${orderId}
         `;
+        // جوج تغييرات فنفس التسوية (التكلفة الأولى + كرطونة زايدة): القيمة الحالية
+        // كتولي اللي رجعنا ليها، باش التغيير اللي قبلو يتقارن معاها.
+        if (current[0]) current[0].actual_delivery_cost = c.old_value;
       }
       await trx`
         update public.carrier_settlement_changes set reverted_at = now(), reverted_by = ${actor}
@@ -700,6 +805,27 @@ export async function markInvoiceBankReceived(
           where id = ${invoiceId} and status = 'active'
         `;
   return r.count === 1;
+}
+
+/**
+ * «وصلات للبنك» لعدة كشوفات دفعة وحدة: المبلغ هو صافي كل كشف كما كتبو الشركة
+ * (total_net)، والتاريخ هو تاريخ الوصول اللي دخل المالك. كشف سبق تعليمو ما كيتبدلش.
+ */
+export async function markInvoicesBankReceived(
+  invoiceIds: number[],
+  receivedOn: string | null,
+  actor: string
+): Promise<number> {
+  const ids = [...new Set(invoiceIds)];
+  if (ids.length === 0) return 0;
+  const r = await sql`
+    update public.carrier_invoices
+    set bank_received_at = coalesce((${receivedOn}::date)::timestamp at time zone 'UTC', now()),
+      -- كشف صافيه سالب (غير رسوم كرطونة زايدة): ما كيوصل حتى درهم، كيتسجل 0.
+      bank_received_amount = greatest(total_net, 0), bank_marked_by = ${actor}
+    where id = any(${ids}) and status = 'active' and bank_received_at is null
+  `;
+  return r.count;
 }
 
 export type InvoiceSummary = {

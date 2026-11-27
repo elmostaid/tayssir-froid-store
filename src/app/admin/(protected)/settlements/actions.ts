@@ -6,9 +6,11 @@ import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import { parseMadToCents, parseReceivedDay } from "@/lib/settlements/money";
 import {
   acknowledgeInvoiceWarnings,
+  addExtraParcelsToSettlement,
   applySettlements,
   linkParcelsToOrder,
   markInvoiceBankReceived,
+  markInvoicesBankReceived,
   rollbackInvoice,
   unlinkParcels,
 } from "@/lib/settlements/settlementStore";
@@ -47,7 +49,14 @@ export async function applySettlementsAction(formData: FormData) {
   const readyOrderIds = ids(formData, "ready");
   const approvedOrderIds = ids(formData, "approve");
   const returnOrderIds = ids(formData, "return");
-  if (readyOrderIds.length === 0 && approvedOrderIds.length === 0 && returnOrderIds.length === 0) {
+  // «موافقة سريعة»: التكلفة اليدوية ← الفاتورة، والتقريب. المخزن كيتأكد بلي ما فيها حتى مشكل آخر.
+  const quickOrderIds = [...ids(formData, "quick_cost"), ...ids(formData, "quick_round")];
+  if (
+    readyOrderIds.length === 0 &&
+    approvedOrderIds.length === 0 &&
+    returnOrderIds.length === 0 &&
+    quickOrderIds.length === 0
+  ) {
     redirect("/admin/settlements?notice=none");
   }
   let applied = 0;
@@ -55,7 +64,13 @@ export async function applySettlementsAction(formData: FormData) {
   let skipped = 0;
   let failure: string | null = null;
   try {
-    const res = await applySettlements({ readyOrderIds, approvedOrderIds, returnOrderIds, actor: admin.email });
+    const res = await applySettlements({
+      readyOrderIds,
+      approvedOrderIds,
+      returnOrderIds,
+      quickOrderIds,
+      actor: admin.email,
+    });
     returned = res.applied.filter((a) => a.outcome === "returned").length;
     applied = res.applied.length - returned;
     skipped = res.skipped.length;
@@ -135,5 +150,41 @@ export async function acknowledgeWarningsAction(formData: FormData) {
   await acknowledgeInvoiceWarnings(invoiceId, admin.email);
   revalidatePath("/admin/settlements");
   revalidatePath(`/admin/settlements/${invoiceId}`);
+  if (formData.get("back") === "list") redirect("/admin/settlements?acknowledged=1");
   redirect(`/admin/settlements/${invoiceId}?acknowledged=1`);
+}
+
+/** كرطونة زايدة (تحصيل 0) لطلبية مسوّاة: تكلفتها كتتزاد على نفس التسوية. */
+export async function addExtraParcelsAction(formData: FormData) {
+  const admin = await requireOwner();
+  const parcelIds = ids(formData, "parcel");
+  const orderId = Number(formData.get("orderId"));
+  let res: Awaited<ReturnType<typeof addExtraParcelsToSettlement>>;
+  try {
+    res = Number.isInteger(orderId) && orderId > 0
+      ? await addExtraParcelsToSettlement(parcelIds, orderId, admin.email)
+      : { ok: false, error: "طلبية غير صالحة." };
+  } catch (error) {
+    console.error("addExtraParcelsAction", error);
+    res = { ok: false, error: "تعذّرت الزيادة، عاود." };
+  }
+  revalidateOrders();
+  if (!res.ok) redirect(`/admin/settlements?error=${encodeURIComponent(res.error)}`);
+  redirect(`/admin/settlements?extra=${encodeURIComponent(res.orderNumber)}&extraFee=${res.addedCents}`);
+}
+
+/** «وصلات للبنك» لعدة كشوفات: صافي كل كشف، وتاريخ الوصول. منفصل على التسليم. */
+export async function markBankBulkAction(formData: FormData) {
+  const admin = await requireOwner();
+  const invoiceIds = ids(formData, "inv");
+  if (invoiceIds.length === 0) redirect("/admin/settlements/bank?notice=none");
+  const day = parseReceivedDay(String(formData.get("receivedOn") ?? ""));
+  if (day === "invalid") {
+    redirect(`/admin/settlements/bank?error=${encodeURIComponent("التاريخ غير صالح أو فالمستقبل.")}`);
+  }
+  const n = await markInvoicesBankReceived(invoiceIds, day, admin.email);
+  revalidatePath("/admin/finance");
+  revalidatePath("/admin/settlements");
+  revalidatePath("/admin/settlements/bank");
+  redirect(`/admin/settlements/bank?marked=${n}`);
 }

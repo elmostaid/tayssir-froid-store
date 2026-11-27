@@ -60,6 +60,24 @@ export type CandidateOrder = {
 export type Confidence = "high" | "medium";
 
 /**
+ * علاش طلبية ماشي «مؤكدة»، كرمز ثابت (النص للمالك فـreasons). الواجهة كتجمّع
+ * بيه: «تكلفة يدوية» و«تقريب» كيتوافق عليهم دفعة وحدة (قرار المالك 2026-11-27)؛
+ * الباقي كيبقى للمراجعة وحدة بوحدة.
+ */
+export type VerdictIssue =
+  | "rounding"
+  | "manual_cost"
+  | "city_differ"
+  | "city_unknown"
+  | "late"
+  | "manual_link"
+  | "status_not_shipped"
+  | "statement_warning";
+
+/** المشاكل اللي كيتوافق عليها جماعياً. أي مشكل آخر = مراجعة وحدة بوحدة. */
+export const QUICK_ISSUES: ReadonlySet<VerdictIssue> = new Set(["rounding", "manual_cost"]);
+
+/**
  * ready    جاهزة: تُطبَّق بالموافقة الجماعية.
  * decide   مطابقة سليمة الأرقام، لكن فيها ما يستحق قرار المالك (تكلفة يدوية
  *          مختلفة، مدينة مختلفة، حالة مؤكَّدة لم تُرسَل). تُطبَّق فقط إن وافق عليها.
@@ -81,6 +99,8 @@ export type OrderVerdict = {
   city: CityCheck;
   /** لماذا ليست «جاهزة» (decide/blocked/waiting). */
   reasons: string[];
+  /** نفس الأسباب كرموز ثابتة (للطلبيات اللي تقدر تتطبّق: decide). */
+  issues: VerdictIssue[];
   /** لماذا الثقة متوسطة لا عالية. */
   confidenceNotes: string[];
   /** سبب المطابقة: الأدلة التي ربطت الكرطونات بهذه الطلبية، سطراً سطراً. */
@@ -103,7 +123,27 @@ export type ParcelGroupVerdict = {
   parcels: OpenParcel[];
   candidates: CandidateOrder[];
   reason: string;
+  /**
+   * كرطونة زايدة (تحصيل 0، مسلَّمة) لطلبية وحيدة سبق تسويتها وفوقتها: تكلفتها
+   * تقدر تتزاد على نفس التسوية بضغطة، بلا مبيعات ولا ربح جديد. غير مقترح.
+   */
+  extraFor?: CandidateOrder;
 };
+
+/**
+ * واش هاد الكرطونات تقدر تكون «زايدة» لهاد الطلبية المسوّاة: كلها بلا تحصيل
+ * ومسلَّمة، والطلبية تسجّلات قبل خروجها (وماشي أقدم بأكثر من 45 يوم).
+ */
+export function extraCartonFits(parcels: OpenParcel[], order: CandidateOrder): boolean {
+  if (parcels.length === 0 || !order.settled) return false;
+  if (!parcels.every((p) => p.codCents === 0 && p.status === "delivered")) return false;
+  const created = dayNumber(order.createdAt);
+  return parcels.every((p) => {
+    if (p.pickupDate === null) return false;
+    const pick = dayNumber(p.pickupDate);
+    return created <= pick && created >= pick - PICKUP_WINDOW_DAYS;
+  });
+}
 
 export type MatchingResult = {
   orders: OrderVerdict[];
@@ -242,6 +282,7 @@ export function judgeOrder(order: CandidateOrder, parcels: OpenParcel[], opts: J
   const feeCents = sum(parcels, "feeCents");
   const city = cityOf(parcels, order);
   const reasons: string[] = [];
+  const issues: VerdictIssue[] = [];
   const confidenceNotes: string[] = [];
   const evidence = matchEvidence(order, parcels, codCents, city);
   const base = {
@@ -253,6 +294,7 @@ export function judgeOrder(order: CandidateOrder, parcels: OpenParcel[], opts: J
     feeCents,
     city,
     reasons,
+    issues,
     confidenceNotes,
     missingCents: 0,
     manual: opts.manual === true,
@@ -333,37 +375,50 @@ export function judgeOrder(order: CandidateOrder, parcels: OpenParcel[], opts: J
     return { ...base, kind: "blocked", confidence: "medium" };
   }
 
+  if (roundingCents !== 0) issues.push("rounding");
   if (roundingCents !== 0)
     reasons.push(
       roundingCents > 0
         ? `الشركة حصّلات ${mad(codCents)} والطلبية ${mad(finalTotal)}: زايد ${mad(roundingCents)} — تقريب ملي تقسم المبلغ على ${count} كرطونات؟ الربح كيتحسب على اللي تحصّل فعلاً.`
         : `الشركة حصّلات ${mad(codCents)} والطلبية ${mad(finalTotal)}: ناقص ${mad(-roundingCents)} — تقريب فالتحصيل؟ الربح كيتحسب على اللي تحصّل فعلاً.`
     );
+  if (opts.manual) issues.push("manual_link");
   if (opts.manual)
     reasons.push("ربطتيها بيدك بهاد الطلبية — تأكد من الأدلة قبل ما تطبّق.");
+  if (opts.lateDays !== undefined) issues.push("late");
   if (opts.lateDays !== undefined)
     reasons.push(
       `الطلبية تسجّلات فالموقع من بعد ما خرجات الكرطونة بـ${opts.lateDays} يوم — تسجيل متأخر؟ ما كاينة حتى طلبية قبل الإرسال بهاد الهاتف.`
     );
+  if (DECIDE_STATUSES.has(order.status)) issues.push("status_not_shipped");
   if (DECIDE_STATUSES.has(order.status))
     reasons.push(
       `الحالة فالموقع «${STATUS_LABELS[order.status]}» ماشي «مُرسَلة» — واش نعتبرها مسلّمة؟`
     );
-  if (city === "differ")
+  if (city === "differ") {
+    issues.push("city_differ");
     reasons.push(`المدينة مختلفة: الفاتورة «${parcels[0].city}» والطلبية «${order.city}».`);
+  }
+  // مدينة ما قدرتش تتقارن ماشي مدينة مطابقة: الطلبية ما كتكونش «مؤكدة» (قرار المالك).
+  if (city === "unknown") {
+    issues.push("city_unknown");
+    reasons.push(`المدينة ما قدرتش تتقارن: الفاتورة «${parcels[0].city ?? "—"}» والطلبية «${order.city ?? "—"}».`);
+  }
 
   const costConflict =
     order.actualDeliveryCostCents !== null && order.actualDeliveryCostCents !== feeCents;
+  if (costConflict) issues.push("manual_cost");
   if (costConflict)
     reasons.push(
       `تكلفة التوصيل المسجلة بيدك ${mad(order.actualDeliveryCostCents!)} والفاتورة ${mad(feeCents)} — كتبقى ديالك حتى توافق.`
     );
 
+  // المطابقة مؤكدة (الهاتف والمبلغ بالسنتيم والتاريخ والمدينة)، ولكن اكتمال الكرطونات
+  // ما موثقش بلا عدد مسجَّل: confidence «medium» كيحفظ هاد الفرق فالتسوية.
   if (known === null)
     confidenceNotes.push(
-      "عدد الكرطونات ما مسجلش فالطلبية: ممكن تكون كرطونة بلا تحصيل مازال ما وصلاتش. سجّل العدد فصفحة الطلبية باش تولي الثقة عالية، ولا اختارها بيدك إلا كنتي متأكد."
+      "عدد الكرطونات ما مسجلش: المطابقة مؤكدة بالمبلغ، ولكن الاكتمال ما موثقش. إلا جات كرطونة زايدة من بعد، كتزيد تكلفتها بضغطة."
     );
-  if (city === "unknown") confidenceNotes.push("المدينة ما قدرتش تتقارن.");
   const confidence: Confidence = known !== null && city === "match" ? "high" : "medium";
 
   const kind: OrderVerdictKind = reasons.length > 0 ? "decide" : "ready";
@@ -372,7 +427,8 @@ export function judgeOrder(order: CandidateOrder, parcels: OpenParcel[], opts: J
     roundingCents,
     kind,
     confidence,
-    preselect: kind === "ready" && confidence === "high",
+    // كل «جاهزة» (مؤكدة) معلَّمة: كتطبّق بالموافقة الجماعية.
+    preselect: kind === "ready",
     willSetDelivered: order.status !== "delivered",
     willSetCost: order.actualDeliveryCostCents === null || costConflict,
     costConflict,
@@ -456,7 +512,16 @@ export function matchParcels(
     if (!order) {
       parcelGroups.push({ kind: "unmatched", parcels: ps, candidates: [], reason: "مربوطة بيدك بطلبية ما بقاتش موجودة — فك الربط." });
     } else if (order.settled) {
-      parcelGroups.push({ kind: "extra", parcels: ps, candidates: [order], reason: "مربوطة بيدك بطلبية سبق تسويتها — فك الربط." });
+      const fits = extraCartonFits(ps, order);
+      parcelGroups.push({
+        kind: "extra",
+        parcels: ps,
+        candidates: [order],
+        reason: fits
+          ? "مربوطة بيدك بطلبية سبق تسويتها: كرطونة زايدة بلا تحصيل — تقدر تزيد تكلفتها."
+          : "مربوطة بيدك بطلبية سبق تسويتها — فك الربط.",
+        extraFor: fits ? order : undefined,
+      });
     } else {
       orders.push(judgeOrder(order, ps, { manual: true }));
     }
@@ -558,11 +623,18 @@ export function matchParcels(
         reason: `${open.length} طلبيات مفتوحة بنفس الهاتف والمبالغ ما كتفرّقش بيناتهم — اربطها بيدك.${laterNote}`,
       });
     } else if (all.some((o) => o.settled)) {
+      // كرطونة زايدة مقترحة غير إلا كانت طلبية مسوّاة وحدة كتوافق التاريخ، وما كاينة
+      // حتى طلبية مفتوحة بنفس الهاتف (ممكن تكون ديالها).
+      const settledFits = all.filter((o) => o.settled && extraCartonFits(remaining, o));
+      const extraFor = settledFits.length === 1 && open.length === 0 ? settledFits[0] : undefined;
       parcelGroups.push({
         kind: "extra",
         parcels: remaining,
         candidates: all.filter((o) => o.settled),
-        reason: "الهاتف ديال طلبية سبق تسويتها — كرطونة زايدة أو طلبية جديدة ما مسجلاش.",
+        reason: extraFor
+          ? `كرطونة زايدة بلا تحصيل ديال ${extraFor.orderNumber} (سبق تسويتها) — تقدر تزيد تكلفتها بلا ما تتعاود المبيعات.`
+          : "الهاتف ديال طلبية سبق تسويتها — كرطونة زايدة أو طلبية جديدة ما مسجلاش.",
+        extraFor,
       });
     } else {
       parcelGroups.push({

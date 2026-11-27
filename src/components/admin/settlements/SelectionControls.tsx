@@ -49,8 +49,19 @@ export function SelectAll({ name, label }: { name: string; label: string }) {
   );
 }
 
+const APPLY_INPUTS = ["ready", "quick_cost", "quick_round", "approve", "return", "inv"]
+  .map((n) => `input[name="${n}"]:checked`)
+  .join(", ");
+
 /** زرّ التطبيق يعرض عدد المختار، ويتعطّل إن لم يُختر شيء أو أثناء المعالجة. */
-export function ApplyButton() {
+export function ApplyButton({
+  idle = "اختار الطلبيات أولاً",
+  template = "طبّق على {n} طلبية",
+}: {
+  idle?: string;
+  /** النص مع العدد — نص (ماشي دالة) حيت كيتصيفط من مكوّن الخادم. */
+  template?: string;
+} = {}) {
   const ref = useRef<HTMLButtonElement>(null);
   const [count, setCount] = useState(0);
   const { pending } = useFormStatus();
@@ -59,7 +70,7 @@ export function ApplyButton() {
     const form = ref.current?.closest("form");
     if (!form) return;
     const sync = () =>
-      setCount(form.querySelectorAll('input[name="ready"]:checked, input[name="approve"]:checked, input[name="return"]:checked').length);
+      setCount(form.querySelectorAll(APPLY_INPUTS).length);
     sync();
     form.addEventListener("change", sync);
     return () => form.removeEventListener("change", sync);
@@ -72,7 +83,7 @@ export function ApplyButton() {
       disabled={pending || count === 0}
       className="min-h-12 w-full rounded-full bg-brand-turquoise px-5 text-base font-bold text-white disabled:bg-neutral-300"
     >
-      {pending ? "كنطبّق…" : count === 0 ? "اختار الطلبيات أولاً" : `طبّق على ${count} طلبية`}
+      {pending ? "كنطبّق…" : count === 0 ? idle : template.replace("{n}", String(count))}
     </button>
   );
 }
