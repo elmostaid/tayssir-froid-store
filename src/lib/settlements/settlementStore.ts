@@ -174,10 +174,12 @@ async function loadOpenParcels(db: Db): Promise<OpenParcel[]> {
       carrier_status: OpenParcel["status"];
       carrier_status_raw: string | null;
       pickup_date: string | null;
+      manual_order_id: number | null;
     }[]
   >`
     select p.id, p.invoice_id, i.invoice_number, p.tracking_code, p.phone_key, p.city,
-      p.cod_amount, p.fee, p.carrier_status, p.carrier_status_raw, p.pickup_date::text as pickup_date
+      p.cod_amount, p.fee, p.carrier_status, p.carrier_status_raw, p.pickup_date::text as pickup_date,
+      p.manual_order_id
     from public.carrier_parcels p
     join public.carrier_invoices i on i.id = p.invoice_id
     where p.active and p.settlement_id is null and i.status = 'active'
@@ -195,11 +197,21 @@ async function loadOpenParcels(db: Db): Promise<OpenParcel[]> {
     status: r.carrier_status,
     statusRaw: r.carrier_status_raw,
     pickupDate: r.pickup_date,
+    manualOrderId: r.manual_order_id === null ? null : Number(r.manual_order_id),
   }));
 }
 
-async function loadCandidates(db: Db, phoneKeys: string[], lock: boolean): Promise<CandidateOrder[]> {
-  if (phoneKeys.length === 0) return [];
+/** الأرقام العربية المشرقية والفارسية ← لاتينية، قبل أخذ آخر 9 أرقام (نفس phoneKey). */
+const EASTERN_DIGITS = "٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹";
+const LATIN_DIGITS = "01234567890123456789";
+
+async function loadCandidates(
+  db: Db,
+  phoneKeys: string[],
+  lock: boolean,
+  orderIds: number[] = []
+): Promise<CandidateOrder[]> {
+  if (phoneKeys.length === 0 && orderIds.length === 0) return [];
   type Row = {
     id: number;
     order_number: string;
@@ -216,25 +228,27 @@ async function loadCandidates(db: Db, phoneKeys: string[], lock: boolean): Promi
   const rows = lock
     ? await db<Row[]>`
         select o.id, o.order_number, o.status,
-          right(regexp_replace(o.customer_phone, '\\D', '', 'g'), 9) as phone_key,
+          right(regexp_replace(translate(o.customer_phone, ${EASTERN_DIGITS}, ${LATIN_DIGITS}), '\\D', '', 'g'), 9) as phone_key,
           o.customer_city, o.created_at, o.final_total, o.delivery_fee, o.carton_count,
           o.actual_delivery_cost,
           exists (select 1 from public.carrier_order_settlements s
                   where s.order_id = o.id and s.reverted_at is null) as settled
         from public.orders o
-        where right(regexp_replace(o.customer_phone, '\\D', '', 'g'), 9) = any(${phoneKeys})
+        where right(regexp_replace(translate(o.customer_phone, ${EASTERN_DIGITS}, ${LATIN_DIGITS}), '\\D', '', 'g'), 9) = any(${phoneKeys})
+          or o.id = any(${orderIds})
         order by o.created_at, o.id
         for update of o
       `
     : await db<Row[]>`
         select o.id, o.order_number, o.status,
-          right(regexp_replace(o.customer_phone, '\\D', '', 'g'), 9) as phone_key,
+          right(regexp_replace(translate(o.customer_phone, ${EASTERN_DIGITS}, ${LATIN_DIGITS}), '\\D', '', 'g'), 9) as phone_key,
           o.customer_city, o.created_at, o.final_total, o.delivery_fee, o.carton_count,
           o.actual_delivery_cost,
           exists (select 1 from public.carrier_order_settlements s
                   where s.order_id = o.id and s.reverted_at is null) as settled
         from public.orders o
-        where right(regexp_replace(o.customer_phone, '\\D', '', 'g'), 9) = any(${phoneKeys})
+        where right(regexp_replace(translate(o.customer_phone, ${EASTERN_DIGITS}, ${LATIN_DIGITS}), '\\D', '', 'g'), 9) = any(${phoneKeys})
+          or o.id = any(${orderIds})
         order by o.created_at, o.id
       `;
   return rows.map((r) => ({
@@ -255,7 +269,8 @@ async function loadCandidates(db: Db, phoneKeys: string[], lock: boolean): Promi
 export async function computeBoard(db: Db = sql, lock = false): Promise<MatchingResult> {
   const parcels = await loadOpenParcels(db);
   const keys = [...new Set(parcels.map((p) => p.phoneKey).filter((k): k is string => k !== null))];
-  const candidates = await loadCandidates(db, keys, lock);
+  const pinnedIds = [...new Set(parcels.map((p) => p.manualOrderId).filter((id): id is number => !!id))];
+  const candidates = await loadCandidates(db, keys, lock, pinnedIds);
   return matchParcels(parcels, candidates);
 }
 
@@ -336,7 +351,7 @@ async function applyOne(
       settled_by, outcome
     ) values (
       ${v.order.id}, ${lastInvoice.invoiceId}, ${parcelIds}, ${parcelIds.length},
-      ${centsToDb(v.codCents)}, ${centsToDb(v.feeCents)}, ${v.confidence}, ${decision}, ${actor},
+      ${centsToDb(v.codCents)}, ${centsToDb(v.feeCents)}, ${v.confidence}, ${v.manual ? "manual" : decision}, ${actor},
       ${outcome}
     ) returning id
   `;
@@ -412,6 +427,66 @@ async function logChange(
     insert into public.carrier_settlement_changes (settlement_id, order_id, field, old_value, new_value, changed_by)
     values (${settlementId}, ${orderId}, ${field}, ${oldValue}, ${newValue}, ${actor})
   `;
+}
+
+// ---------------------------------------------------------------------------
+// الربط اليدوي
+// ---------------------------------------------------------------------------
+
+export type LinkResult = { ok: true; orderNumber: string } | { ok: false; error: string };
+
+/**
+ * المالك كيقول «هاد الكرطونات ديال هاد الطلبية». **ماشي تطبيق**: كيتسجل الربط
+ * فقط، ومن بعد نفس المحرك كيحكم على الطلبية وكتبان فـ«تحتاج قرارك» بأدلتها.
+ */
+export async function linkParcelsToOrder(
+  parcelIds: number[],
+  orderNumberRaw: string,
+  actor: string
+): Promise<LinkResult> {
+  const orderNumber = orderNumberRaw.trim().toUpperCase();
+  const ids = [...new Set(parcelIds)].filter((id) => Number.isInteger(id) && id > 0);
+  if (ids.length === 0) return { ok: false, error: "ما اخترتي حتى كرطونة." };
+  if (!/^[A-Z0-9-]{3,40}$/.test(orderNumber)) return { ok: false, error: "رقم الطلبية ماشي صحيح (مثال: TF-2026-0340)." };
+  return sql.begin(async (trx) => {
+    await LOCK_SQL(trx);
+    const [order] = await trx<{ id: number; order_number: string; settled: boolean }[]>`
+      select o.id, o.order_number,
+        exists (select 1 from public.carrier_order_settlements s
+                where s.order_id = o.id and s.reverted_at is null) as settled
+      from public.orders o where upper(o.order_number) = ${orderNumber}
+      for update of o
+    `;
+    if (!order) return { ok: false as const, error: `ما كايناش طلبية برقم ${orderNumber}.` };
+    if (order.settled) return { ok: false as const, error: `${order.order_number} سبق تسويتها.` };
+    const parcels = await trx<{ id: number; ok: boolean }[]>`
+      select p.id, (p.active and p.settlement_id is null and i.status = 'active') as ok
+      from public.carrier_parcels p join public.carrier_invoices i on i.id = p.invoice_id
+      where p.id = any(${ids})
+      for update of p
+    `;
+    if (parcels.length !== ids.length || parcels.some((p) => !p.ok))
+      return { ok: false as const, error: "شي كرطونة ما بقاتش مفتوحة (تسوّات ولا تراجعتي على فاتورتها)." };
+    await trx`
+      update public.carrier_parcels
+      set manual_order_id = ${order.id}, manual_linked_by = ${actor}, manual_linked_at = now()
+      where id = any(${ids})
+    `;
+    return { ok: true as const, orderNumber: order.order_number };
+  });
+}
+
+/** فك الربط اليدوي لكرطونات ما تسوّاتش بعد. */
+export async function unlinkParcels(parcelIds: number[]): Promise<number> {
+  return sql.begin(async (trx) => {
+    await LOCK_SQL(trx);
+    const r = await trx`
+      update public.carrier_parcels
+      set manual_order_id = null, manual_linked_by = null, manual_linked_at = null
+      where id = any(${parcelIds}) and settlement_id is null and manual_order_id is not null
+    `;
+    return r.count;
+  });
 }
 
 // ---------------------------------------------------------------------------

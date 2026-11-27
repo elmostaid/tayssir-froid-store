@@ -35,7 +35,9 @@ export function centsToDb(cents: Cents): string {
 /** آخر 9 أرقام من هاتف مغربي، أو null إن كان أقصر. */
 export function phoneKey(raw: string | null | undefined): string | null {
   if (!raw) return null;
-  const digits = raw.replace(/\D/g, "");
+  // أرقام عربية مشرقية (٠٦…) أو فارسية ← لاتينية قبل أي شيء.
+  const latin = raw.replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660)).replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06f0));
+  const digits = latin.replace(/\D/g, "");
   return digits.length >= 9 ? digits.slice(-9) : null;
 }
 

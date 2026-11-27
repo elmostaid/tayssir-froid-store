@@ -38,6 +38,8 @@ export type OpenParcel = {
   status: CarrierParcelStatus;
   statusRaw: string | null;
   pickupDate: string | null;
+  /** ربط يدوي من المالك بطلبية بعينها (يتجاوز البحث بالهاتف، ولا يُطبَّق إلا بموافقة). */
+  manualOrderId?: number | null;
 };
 
 export type CandidateOrder = {
@@ -85,6 +87,10 @@ export type OrderVerdict = {
   evidence: string[];
   /** معلَّمة مسبقاً للتطبيق؟ الثقة العالية وحدها — المتوسطة يختارها المالك. */
   preselect: boolean;
+  /** المالك ربط الكرطونات بهاد الطلبية بيدو: ما تُطبَّق إلا بموافقة صريحة. */
+  manual: boolean;
+  /** فرق التقريب بين المحصَّل والمبلغ النهائي (بالسنتيم، موجب = تحصّل أكثر). 0 = بالضبط. */
+  roundingCents: number;
   willSetDelivered: boolean;
   willSetCost: boolean;
   costConflict: boolean;
@@ -128,6 +134,23 @@ const STATUS_LABELS: Record<string, string> = {
 
 /** الكرطونة تُستلَم بعد الطلب، ولا تتأخّر عنه أكثر من هذا. */
 const PICKUP_WINDOW_DAYS = 45;
+/**
+ * تسجيل متأخر: طلبية دخلات للموقع من بعد ما خرجات الكرطونة (طلب واتساب تسجّل
+ * من بعد). ما تُرشَّح إلا إلا ما كانت حتى طلبية قبل الإرسال، وما كتطبق إلا بموافقة.
+ */
+const LATE_REGISTRATION_DAYS = 3;
+/**
+ * فرق التقريب المقبول (بقرار المالك وحده، أبداً تلقائياً): درهم واحد لكل كرطونة،
+ * وماشي أكثر من 5 دراهم. مثال حقيقي: 1,705 مقسومة على جوج كرطونات = 853 + 853.
+ */
+const ROUNDING_CENTS_PER_PARCEL = 100;
+const MAX_ROUNDING_CENTS = 500;
+/** حالات خرجت فيها السلعة فعلاً (أو تقريباً): لها الأولوية على ملغاة/جديدة بنفس المبلغ. */
+const SENT_LIKE = new Set(["shipped", "delivered", "confirmed", "preparing"]);
+
+export function roundingTolerance(parcelCount: number): number {
+  return Math.min(parcelCount * ROUNDING_CENTS_PER_PARCEL, MAX_ROUNDING_CENTS);
+}
 /** سقف تعداد المجموعات الجزئية (2^14 = 16k) — أكثر من هذا لهاتف واحد = غامض. */
 const MAX_SUBSET_PARCELS = 14;
 
@@ -205,7 +228,14 @@ function matchEvidence(
   return out;
 }
 
-export function judgeOrder(order: CandidateOrder, parcels: OpenParcel[]): OrderVerdict {
+export type JudgeOptions = {
+  /** ربط يدوي من المالك. */
+  manual?: boolean;
+  /** الطلبية تسجّلات من بعد الإرسال بهاد عدد الأيام. */
+  lateDays?: number;
+};
+
+export function judgeOrder(order: CandidateOrder, parcels: OpenParcel[], opts: JudgeOptions = {}): OrderVerdict {
   const codCents = sum(parcels, "codCents");
   const feeCents = sum(parcels, "feeCents");
   const city = cityOf(parcels, order);
@@ -223,6 +253,8 @@ export function judgeOrder(order: CandidateOrder, parcels: OpenParcel[]): OrderV
     reasons,
     confidenceNotes,
     missingCents: 0,
+    manual: opts.manual === true,
+    roundingCents: 0,
     willSetDelivered: false,
     willSetCost: false,
     costConflict: false,
@@ -244,16 +276,28 @@ export function judgeOrder(order: CandidateOrder, parcels: OpenParcel[]): OrderV
   }
 
   const finalTotal = order.finalTotalCents;
-  if (codCents > finalTotal) {
-    reasons.push(
-      `المحصَّل ${mad(codCents)} كيفوت المبلغ النهائي ${mad(finalTotal)} بـ${mad(codCents - finalTotal)}.`
-    );
-    return { ...base, kind: "blocked", confidence: "medium" };
-  }
-
   const count = parcels.length;
   const known = order.cartonCount;
-  if (codCents < finalTotal) {
+  const tolerance = roundingTolerance(count);
+  let roundingCents = 0;
+  if (codCents > finalTotal) {
+    if (codCents - finalTotal > tolerance) {
+      reasons.push(
+        `المحصَّل ${mad(codCents)} كيفوت المبلغ النهائي ${mad(finalTotal)} بـ${mad(codCents - finalTotal)}.`
+      );
+      return { ...base, kind: "blocked", confidence: "medium" };
+    }
+    roundingCents = codCents - finalTotal;
+  } else if (
+    codCents < finalTotal &&
+    finalTotal - codCents <= tolerance &&
+    !(known !== null && count < known)
+  ) {
+    // ناقص درهم ولا جوج: ماشي كرطونة ناقصة (حتى كرطونة ما كتساوي درهم)، تقريب فالتحصيل.
+    roundingCents = codCents - finalTotal;
+  }
+
+  if (roundingCents === 0 && codCents < finalTotal) {
     if (known !== null && count >= known) {
       reasons.push(
         `وصلات ${count} من ${known} كرطونات المسجلة ولكن ناقص ${mad(finalTotal - codCents)} — المبلغ ما متطابقش.`
@@ -264,7 +308,7 @@ export function judgeOrder(order: CandidateOrder, parcels: OpenParcel[]): OrderV
     return { ...base, kind: "waiting", confidence: "medium", missingCents: finalTotal - codCents };
   }
 
-  // المجموع = المبلغ النهائي بالضبط.
+  // المجموع = المبلغ النهائي بالضبط (أو بفرق تقريب صغير، كيتعرض على المالك).
   if (known !== null && count < known) {
     reasons.push(
       `المبلغ كامل ولكن وصلات ${count} من ${known} كرطونات المسجلة — كتسنى كرطونة بلا تحصيل.`
@@ -287,6 +331,18 @@ export function judgeOrder(order: CandidateOrder, parcels: OpenParcel[]): OrderV
     return { ...base, kind: "blocked", confidence: "medium" };
   }
 
+  if (roundingCents !== 0)
+    reasons.push(
+      roundingCents > 0
+        ? `الشركة حصّلات ${mad(codCents)} والطلبية ${mad(finalTotal)}: زايد ${mad(roundingCents)} — تقريب ملي تقسم المبلغ على ${count} كرطونات؟ الربح كيتحسب على اللي تحصّل فعلاً.`
+        : `الشركة حصّلات ${mad(codCents)} والطلبية ${mad(finalTotal)}: ناقص ${mad(-roundingCents)} — تقريب فالتحصيل؟ الربح كيتحسب على اللي تحصّل فعلاً.`
+    );
+  if (opts.manual)
+    reasons.push("ربطتيها بيدك بهاد الطلبية — تأكد من الأدلة قبل ما تطبّق.");
+  if (opts.lateDays !== undefined)
+    reasons.push(
+      `الطلبية تسجّلات فالموقع من بعد ما خرجات الكرطونة بـ${opts.lateDays} يوم — تسجيل متأخر؟ ما كاينة حتى طلبية قبل الإرسال بهاد الهاتف.`
+    );
   if (DECIDE_STATUSES.has(order.status))
     reasons.push(
       `الحالة فالموقع «${STATUS_LABELS[order.status]}» ماشي «مُرسَلة» — واش نعتبرها مسلّمة؟`
@@ -311,6 +367,7 @@ export function judgeOrder(order: CandidateOrder, parcels: OpenParcel[]): OrderV
   const kind: OrderVerdictKind = reasons.length > 0 ? "decide" : "ready";
   return {
     ...base,
+    roundingCents,
     kind,
     confidence,
     preselect: kind === "ready" && confidence === "high",
@@ -359,6 +416,24 @@ function judgeReturn(
   };
 }
 
+/** المجموعات الجزئية اللي مجموعها قريب من الهدف بفرق تقريب (ماشي بالضبط). */
+function nearSubsets(parcels: OpenParcel[], target: Cents): OpenParcel[][] {
+  const out: OpenParcel[][] = [];
+  const n = parcels.length;
+  for (let mask = 1; mask < 1 << n; mask++) {
+    let s = 0;
+    let size = 0;
+    for (let i = 0; i < n; i++)
+      if (mask & (1 << i)) {
+        s += parcels[i].codCents;
+        size++;
+      }
+    if (s !== target && Math.abs(s - target) <= roundingTolerance(size))
+      out.push(parcels.filter((_, i) => mask & (1 << i)));
+  }
+  return out;
+}
+
 export function matchParcels(
   openParcels: OpenParcel[],
   candidateOrders: CandidateOrder[]
@@ -366,9 +441,28 @@ export function matchParcels(
   const orders: OrderVerdict[] = [];
   const parcelGroups: ParcelGroupVerdict[] = [];
 
+  // 0) الربط اليدوي من المالك: كيتجاوز البحث بالهاتف، والحكم كيبقى نفس الحكم
+  //    (المبلغ، الحالة، الكرطونات)، ودايماً «تحتاج قرارك».
+  const pinned = new Map<number, OpenParcel[]>();
+  const free: OpenParcel[] = [];
+  for (const p of openParcels) {
+    if (p.manualOrderId) pinned.set(p.manualOrderId, [...(pinned.get(p.manualOrderId) ?? []), p]);
+    else free.push(p);
+  }
+  for (const [orderId, ps] of pinned) {
+    const order = candidateOrders.find((o) => o.id === orderId);
+    if (!order) {
+      parcelGroups.push({ kind: "unmatched", parcels: ps, candidates: [], reason: "مربوطة بيدك بطلبية ما بقاتش موجودة — فك الربط." });
+    } else if (order.settled) {
+      parcelGroups.push({ kind: "extra", parcels: ps, candidates: [order], reason: "مربوطة بيدك بطلبية سبق تسويتها — فك الربط." });
+    } else {
+      orders.push(judgeOrder(order, ps, { manual: true }));
+    }
+  }
+
   const byPhone = new Map<string, OpenParcel[]>();
   const noPhone: OpenParcel[] = [];
-  for (const p of openParcels) {
+  for (const p of free) {
     if (!p.phoneKey) noPhone.push(p);
     else byPhone.set(p.phoneKey, [...(byPhone.get(p.phoneKey) ?? []), p]);
   }
@@ -376,8 +470,21 @@ export function matchParcels(
     parcelGroups.push({ kind: "unmatched", parcels: noPhone, candidates: [], reason: "بلا هاتف مقروء." });
 
   for (const [key, group] of byPhone) {
-    const all = candidateOrders.filter((o) => o.phoneKey === key);
-    let open = all.filter((o) => !o.settled);
+    // طلبية مربوطة يدوياً بكرطونات أخرى ما كتدخلش فالبحث بالهاتف.
+    const all = candidateOrders.filter((o) => o.phoneKey === key && !pinned.has(o.id));
+
+    // التسلسل الزمني: الطلبية كتكون قبل خروج الكرطونة (ولا نفس النهار)، وماشي
+    // أقدم منها بأكثر من 45 يوم. طلبية تسجّلات من بعد ما خرجات الكرطونة ماشي
+    // هي — حتى ما كتحسبش فالغموض (TF-2026-0516: 25 يوم من بعد الإرسال).
+    const pickups = group.map((p) => p.pickupDate).filter((d): d is string => d !== null).map(dayNumber);
+    const firstPickup = pickups.length > 0 ? Math.min(...pickups) : null;
+    const lastPickup = pickups.length > 0 ? Math.max(...pickups) : null;
+    const daysAfterPickup = (o: CandidateOrder) => (lastPickup === null ? 0 : dayNumber(o.createdAt) - lastPickup);
+    const inTime = (o: CandidateOrder) =>
+      lastPickup === null ||
+      (daysAfterPickup(o) <= 0 && dayNumber(o.createdAt) >= (firstPickup as number) - PICKUP_WINDOW_DAYS);
+    let open = all.filter((o) => !o.settled && inTime(o));
+    const later = all.filter((o) => !o.settled && !inTime(o) && daysAfterPickup(o) > 0);
     let remaining = [...group];
 
     // نوزّع ما دام هناك تقدّم: كل جولة تحسم طلبية واحدة بيقين.
@@ -398,16 +505,27 @@ export function matchParcels(
       }
 
       if (remaining.length > MAX_SUBSET_PARCELS) break;
-      const hits: { order: CandidateOrder; subset: OpenParcel[] }[] = [];
-      let ambiguousSubset = false;
-      for (const order of open) {
-        if (order.finalTotalCents === null) continue;
-        const fits = remaining.filter((p) => parcelFitsOrder(p, order));
-        const subsets = exactSubsets(fits, order.finalTotalCents);
-        if (subsets.length === 1) hits.push({ order, subset: subsets[0] });
-        else if (subsets.length > 1) ambiguousSubset = true;
+      const collect = (find: (ps: OpenParcel[], t: Cents) => OpenParcel[][]) => {
+        const hits: { order: CandidateOrder; subset: OpenParcel[] }[] = [];
+        let ambiguous = false;
+        for (const order of open) {
+          if (order.finalTotalCents === null) continue;
+          const subsets = find(remaining.filter((p) => parcelFitsOrder(p, order)), order.finalTotalCents);
+          if (subsets.length === 1) hits.push({ order, subset: subsets[0] });
+          else if (subsets.length > 1) ambiguous = true;
+        }
+        return { hits, ambiguous };
+      };
+      // بالضبط أولاً؛ وإلا ما كاين حتى مبلغ مضبوط، فرق التقريب (كيتعرض على المالك).
+      let { hits, ambiguous } = collect(exactSubsets);
+      if (hits.length === 0 && !ambiguous) ({ hits, ambiguous } = collect(nearSubsets));
+      // جوج طلبيات بنفس المبلغ وحدة منهم وحدها «خرجات» (مُرسَلة/مسلَّمة/مؤكَّدة):
+      // الأخرى ملغاة ولا جديدة ما تأكداتش — الكرطونة ديال اللي خرجات.
+      if (hits.length > 1 && !ambiguous) {
+        const sent = hits.filter((h) => SENT_LIKE.has(h.order.status));
+        if (sent.length === 1) hits = sent;
       }
-      if (hits.length === 1 && !ambiguousSubset) {
+      if (hits.length === 1 && !ambiguous) {
         const { order, subset } = hits[0];
         orders.push(judgeOrder(order, subset));
         remaining = remaining.filter((p) => !subset.includes(p));
@@ -416,13 +534,26 @@ export function matchParcels(
       }
     }
 
+    // تسجيل متأخر: ما كاينة حتى طلبية قبل الإرسال، وكاينة وحدة تسجّلات من بعدو بأيام قليلة.
+    if (remaining.length > 0 && open.length === 0 && !all.some((o) => o.settled)) {
+      const late = later.filter((o) => daysAfterPickup(o) <= LATE_REGISTRATION_DAYS);
+      if (late.length === 1) {
+        orders.push(judgeOrder(late[0], remaining, { lateDays: daysAfterPickup(late[0]) }));
+        remaining = [];
+      }
+    }
+
     if (remaining.length === 0) continue;
+    const laterNote =
+      later.length > 0
+        ? ` (${later.map((o) => `${o.orderNumber} تسجّلات ${daysAfterPickup(o)} يوم من بعد الإرسال`).join("، ")} — ماشي هي.)`
+        : "";
     if (open.length > 1) {
       parcelGroups.push({
         kind: "ambiguous",
         parcels: remaining,
         candidates: open,
-        reason: `${open.length} طلبيات مفتوحة بنفس الهاتف والمبالغ ما كتفرّقش بيناتهم — اختار بيدك.`,
+        reason: `${open.length} طلبيات مفتوحة بنفس الهاتف والمبالغ ما كتفرّقش بيناتهم — اربطها بيدك.${laterNote}`,
       });
     } else if (all.some((o) => o.settled)) {
       parcelGroups.push({
@@ -439,7 +570,9 @@ export function matchParcels(
         reason:
           open.length === 1
             ? "تاريخ الاستلام خارج مدة الطلبية الوحيدة بهاد الهاتف."
-            : "ما كاينة حتى طلبية بهاد الهاتف.",
+            : later.length > 0
+              ? `ما كاينة حتى طلبية قبل الإرسال بهاد الهاتف${laterNote}`
+              : "ما كاينة حتى طلبية بهاد الهاتف — ممكن بيعة ما تسجلاتش فالموقع، ولا الزبون عطا هاتف آخر.",
       });
     }
   }

@@ -8,7 +8,7 @@ import { computeBoard, listInvoices, loadProfitLines } from "@/lib/settlements/s
 import { ApplyButton, SelectAll } from "@/components/admin/settlements/SelectionControls";
 import { SafeActionForm } from "@/components/admin/settlements/SafeActionForm";
 import { UploadInvoiceForm } from "@/components/admin/settlements/UploadInvoiceForm";
-import { applySettlementsAction } from "./actions";
+import { applySettlementsAction, linkParcelsAction, unlinkParcelsAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "تسويات التوصيل" };
@@ -48,6 +48,9 @@ function OrderLine({
           {v.order.orderNumber}
         </Link>
         {(v.kind === "ready" || v.kind === "decide") && <ConfidenceBadge v={v} />}
+        {v.manual && (
+          <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-800">ربط يدوي</span>
+        )}
       </div>
       <p className="mt-1 text-xs text-neutral-600">
         {v.parcels.length} كرطونة · محصَّل {mad(v.codCents)}
@@ -129,6 +132,7 @@ export default async function SettlementsPage({ searchParams }: { searchParams: 
   const waiting = board.orders.filter((v) => v.kind === "waiting");
   const blocked = board.orders.filter((v) => v.kind === "blocked");
   const returns = board.orders.filter((v) => v.kind === "return");
+  const manualLinks = board.orders.filter((v) => v.manual);
 
   const profitLines = await loadProfitLines([...ready, ...decide].map((v) => v.order.id));
   const profitOf = (v: OrderVerdict): number | null => {
@@ -203,6 +207,16 @@ export default async function SettlementsPage({ searchParams }: { searchParams: 
           <Link href={`/admin/settlements/${one(sp.invoice)}`} className="font-semibold underline">
             شوفها
           </Link>
+        </div>
+      )}
+      {one(sp.linked) && !error && (
+        <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
+          تربطات الكرطونات بـ{one(sp.linked)}. ما تطبّق والو — راجعها لتحت وعلّم عليها إلا كانت صحيحة.
+        </div>
+      )}
+      {one(sp.unlinked) && (
+        <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-700">
+          تفكّ الربط.
         </div>
       )}
       {one(sp.notice) === "none" && (
@@ -307,6 +321,31 @@ export default async function SettlementsPage({ searchParams }: { searchParams: 
         )}
       </SafeActionForm>
 
+      {manualLinks.length > 0 && (
+        <section className="mt-4 rounded-xl border border-sky-200 bg-white p-4">
+          <h2 className="text-base font-bold text-neutral-800">
+            روابط يدوية ما تطبّقاتش <span className="text-neutral-400">({manualLinks.length})</span>
+          </h2>
+          <ul className="mt-2 divide-y divide-neutral-100">
+            {manualLinks.map((v) => (
+              <li key={v.order.id} className="flex items-center justify-between gap-2 py-2 text-sm">
+                <span>
+                  {v.parcels.map((p) => p.trackingCode).join("، ")} ← <span className="font-semibold">{v.order.orderNumber}</span>
+                </span>
+                <SafeActionForm action={unlinkParcelsAction}>
+                  {v.parcels.map((p) => (
+                    <input key={p.id} type="hidden" name="parcel" value={p.id} />
+                  ))}
+                  <button type="submit" className="min-h-11 px-2 text-xs font-semibold text-neutral-600 underline">
+                    فك الربط
+                  </button>
+                </SafeActionForm>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {waiting.length > 0 && (
         <details className="mt-4 rounded-xl border border-neutral-200 bg-white p-4" open={waiting.length <= 5}>
           <summary className="cursor-pointer text-base font-bold text-neutral-800">
@@ -359,6 +398,28 @@ export default async function SettlementsPage({ searchParams }: { searchParams: 
                     ))}
                   </p>
                 )}
+                {/* الربط اليدوي ماشي تطبيق: الطلبية كتبان من بعد فـ«تحتاج قرارك» بأدلتها. */}
+                <SafeActionForm action={linkParcelsAction} className="mt-2 flex gap-2">
+                  {g.parcels.map((p) => (
+                    <input key={p.id} type="hidden" name="parcel" value={p.id} />
+                  ))}
+                  <input
+                    name="orderNumber"
+                    required
+                    dir="ltr"
+                    autoCapitalize="characters"
+                    placeholder="TF-2026-…"
+                    defaultValue={g.candidates.length === 1 ? g.candidates[0].orderNumber : ""}
+                    aria-label="رقم الطلبية"
+                    className="min-h-11 min-w-0 flex-1 rounded-lg border border-neutral-300 px-3 text-sm"
+                  />
+                  <button
+                    type="submit"
+                    className="min-h-11 shrink-0 rounded-lg border border-sky-300 bg-sky-50 px-3 text-sm font-semibold text-sky-900"
+                  >
+                    اربط
+                  </button>
+                </SafeActionForm>
               </li>
             ))}
           </ul>

@@ -57,11 +57,23 @@ const ALIASES: [RegExp, string][] = [
   [/الدار\s*البيضاء|البيضاء|كازا(بلانكا)?|dar\s*el\s*beida/gi, "casablanca"],
 ];
 
+/**
+ * كلمات عامة تدخل فأسماء بزاف ديال المدن والدواوير (قصر، سيدي، بني، عين، أولاد،
+ * دار، سوق، جماعة…)، مكتوبة كهيكل حروف ساكنة كما يُنتجه الخطّان. وحدها ما
+ * كتثبتش حتى حاجة: «Ksar Sghir» ماشي «القصر الكبير». كتحسب غير مع الكلمة اللي
+ * من بعدها (قاعدة الكلمتين المتتاليتين).
+ */
+const GENERIC_SKELETONS = new Set(["ksr", "sd", "bn", "n", "ld", "dr", "sk", "b", "jm", "hd", "sbt", "hms", "rb", "tln", "tn", "mly", "ml"]);
+
+/** كلمات وصل فرنسية/لاتينية لا تحمل اسماً («El Jadida»، «Ain de…»): تُحذف قبل المقارنة. */
+const LATIN_STOPWORDS = new Set(["el", "al", "le", "la", "les", "de", "du", "des", "d"]);
+
 function skeletonTokens(raw: string): string[] {
   let text = raw;
   for (const [re, name] of ALIASES) text = text.replace(re, name);
   return text
     .split(/[\s,.\-_/()،]+/)
+    .filter((word) => !LATIN_STOPWORDS.has(word.toLowerCase()))
     .map((word) => (/[؀-ۿ]/.test(word) ? arabicSkeleton(word) : latinSkeleton(word)))
     .map((s) => s.replace(/(.)\1+/g, "$1"))
     .filter((s) => s.length > 0);
@@ -77,9 +89,17 @@ export function compareCities(invoiceCity: string | null, orderCity: string | nu
   if (joinedA.length < 2 || joinedB.length < 2) return "unknown";
   if (joinedA === joinedB) return "match";
   // كلمة من 3 حروف ساكنة أو أكثر مشتركة («hmd» في «Beni Ahmed chamal» و«بني احمد إقليم الشاون»).
-  if (a.some((t) => t.length >= 3 && b.includes(t))) return "match";
+  if (a.some((t) => t.length >= 3 && !GENERIC_SKELETONS.has(t) && b.includes(t))) return "match";
+  // كلمتان متتاليتان متطابقتان ولو قصيرتين: «sidi hajaj settat» و«سيدي حجاج اولاد مراح» = (sd، hj).
+  const pairs = (t: string[]) => new Set(t.slice(1).map((w, i) => `${t[i]}|${w}`));
+  const pairsB = pairs(b);
+  if ([...pairs(a)].some((p) => pairsB.has(p))) return "match";
+  // أحد الطرفين اسم مدينة بكلمة واحدة، وهي كلمة كاملة من الطرف الآخر: «Fes» و«فاس بنسودا».
+  const single = a.length === 1 ? a[0] : b.length === 1 ? b[0] : null;
+  const other = a.length === 1 ? b : a;
+  if (single !== null && single.length >= 2 && !GENERIC_SKELETONS.has(single) && other.includes(single)) return "match";
   const shorter = joinedA.length <= joinedB.length ? joinedA : joinedB;
   const longer = shorter === joinedA ? joinedB : joinedA;
-  if (shorter.length >= 3 && longer.includes(shorter)) return "match";
+  if (shorter.length >= 3 && !GENERIC_SKELETONS.has(shorter) && longer.includes(shorter)) return "match";
   return "differ";
 }

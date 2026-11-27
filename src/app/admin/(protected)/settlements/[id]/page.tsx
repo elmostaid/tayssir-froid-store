@@ -51,6 +51,13 @@ export default async function InvoicePage({
         {inv.carrierLabel} · {inv.invoiceDate ?? "—"} · حالة الشركة: {inv.carrierStatus ?? "—"}
         {!active && " · متراجَع عنها"}
       </p>
+      {/* «Payé» كلمة الشركة على نفسها، ماشي دليل: الفلوس وصلات غير ملي كتسجّلها نتا من الحساب البنكي. */}
+      {inv.carrierStatus && /pay/i.test(inv.carrierStatus) && !inv.bankReceivedAt && active && (
+        <p className="mt-1 rounded-lg bg-amber-50 p-2 text-[11px] leading-relaxed text-amber-900">
+          «{inv.carrierStatus}» = {inv.carrierLabel} كتقول راه صيفطات الفلوس. هادشي ماشي تأكيد: الفاتورة كتبقى
+          «الفلوس ما وصلاتش» حتى تشوف المبلغ فالحساب البنكي وتسجّلو لتحت بالنهار ديالو.
+        </p>
+      )}
 
       {one(sp.error) && (
         <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{one(sp.error)}</div>

@@ -100,7 +100,8 @@ export type FinanceSummary = {
     bankReceivedInvoices: number;
     /** رصيد اليوم: فواتير فعّالة ما وصلاتش فلوسها. */
     owedCents: Cents;
-    owedInvoices: { id: number; number: string; carrierLabel: string; date: string | null; netCents: Cents }[];
+    /** carrierStatus: ما كتبتو الشركة («Payé»…) — للعرض فقط، ماشي دليل على وصول الفلوس. */
+    owedInvoices: { id: number; number: string; carrierLabel: string; date: string | null; netCents: Cents; carrierStatus: string | null }[];
     /** فواتير وصلات فلوسها بمبلغ مختلف عن الصافي. */
     bankDifferences: { id: number; number: string; netCents: Cents; receivedCents: Cents }[];
     /** مُرسَلة بلا فاتورة — متوقَّع لا محقَّق. */
@@ -155,8 +156,8 @@ export async function getFinanceSummary(period: Period): Promise<FinanceSummary>
       and (${from}::date is null or (i.bank_received_at at time zone 'UTC')::date >= ${from}::date)
       and (${to}::date is null or (i.bank_received_at at time zone 'UTC')::date < ${to}::date)
   `;
-  const owed = await sql<{ id: number; invoice_number: string; carrier: string; invoice_date: string | null; total_net: string }[]>`
-    select i.id, i.invoice_number, i.carrier, i.invoice_date::text as invoice_date, i.total_net
+  const owed = await sql<{ id: number; invoice_number: string; carrier: string; invoice_date: string | null; total_net: string; carrier_status: string | null }[]>`
+    select i.id, i.invoice_number, i.carrier, i.invoice_date::text as invoice_date, i.total_net, i.carrier_status
     from public.carrier_invoices i
     where i.status = 'active' and i.bank_received_at is null
     order by coalesce(i.invoice_date, i.uploaded_at::date), i.id
@@ -184,6 +185,7 @@ export async function getFinanceSummary(period: Period): Promise<FinanceSummary>
       order_number: string | null;
       order_status: string | null;
       delivery_fee: string | null;
+      final_total: string | null;
       outcome: "delivered" | "returned";
       cod_total: string;
       fee_total: string;
@@ -193,7 +195,7 @@ export async function getFinanceSummary(period: Period): Promise<FinanceSummary>
       banked: boolean;
     }[]
   >`
-    select s.order_id, o.order_number, o.status as order_status, o.delivery_fee,
+    select s.order_id, o.order_number, o.status as order_status, o.delivery_fee, o.final_total,
       s.outcome, s.cod_total, s.fee_total, s.parcel_count,
       i.invoice_number, x.day::text as invoice_day,
       -- طلبية كرطوناتها فعدة فواتير: فلوسها «وصلات» غير إلا وصلات كل فاتورة.
@@ -287,7 +289,10 @@ export async function getFinanceSummary(period: Period): Promise<FinanceSummary>
       cogsCents: madToCents(p.cogsMad),
       deliveryChargedCents: madToCents(p.deliveryCollectedMad),
       deliveryRealCents: cents(s.fee_total),
-      profitCents: madToCents(p.netProfitMad),
+      // الربح على اللي تحصّل فعلاً: فرق التقريب (853 + 853 لطلبية 1,705) فلوس حقيقية.
+      profitCents:
+        madToCents(p.netProfitMad) +
+        (s.final_total === null ? 0 : cents(s.cod_total) - cents(s.final_total)),
       banked: s.banked === true,
     });
   }
@@ -328,6 +333,7 @@ export async function getFinanceSummary(period: Period): Promise<FinanceSummary>
         carrierLabel: CARRIER_LABEL[i.carrier] ?? i.carrier,
         date: i.invoice_date,
         netCents: cents(i.total_net),
+        carrierStatus: i.carrier_status,
       })),
       bankDifferences: differences.map((d) => ({
         id: Number(d.id),

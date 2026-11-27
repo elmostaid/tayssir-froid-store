@@ -6,8 +6,10 @@ import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import { parseMadToCents, parseReceivedDay } from "@/lib/settlements/money";
 import {
   applySettlements,
+  linkParcelsToOrder,
   markInvoiceBankReceived,
   rollbackInvoice,
+  unlinkParcels,
 } from "@/lib/settlements/settlementStore";
 
 /**
@@ -97,4 +99,29 @@ export async function markBankAction(formData: FormData) {
   revalidatePath("/admin/settlements");
   revalidatePath(`/admin/settlements/${invoiceId}`);
   redirect(`/admin/settlements/${invoiceId}`);
+}
+
+/** ربط يدوي: ماشي تطبيق. الطلبية كتبان من بعد فـ«تحتاج قرارك» بأدلتها. */
+export async function linkParcelsAction(formData: FormData) {
+  const admin = await requireOwner();
+  const parcelIds = ids(formData, "parcel");
+  const orderNumber = String(formData.get("orderNumber") ?? "");
+  let res: Awaited<ReturnType<typeof linkParcelsToOrder>>;
+  try {
+    res = await linkParcelsToOrder(parcelIds, orderNumber, admin.email);
+  } catch (error) {
+    console.error("linkParcelsAction", error);
+    res = { ok: false, error: "تعذّر الربط، عاود." };
+  }
+  revalidatePath("/admin/settlements");
+  if (!res.ok) redirect(`/admin/settlements?error=${encodeURIComponent(res.error)}`);
+  redirect(`/admin/settlements?linked=${encodeURIComponent(res.orderNumber)}`);
+}
+
+export async function unlinkParcelsAction(formData: FormData) {
+  await requireOwner();
+  const parcelIds = ids(formData, "parcel");
+  if (parcelIds.length > 0) await unlinkParcels(parcelIds);
+  revalidatePath("/admin/settlements");
+  redirect("/admin/settlements?unlinked=1");
 }

@@ -106,14 +106,20 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
 
         {cash.owedInvoices.length > 0 && (
           <details className="mt-2 rounded-xl border border-neutral-200 bg-white p-3 text-sm">
-            <summary className="cursor-pointer font-semibold text-neutral-700">الفواتير اللي مازال ما خلصاتش</summary>
+            <summary className="cursor-pointer font-semibold text-neutral-700">الفواتير اللي فلوسها ما تسجلاتش فالبنك</summary>
+            <p className="mt-1 text-[11px] text-neutral-500">
+              «Payé» عند الشركة معناه هي صيفطات. الفلوس كتولي «وصلات» غير ملي تسجّلها نتا من الحساب البنكي.
+            </p>
             <ul className="mt-2 divide-y divide-neutral-100">
               {cash.owedInvoices.map((i) => (
                 <li key={i.id} className="flex items-center justify-between gap-2 py-2">
                   <Link href={`/admin/settlements/${i.id}`} className="font-semibold text-brand-turquoise-dark underline" dir="ltr">
                     {i.carrierLabel} {i.number}
                   </Link>
-                  <span className="text-xs text-neutral-500">{i.date ?? "—"}</span>
+                  <span className="text-xs text-neutral-500">
+                    {i.date ?? "—"}
+                    {i.carrierStatus && <> · الشركة: «{i.carrierStatus}»</>}
+                  </span>
                   <span className="font-bold tabular-nums">{mad(i.netCents)}</span>
                 </li>
               ))}
