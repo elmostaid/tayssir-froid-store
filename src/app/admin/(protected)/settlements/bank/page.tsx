@@ -80,7 +80,7 @@ export default async function BankPage({ searchParams }: { searchParams: Promise
                       name="inv"
                       value={inv.id}
                       data-cents={Math.round(inv.totalNet * 100)}
-                      className="h-5 w-5 shrink-0 accent-brand-turquoise"
+                      className="h-5 w-5 shrink-0 scroll-mb-28 accent-brand-turquoise"
                     />
                     <span className="min-w-0 flex-1 text-xs">
                       <span className="block truncate font-semibold text-neutral-800" dir="ltr">

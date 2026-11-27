@@ -124,7 +124,7 @@ function Line({
           name={input.name}
           value={v.order.id}
           defaultChecked={input.checked}
-          className="mt-0.5 h-5 w-5 shrink-0 accent-brand-turquoise"
+          className="mt-0.5 h-5 w-5 shrink-0 scroll-mb-28 accent-brand-turquoise"
         />
         {body}
       </label>
