@@ -35,7 +35,7 @@ export type FakeInvoiceOptions = {
   companyName?: string;
 };
 
-type Text = { x: number; y: number; s: string; size?: number };
+export type Text = { x: number; y: number; s: string; size?: number };
 
 function esc(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
@@ -151,7 +151,7 @@ export function buildFakeBigDeliveryPdf(opts: FakeInvoiceOptions): Uint8Array {
   return writePdf(pages);
 }
 
-function writePdf(pages: Text[][]): Uint8Array {
+export function writePdf(pages: Text[][]): Uint8Array {
   const objects: string[] = [];
   const add = (body: string) => {
     objects.push(body);

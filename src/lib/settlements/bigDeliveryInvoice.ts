@@ -33,7 +33,7 @@ export type ParsedParcel = {
 };
 
 export type ParsedInvoice = {
-  carrier: "bigdelivery";
+  carrier: "bigdelivery" | "ozonexpress";
   invoiceNumber: string;
   invoiceDate: string | null;
   carrierStatus: string | null;
@@ -48,7 +48,8 @@ export type ParsedInvoice = {
 };
 
 export type InvoiceParseResult =
-  | { ok: true; invoice: ParsedInvoice }
+  /** warnings: ملاحظات ما كترفضش الفاتورة (مثلاً خانة ما كنعتمدوش عليها ومختلفة). */
+  | { ok: true; invoice: ParsedInvoice; warnings?: string[] }
   | { ok: false; problems: string[]; invoice?: ParsedInvoice };
 
 export function mapCarrierStatus(raw: string): CarrierParcelStatus {
@@ -59,9 +60,9 @@ export function mapCarrierStatus(raw: string): CarrierParcelStatus {
   return "other";
 }
 
-type Line = { page: number; y: number; items: PdfTextItem[]; text: string };
+export type Line = { page: number; y: number; items: PdfTextItem[]; text: string };
 
-function groupLines(items: PdfTextItem[]): Line[] {
+export function groupLines(items: PdfTextItem[]): Line[] {
   const sorted = [...items].sort((a, b) => a.page - b.page || b.y - a.y || a.x - b.x);
   const lines: Line[] = [];
   for (const it of sorted) {

@@ -170,7 +170,8 @@ export default async function SettlementsPage({ searchParams }: { searchParams: 
     <div className="mx-auto max-w-2xl pb-24">
       <h1 className="text-xl font-bold text-neutral-800">تسويات التوصيل</h1>
       <p className="mt-1 text-xs leading-relaxed text-neutral-500">
-        ارفع فاتورة BigDelivery النهائية (PDF من «Factures»)، راجع الملخص، واضغط «طبّق». الطلبيات
+        ارفع فاتورة BigDelivery النهائية (PDF من «Factures») ولا كشف التحويل ديال OzonExpress (PDF «Virement»)،
+        راجع الملخص، واضغط «طبّق». الطلبيات
         المكتملة كتولي «مسلّمة» وكتتسجل تكلفة التوصيل الحقيقية. ما كيتصيفط والو لـMeta، والمخزون
         والأثمنة ما كيتبدلوش.
       </p>

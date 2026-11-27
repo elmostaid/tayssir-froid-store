@@ -52,7 +52,7 @@ export default async function InvoicePage({
         {!active && " · متراجَع عنها"}
       </p>
       {/* «Payé» كلمة الشركة على نفسها، ماشي دليل: الفلوس وصلات غير ملي كتسجّلها نتا من الحساب البنكي. */}
-      {inv.carrierStatus && /pay/i.test(inv.carrierStatus) && !inv.bankReceivedAt && active && (
+      {inv.carrierStatus && /pay|virement/i.test(inv.carrierStatus) && !inv.bankReceivedAt && active && (
         <p className="mt-1 rounded-lg bg-amber-50 p-2 text-[11px] leading-relaxed text-amber-900">
           «{inv.carrierStatus}» = {inv.carrierLabel} كتقول راه صيفطات الفلوس. هادشي ماشي تأكيد: الفاتورة كتبقى
           «الفلوس ما وصلاتش» حتى تشوف المبلغ فالحساب البنكي وتسجّلو لتحت بالنهار ديالو.

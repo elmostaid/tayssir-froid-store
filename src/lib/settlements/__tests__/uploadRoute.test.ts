@@ -16,6 +16,7 @@ vi.mock("@/lib/auth/requireAdmin", () => ({
 
 const { POST } = await import("@/app/admin/(protected)/settlements/upload/route");
 const { buildFakeBigDeliveryPdf } = await import("./fakeBigDeliveryPdf");
+const { buildFakeOzonExpressPdf } = await import("./fakeOzonExpressPdf");
 
 const RUN = String(Date.now()).slice(-6);
 const numbers: string[] = [];
@@ -35,6 +36,13 @@ function pdf(number: string, overrideTotals?: { frais?: number; net?: number }) 
       { code: `BG${RUN}U1`, pickup: "2026-11-14", phone: `0798${RUN}`, cityLines: ["Tahla"], cod: 635, fee: 35 },
     ],
   });
+}
+
+async function invoiceCarrier(number: string) {
+  const rows = await sql<{ carrier: string; total_cod: string; total_net: string }[]>`
+    select carrier, total_cod, total_net from public.carrier_invoices where invoice_number = ${number}
+  `;
+  return rows;
 }
 
 async function invoiceCount(number: string) {
@@ -89,5 +97,23 @@ describe("رفع فاتورة", () => {
     const second = new URL((await POST(request(file))).headers.get("location")!);
     expect(second.searchParams.get("notice")).toBe("already");
     expect(await invoiceCount(number)).toBe(1);
+  });
+
+  test("كشف OzonExpress كيتعرف وحدو، كيتسجل «ozonexpress»، و«Total Colis» المختلف كيبان تنبيه", async () => {
+    const number = `VRT-N-${RUN}-OZ`;
+    numbers.push(number);
+    const pdf = buildFakeOzonExpressPdf({
+      number,
+      totalColis: 1000,
+      parcels: [
+        { code: `KS${RUN}000001`, suffix: "RM", phone: `0611${RUN}`, city: "Ksar El Kebir", cod: 567, fee: 80, pickup: "2026-10-23", delivery: "2026-10-24" },
+        { code: `KS${RUN}000002ED`, phone: `0611${RUN}`, city: "Ksar El Kebir", cod: 565, fee: 45, pickup: "2026-10-23", delivery: "2026-10-24" },
+      ],
+    });
+    const res = await POST(request(pdf, "ozon.PDF"));
+    const loc = new URL(res.headers.get("location")!);
+    expect(loc.searchParams.get("uploaded")).toBeTruthy();
+    expect(loc.searchParams.get("problems")).toMatch(/Total Colis/);
+    expect(await invoiceCarrier(number)).toEqual([{ carrier: "ozonexpress", total_cod: "1132.00", total_net: "1007.00" }]);
   });
 });

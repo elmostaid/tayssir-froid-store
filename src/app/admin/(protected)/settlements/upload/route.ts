@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import { extractPdfTextItems, PdfReadError } from "@/lib/settlements/pdfText";
 import { parseBigDeliveryInvoice } from "@/lib/settlements/bigDeliveryInvoice";
+import { isOzonExpressInvoice, parseOzonExpressInvoice } from "@/lib/settlements/ozonExpressInvoice";
 import { registerInvoice } from "@/lib/settlements/settlementStore";
 
 /**
@@ -43,12 +44,16 @@ export async function POST(request: NextRequest) {
 
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (new TextDecoder().decode(bytes.slice(0, 5)) !== "%PDF-") {
-    return back(request, { error: "هاد الملف ماشي PDF. حمّل الفاتورة من صفحة «Factures» فـBigDelivery." });
+    return back(request, {
+      error: "هاد الملف ماشي PDF. حمّل الفاتورة من «Factures» فـBigDelivery، ولا كشف التحويل (Virement) من OzonExpress.",
+    });
   }
 
   let parsed;
   try {
-    parsed = parseBigDeliveryInvoice(await extractPdfTextItems(bytes));
+    // الشركة كتتعرف من الملف نفسه (اسمها مكتوب فيه)، ماشي من اختيار المستعمل.
+    const items = await extractPdfTextItems(bytes);
+    parsed = isOzonExpressInvoice(items) ? parseOzonExpressInvoice(items) : parseBigDeliveryInvoice(items);
   } catch (error) {
     if (error instanceof PdfReadError) return back(request, { error: error.message });
     console.error("settlements/upload: قراءة PDF", error);
@@ -80,7 +85,10 @@ export async function POST(request: NextRequest) {
       uploaded: String(r.invoiceId),
       kind: r.kind,
       dup: String(r.duplicates),
-      ...(r.conflicts.length ? { problems: r.conflicts.slice(0, 8).join("\n") } : {}),
+      // تنبيهات القراءة (مثلاً «Total Colis» ديال Ozon) + تعارضات الكرطونات المكررة.
+      ...([...(parsed.warnings ?? []), ...r.conflicts].length
+        ? { problems: [...(parsed.warnings ?? []), ...r.conflicts].slice(0, 8).join("\n").slice(0, 1800) }
+        : {}),
     });
   } catch (error) {
     console.error("settlements/upload: التسجيل", error);
