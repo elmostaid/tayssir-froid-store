@@ -197,7 +197,9 @@ export default async function SettlementsPage({ searchParams }: { searchParams: 
   const readyT = sum(ready);
   const readyUndocumented = ready.filter((v) => v.confidence !== "high").length;
   const costDiff = quickCost.reduce((s, v) => s + (v.feeCents - (v.order.actualDeliveryCostCents ?? 0)), 0);
-  const roundDiff = quick.reduce((s, v) => s + v.roundingCents, 0);
+  // الزايد والناقص بوحدهم: +1 و−1 ما كيتلاغاوش فالعرض (المجموع 0 كيخبّي الفرق).
+  const roundPlus = quickRound.reduce((s, v) => s + Math.max(v.roundingCents, 0), 0);
+  const roundMinus = quickRound.reduce((s, v) => s + Math.min(v.roundingCents, 0), 0);
 
   const pendingStatements = invoices.filter((i) => i.status === "active" && i.warnings.length > 0 && !i.warningsAcknowledgedAt);
   const unbanked = invoices.filter((i) => i.status === "active" && !i.bankReceivedAt && i.totalNet > 0);
@@ -378,7 +380,18 @@ export default async function SettlementsPage({ searchParams }: { searchParams: 
               <div className="mt-3 rounded-lg border border-amber-200 bg-white p-3">
                 <p className="text-sm font-semibold text-neutral-800">فرق تقريب صغير ({quickRound.length})</p>
                 <p className="text-xs text-neutral-600">
-                  مجموع الفرق: <span className="font-bold tabular-nums">{signedMad(roundDiff)}</span> — الربح كيتحسب على اللي تحصّل فعلاً.
+                  {roundPlus > 0 && (
+                    <>
+                      تحصّل زايد <span className="font-bold tabular-nums">{mad(roundPlus)}</span>
+                    </>
+                  )}
+                  {roundPlus > 0 && roundMinus < 0 && " · "}
+                  {roundMinus < 0 && (
+                    <>
+                      ناقص <span className="font-bold tabular-nums">{mad(-roundMinus)}</span>
+                    </>
+                  )}{" "}
+                  — الربح كيتحسب على اللي تحصّل فعلاً.
                 </p>
                 <div className="mt-2">
                   <SelectAll name="quick_round" label={`وافق على ${quickRound.length}`} />
