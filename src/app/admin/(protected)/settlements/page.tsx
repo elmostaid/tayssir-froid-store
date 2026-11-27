@@ -114,9 +114,10 @@ function Line({
     </div>
   );
   if (!input)
-    return <li className="flex gap-3 border-t border-neutral-100 py-2 first:border-t-0">{body}</li>;
+    return <li className="flex scroll-mb-28 gap-3 border-t border-neutral-100 py-2 first:border-t-0">{body}</li>;
   return (
-    <li className="border-t border-neutral-100 first:border-t-0">
+    // scroll-mb: ملي المتصفح كيجيب السطر للشاشة (focus…)، كيوقف فوق زر «طبّق» المثبت ماشي تحتو.
+    <li className="scroll-mb-28 border-t border-neutral-100 first:border-t-0">
       <label className="flex cursor-pointer gap-3 py-2">
         <input
           type="checkbox"

@@ -73,7 +73,7 @@ export default async function BankPage({ searchParams }: { searchParams: Promise
             <SelectAll name="inv" label={`الكل (${owed.length})`} />
             <ul className="mt-2 divide-y divide-neutral-100 rounded-lg bg-white">
               {owed.map((inv) => (
-                <li key={inv.id}>
+                <li key={inv.id} className="scroll-mb-28">
                   <label className="flex cursor-pointer items-center gap-3 px-3 py-2">
                     <input
                       type="checkbox"
