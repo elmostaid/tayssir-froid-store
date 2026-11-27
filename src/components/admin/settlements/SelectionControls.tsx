@@ -59,7 +59,7 @@ export function ApplyButton() {
     const form = ref.current?.closest("form");
     if (!form) return;
     const sync = () =>
-      setCount(form.querySelectorAll('input[name="ready"]:checked, input[name="approve"]:checked').length);
+      setCount(form.querySelectorAll('input[name="ready"]:checked, input[name="approve"]:checked, input[name="return"]:checked').length);
     sync();
     form.addEventListener("change", sync);
     return () => form.removeEventListener("change", sync);
