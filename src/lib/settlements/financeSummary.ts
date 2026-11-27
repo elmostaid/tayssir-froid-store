@@ -138,83 +138,85 @@ export async function getFinanceSummary(period: Period): Promise<FinanceSummary>
   const from = period.from;
   const to = period.to;
 
-  const [bank, owed, differences, shipped, settled, expenses, [{ n: deliveredWithoutInvoice }]] =
-    await Promise.all([
-      sql<{ total: string | null; n: number }[]>`
-        select coalesce(sum(i.bank_received_amount), 0) as total, count(*)::int as n
-        from public.carrier_invoices i
-        where i.status = 'active' and i.bank_received_at is not null
-          and (${from}::date is null or (i.bank_received_at at time zone 'UTC')::date >= ${from}::date)
-          and (${to}::date is null or (i.bank_received_at at time zone 'UTC')::date < ${to}::date)
-      `,
-      sql<{ id: number; invoice_number: string; carrier: string; invoice_date: string | null; total_net: string }[]>`
-        select i.id, i.invoice_number, i.carrier, i.invoice_date::text as invoice_date, i.total_net
-        from public.carrier_invoices i
-        where i.status = 'active' and i.bank_received_at is null
-        order by coalesce(i.invoice_date, i.uploaded_at::date), i.id
-      `,
-      sql<{ id: number; invoice_number: string; total_net: string; bank_received_amount: string }[]>`
-        select i.id, i.invoice_number, i.total_net, i.bank_received_amount
-        from public.carrier_invoices i
-        where i.status = 'active' and i.bank_received_at is not null
-          and i.bank_received_amount <> i.total_net
-        order by i.id
-      `,
-      sql<{ n: number; expected: string | null; oldest: string | null }[]>`
-        select count(*)::int as n, coalesce(sum(o.final_total), 0) as expected,
-          min(o.created_at at time zone 'UTC')::date::text as oldest
-        from public.orders o
-        where o.status = 'shipped'
-          and not exists (
-            select 1 from public.carrier_order_settlements s
-            where s.order_id = o.id and s.reverted_at is null
-          )
-      `,
-      sql<
-        {
-          order_id: number | null;
-          order_number: string | null;
-          order_status: string | null;
-          delivery_fee: string | null;
-          outcome: "delivered" | "returned";
-          cod_total: string;
-          fee_total: string;
-          parcel_count: number;
-          invoice_number: string;
-          invoice_day: string;
-        }[]
-      >`
-        select s.order_id, o.order_number, o.status as order_status, o.delivery_fee,
-          s.outcome, s.cod_total, s.fee_total, s.parcel_count,
-          i.invoice_number, x.day::text as invoice_day
-        from public.carrier_order_settlements s
-        join public.carrier_invoices i on i.id = s.invoice_id
-        cross join lateral (
-          select coalesce(i.invoice_date, (i.uploaded_at at time zone 'UTC')::date) as day
-        ) x
-        left join public.orders o on o.id = s.order_id
-        where s.reverted_at is null
-          and (${from}::date is null or x.day >= ${from}::date)
-          and (${to}::date is null or x.day < ${to}::date)
-        order by x.day, s.id
-      `,
-      sql<{ category: string; total: string }[]>`
-        select category, coalesce(sum(amount_mad), 0) as total
-        from public.operating_expenses
-        where (${from}::date is null or spent_on >= ${from}::date)
-          and (${to}::date is null or spent_on < ${to}::date)
-        group by category
-        order by sum(amount_mad) desc
-      `,
-      sql<{ n: number }[]>`
-        select count(*)::int as n from public.orders o
-        where o.status = 'delivered'
-          and not exists (
-            select 1 from public.carrier_order_settlements s
-            where s.order_id = o.id and s.reverted_at is null
-          )
-      `,
-    ]);
+  // بالتسلسل لا بالتوازي، عمداً: مجمّع الاتصالات 5، والتخطيط (شارة الطلبيات
+  // الجديدة) يأخذ واحداً. سبعة استعلامات متوازية كانت تُركَّب خلف بعضها على
+  // اتصال مشغول، فيعلق أحدها على مجمّع Supabase («active/ClientRead») حتى
+  // يُقطع الاتصال وتسقط الصفحة. استعلامات صغيرة في نفس المنطقة: التسلسل أسلم.
+  const bank = await sql<{ total: string | null; n: number }[]>`
+    select coalesce(sum(i.bank_received_amount), 0) as total, count(*)::int as n
+    from public.carrier_invoices i
+    where i.status = 'active' and i.bank_received_at is not null
+      and (${from}::date is null or (i.bank_received_at at time zone 'UTC')::date >= ${from}::date)
+      and (${to}::date is null or (i.bank_received_at at time zone 'UTC')::date < ${to}::date)
+  `;
+  const owed = await sql<{ id: number; invoice_number: string; carrier: string; invoice_date: string | null; total_net: string }[]>`
+    select i.id, i.invoice_number, i.carrier, i.invoice_date::text as invoice_date, i.total_net
+    from public.carrier_invoices i
+    where i.status = 'active' and i.bank_received_at is null
+    order by coalesce(i.invoice_date, i.uploaded_at::date), i.id
+  `;
+  const differences = await sql<{ id: number; invoice_number: string; total_net: string; bank_received_amount: string }[]>`
+    select i.id, i.invoice_number, i.total_net, i.bank_received_amount
+    from public.carrier_invoices i
+    where i.status = 'active' and i.bank_received_at is not null
+      and i.bank_received_amount <> i.total_net
+    order by i.id
+  `;
+  const shipped = await sql<{ n: number; expected: string | null; oldest: string | null }[]>`
+    select count(*)::int as n, coalesce(sum(o.final_total), 0) as expected,
+      min(o.created_at at time zone 'UTC')::date::text as oldest
+    from public.orders o
+    where o.status = 'shipped'
+      and not exists (
+        select 1 from public.carrier_order_settlements s
+        where s.order_id = o.id and s.reverted_at is null
+      )
+  `;
+  const settled = await sql<
+    {
+      order_id: number | null;
+      order_number: string | null;
+      order_status: string | null;
+      delivery_fee: string | null;
+      outcome: "delivered" | "returned";
+      cod_total: string;
+      fee_total: string;
+      parcel_count: number;
+      invoice_number: string;
+      invoice_day: string;
+    }[]
+  >`
+    select s.order_id, o.order_number, o.status as order_status, o.delivery_fee,
+      s.outcome, s.cod_total, s.fee_total, s.parcel_count,
+      i.invoice_number, x.day::text as invoice_day
+    from public.carrier_order_settlements s
+    join public.carrier_invoices i on i.id = s.invoice_id
+    cross join lateral (
+      select coalesce(i.invoice_date, (i.uploaded_at at time zone 'UTC')::date) as day
+    ) x
+    left join public.orders o on o.id = s.order_id
+    where s.reverted_at is null
+      and (${from}::date is null or x.day >= ${from}::date)
+      and (${to}::date is null or x.day < ${to}::date)
+    order by x.day, s.id
+  `;
+  const expenses = await sql<{ category: string; total: string }[]>`
+    select category, coalesce(sum(amount_mad), 0) as total
+    from public.operating_expenses
+    where (${from}::date is null or spent_on >= ${from}::date)
+      and (${to}::date is null or spent_on < ${to}::date)
+    group by category
+    order by sum(amount_mad) desc
+  `;
+  const deliveredRows = await sql<{ n: number }[]>`
+    select count(*)::int as n from public.orders o
+    where o.status = 'delivered'
+      and not exists (
+        select 1 from public.carrier_order_settlements s
+        where s.order_id = o.id and s.reverted_at is null
+      )
+  `;
+  const deliveredWithoutInvoice = deliveredRows[0]?.n ?? 0;
 
   const delivered = settled.filter((s) => s.outcome === "delivered");
   const lines = await loadProfitLines(
