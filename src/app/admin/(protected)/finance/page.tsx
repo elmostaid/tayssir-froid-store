@@ -174,11 +174,25 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
           <Row label="الإشهار المسجَّل" value={expenses.advertisingCents} minus />
           <Row label="مصاريف أخرى مسجلة" value={expenses.totalCents - expenses.advertisingCents} minus />
         </dl>
+        {/* بلا مصروف إشهار مسجَّل، الصافي أكبر من الحقيقة: ما يبانش «مؤكَّد» بالأخضر. */}
         <div
-          className={`mt-3 rounded-xl p-3 text-center ${f.netCents < 0 ? "bg-red-50 text-red-800" : "bg-green-50 text-green-900"}`}
+          className={`mt-3 rounded-xl p-3 text-center ${
+            f.netCents < 0
+              ? "bg-red-50 text-red-800"
+              : expenses.advertisingCents === 0
+                ? "border border-amber-300 bg-amber-50 text-amber-900"
+                : "bg-green-50 text-green-900"
+          }`}
         >
-          <p className="text-xs">الربح الصافي المحقَّق</p>
+          <p className="text-xs">
+            {expenses.advertisingCents === 0 ? "الربح الصافي — ناقص: الإشهار ما مسجلش" : "الربح الصافي المحقَّق"}
+          </p>
           <p className="text-2xl font-bold tabular-nums">{mad(f.netCents)}</p>
+          {realized.pendingProfitCents > 0 && (
+            <p className="mt-1 text-[11px]">
+              منو {mad(realized.pendingProfitCents)} مازال عند شركة التوصيل (ما وصلش للبنك)
+            </p>
+          )}
         </div>
         {expenses.advertisingCents === 0 && (
           <p className="mt-2 text-xs text-amber-800">
