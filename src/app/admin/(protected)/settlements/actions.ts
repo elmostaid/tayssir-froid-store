@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import { parseMadToCents, parseReceivedDay } from "@/lib/settlements/money";
 import {
+  acknowledgeInvoiceWarnings,
   applySettlements,
   linkParcelsToOrder,
   markInvoiceBankReceived,
@@ -124,4 +125,15 @@ export async function unlinkParcelsAction(formData: FormData) {
   if (parcelIds.length > 0) await unlinkParcels(parcelIds);
   revalidatePath("/admin/settlements");
   redirect("/admin/settlements?unlinked=1");
+}
+
+/** موافقة المالك على فرق مجاميع الكشف (مثلاً «Total Colis» ديال Ozon). */
+export async function acknowledgeWarningsAction(formData: FormData) {
+  const admin = await requireOwner();
+  const invoiceId = Number(formData.get("invoiceId"));
+  if (!Number.isInteger(invoiceId) || invoiceId <= 0) redirect("/admin/settlements");
+  await acknowledgeInvoiceWarnings(invoiceId, admin.email);
+  revalidatePath("/admin/settlements");
+  revalidatePath(`/admin/settlements/${invoiceId}`);
+  redirect(`/admin/settlements/${invoiceId}?acknowledged=1`);
 }

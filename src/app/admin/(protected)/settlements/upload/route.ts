@@ -74,6 +74,7 @@ export async function POST(request: NextRequest) {
       fileName: file.name.slice(0, 255) || null,
       sha256,
       actor: admin.email,
+      warnings: parsed.warnings ?? [],
     });
     if (r.kind === "already_active") return back(request, { notice: "already", invoice: String(r.invoiceId) });
     if (r.kind === "number_conflict")

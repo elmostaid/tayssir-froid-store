@@ -89,6 +89,8 @@ export type OrderVerdict = {
   preselect: boolean;
   /** المالك ربط الكرطونات بهاد الطلبية بيدو: ما تُطبَّق إلا بموافقة صريحة. */
   manual: boolean;
+  /** كرطونة من كشف فيه فرق فالمجاميع ما وافقش عليه المالك: ما تُطبَّق حتى يوافق. */
+  invoiceWarningPending?: boolean;
   /** فرق التقريب بين المحصَّل والمبلغ النهائي (بالسنتيم، موجب = تحصّل أكثر). 0 = بالضبط. */
   roundingCents: number;
   willSetDelivered: boolean;

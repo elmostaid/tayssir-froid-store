@@ -42,6 +42,8 @@ export type RegisterInvoiceInput = {
   fileName: string | null;
   sha256: string;
   actor: string;
+  /** ملاحظات القراءة (Ozon: «Total Colis» مختلف). كتتحفظ وكتحتاج موافقة قبل التطبيق. */
+  warnings?: string[];
 };
 
 export type RegisterInvoiceResult =
@@ -92,12 +94,13 @@ export async function registerInvoice(input: RegisterInvoiceInput): Promise<Regi
       const inserted = await trx<{ id: number }[]>`
         insert into public.carrier_invoices (
           carrier, invoice_number, invoice_date, carrier_status, file_sha256, file_name,
-          parcel_count, total_cod, total_fees, other_fees, total_net, uploaded_by
+          parcel_count, total_cod, total_fees, other_fees, total_net, uploaded_by, parse_warnings
         ) values (
           ${parsed.carrier}, ${parsed.invoiceNumber}, ${parsed.invoiceDate}, ${parsed.carrierStatus},
           ${sha256}, ${fileName}, ${parsed.parcels.length},
           ${centsToDb(parsed.totalCodCents ?? 0)}, ${centsToDb(parsed.totalFeesCents ?? 0)},
-          ${centsToDb(parsed.otherFeesCents)}, ${centsToDb(parsed.totalNetCents ?? 0)}, ${actor}
+          ${centsToDb(parsed.otherFeesCents)}, ${centsToDb(parsed.totalNetCents ?? 0)}, ${actor},
+          ${input.warnings ?? []}
         ) returning id
       `;
       invoiceId = inserted[0].id;
@@ -271,7 +274,36 @@ export async function computeBoard(db: Db = sql, lock = false): Promise<Matching
   const keys = [...new Set(parcels.map((p) => p.phoneKey).filter((k): k is string => k !== null))];
   const pinnedIds = [...new Set(parcels.map((p) => p.manualOrderId).filter((id): id is number => !!id))];
   const candidates = await loadCandidates(db, keys, lock, pinnedIds);
-  return matchParcels(parcels, candidates);
+  const result = matchParcels(parcels, candidates);
+
+  // كشف فيه ملاحظة قراءة ما وافقش عليها المالك (فرق «Total Colis» ديال Ozon):
+  // طلبياتو كتبان بأدلتها، ولكن ما تقدرش تطبّق حتى يوافق على الفرق من صفحة الكشف.
+  const pending = await db<{ id: number; invoice_number: string }[]>`
+    select id, invoice_number from public.carrier_invoices
+    where status = 'active' and cardinality(parse_warnings) > 0 and warnings_acknowledged_at is null
+  `;
+  if (pending.length > 0) {
+    const pendingIds = new Map(pending.map((r) => [Number(r.id), r.invoice_number]));
+    for (const v of result.orders) {
+      const held = [...new Set(v.parcels.filter((p) => pendingIds.has(p.invoiceId)).map((p) => pendingIds.get(p.invoiceId)!))];
+      if (held.length === 0) continue;
+      v.invoiceWarningPending = true;
+      v.preselect = false;
+      v.reasons.push(`الكشف ${held.join(" + ")} فيه فرق فالمجاميع ما وافقتيش عليه — شوفو ووافق عليه من صفحة الكشف قبل التطبيق.`);
+      if (v.kind === "ready") v.kind = "decide";
+    }
+  }
+  return result;
+}
+
+/** موافقة المالك على ملاحظات قراءة الكشف (مثلاً فرق «Total Colis»). */
+export async function acknowledgeInvoiceWarnings(invoiceId: number, actor: string): Promise<boolean> {
+  const r = await sql`
+    update public.carrier_invoices
+    set warnings_acknowledged_at = now(), warnings_acknowledged_by = ${actor}
+    where id = ${invoiceId} and cardinality(parse_warnings) > 0 and warnings_acknowledged_at is null
+  `;
+  return r.count === 1;
 }
 
 // ---------------------------------------------------------------------------
@@ -321,7 +353,8 @@ export async function applySettlements(input: ApplyInput): Promise<ApplyResult> 
         (v.kind === "ready" && (ready.has(id) || approved.has(id))) ||
         (v.kind === "decide" && approved.has(id)) ||
         (v.kind === "return" && returns.has(id));
-      if (!eligible) continue;
+      // فرق فمجاميع الكشف ما وافقش عليه المالك: ما كتطبّقش، حتى لو اختارها.
+      if (!eligible || v.invoiceWarningPending) continue;
       handled.add(id);
       applied.push(await applyOne(trx, v, input.actor, v.kind === "ready" ? "auto" : "approved"));
     }
@@ -685,6 +718,9 @@ export type InvoiceSummary = {
   bankReceivedAt: string | null;
   bankReceivedAmount: number | null;
   settledParcels: number;
+  /** ملاحظات القراءة، وواش وافق عليها المالك. */
+  warnings: string[];
+  warningsAcknowledgedAt: string | null;
 };
 
 export async function listInvoices(limit = 60): Promise<InvoiceSummary[]> {
@@ -704,11 +740,13 @@ export async function listInvoices(limit = 60): Promise<InvoiceSummary[]> {
       bank_received_at: Date | null;
       bank_received_amount: string | null;
       settled_parcels: number;
+      parse_warnings: string[];
+      warnings_acknowledged_at: Date | null;
     }[]
   >`
     select i.id, i.carrier, i.invoice_number, i.invoice_date::text as invoice_date, i.carrier_status,
       i.parcel_count, i.total_cod, i.total_fees, i.total_net, i.status, i.uploaded_at,
-      i.bank_received_at, i.bank_received_amount,
+      i.bank_received_at, i.bank_received_amount, i.parse_warnings, i.warnings_acknowledged_at,
       (select count(*)::int from public.carrier_parcels p
         where p.invoice_id = i.id and p.settlement_id is not null) as settled_parcels
     from public.carrier_invoices i
@@ -731,6 +769,8 @@ export async function listInvoices(limit = 60): Promise<InvoiceSummary[]> {
     bankReceivedAt: r.bank_received_at ? new Date(r.bank_received_at).toISOString() : null,
     bankReceivedAmount: r.bank_received_amount === null ? null : Number(r.bank_received_amount),
     settledParcels: r.settled_parcels,
+    warnings: r.parse_warnings ?? [],
+    warningsAcknowledgedAt: r.warnings_acknowledged_at ? new Date(r.warnings_acknowledged_at).toISOString() : null,
   }));
 }
 

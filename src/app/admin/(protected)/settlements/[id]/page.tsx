@@ -5,7 +5,7 @@ import { formatMad } from "@/lib/format";
 import { getInvoice } from "@/lib/settlements/settlementStore";
 import { PendingSubmit } from "@/components/admin/settlements/PendingSubmit";
 import { SafeActionForm } from "@/components/admin/settlements/SafeActionForm";
-import { markBankAction, rollbackInvoiceAction } from "../actions";
+import { acknowledgeWarningsAction, markBankAction, rollbackInvoiceAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "فاتورة توصيل" };
@@ -57,6 +57,35 @@ export default async function InvoicePage({
           «{inv.carrierStatus}» = {inv.carrierLabel} كتقول راه صيفطات الفلوس. هادشي ماشي تأكيد: الفاتورة كتبقى
           «الفلوس ما وصلاتش» حتى تشوف المبلغ فالحساب البنكي وتسجّلو لتحت بالنهار ديالو.
         </p>
+      )}
+
+      {inv.warnings.length > 0 && (
+        <section
+          className={`mt-3 rounded-xl border p-3 text-xs leading-relaxed ${
+            inv.warningsAcknowledgedAt ? "border-neutral-200 bg-neutral-50 text-neutral-700" : "border-red-300 bg-red-50 text-red-900"
+          }`}
+        >
+          <h2 className="text-sm font-bold">فرق فمجاميع الكشف</h2>
+          <ul className="mt-1 list-disc ps-4">
+            {inv.warnings.map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+          {inv.warningsAcknowledgedAt ? (
+            <p className="mt-2 font-semibold">وافقتي على هاد الفرق نهار {inv.warningsAcknowledgedAt.slice(0, 10)}.</p>
+          ) : (
+            <SafeActionForm action={acknowledgeWarningsAction} className="mt-2">
+              <p>ما تقدر تطبّق حتى طلبية من هاد الكشف حتى توافق على هاد الفرق.</p>
+              <input type="hidden" name="invoiceId" value={inv.id} />
+              <PendingSubmit
+                pendingText="…"
+                className="mt-2 min-h-11 w-full rounded-full bg-red-700 px-4 text-sm font-bold text-white disabled:bg-neutral-300"
+              >
+                شفت الفرق — كنوافق نعتمد على السطور
+              </PendingSubmit>
+            </SafeActionForm>
+          )}
+        </section>
       )}
 
       {one(sp.error) && (

@@ -102,7 +102,9 @@ function OrderLine({
       )}
     </div>
   );
-  if (!input) return <li className="flex gap-3 border-t border-neutral-100 py-3 first:border-t-0">{body}</li>;
+  // كشف فيه فرق ما وافقش عليه المالك: الطلبية كتبان بلا خانة اختيار.
+  if (!input || v.invoiceWarningPending)
+    return <li className="flex gap-3 border-t border-neutral-100 py-3 first:border-t-0">{body}</li>;
   return (
     <li className="border-t border-neutral-100 first:border-t-0">
       <label className="flex cursor-pointer gap-3 py-3">
@@ -232,6 +234,23 @@ export default async function SettlementsPage({ searchParams }: { searchParams: 
           {one(sp.skipped) && one(sp.skipped) !== "0" && (
             <> {one(sp.skipped)} ما تطبقاتش حيت تبدلات حالتها من بعد العرض.</>
           )}
+        </div>
+      )}
+
+      {invoices.some((i) => i.status === "active" && i.warnings.length > 0 && !i.warningsAcknowledgedAt) && (
+        <div className="mt-4 rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-900">
+          <p className="font-semibold">كشوفات فيها فرق فالمجاميع، كتسنى موافقتك قبل أي تطبيق:</p>
+          <ul className="mt-1 list-disc ps-5 text-xs">
+            {invoices
+              .filter((i) => i.status === "active" && i.warnings.length > 0 && !i.warningsAcknowledgedAt)
+              .map((i) => (
+                <li key={i.id}>
+                  <Link href={`/admin/settlements/${i.id}`} className="font-semibold underline" dir="ltr">
+                    {i.carrierLabel} {i.invoiceNumber}
+                  </Link>
+                </li>
+              ))}
+          </ul>
         </div>
       )}
 
