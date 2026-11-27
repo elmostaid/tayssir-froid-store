@@ -586,7 +586,8 @@ export async function markInvoiceBankReceived(
         `
       : await sql`
           update public.carrier_invoices
-          set bank_received_at = ${receivedOn === null ? sql`now()` : sql`(${receivedOn}::date)::timestamp at time zone 'UTC'`},
+          -- بلا شظية بمعاملات داخل الاستعلام (كتعلّق على مجمّع Preview): null ← اليوم.
+          set bank_received_at = coalesce((${receivedOn}::date)::timestamp at time zone 'UTC', now()),
             bank_received_amount = ${centsToDb(amountCents)}, bank_marked_by = ${actor}
           where id = ${invoiceId} and status = 'active'
         `;

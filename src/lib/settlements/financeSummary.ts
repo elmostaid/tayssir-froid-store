@@ -127,22 +127,25 @@ const CARRIER_LABEL: Record<string, string> = { bigdelivery: "BigDelivery", ozon
 const cents = (v: string | number | null) => dbMoneyToCents(v) ?? 0;
 const madToCents = (v: number) => Math.round(v * 100);
 
-/** شرط المدة على تعبير تاريخ (date). المدة المفتوحة ← دائماً صحيح. */
-function inPeriod(period: Period, column: Parameters<typeof sql>[1]) {
-  if (period.from === null || period.to === null) return sql`true`;
-  return sql`(${column} >= ${period.from}::date and ${column} < ${period.to}::date)`;
-}
-
+/**
+ * ملاحظة تنفيذية دفعنا ثمنها مرتين (هنا وفي adminReports.ts): شظية sql تحمل
+ * معاملات، مركَّبة داخل استعلام آخر، كتعلّق على مجمّع اتصالات Supabase في
+ * Preview (الاستعلام يبقى «active/ClientRead» حتى ينقطع الاتصال). لذلك شرط
+ * المدة مكتوب داخل كل استعلام بمعاملين صريحين، والمدة المفتوحة = null، بلا
+ * أي شظية بمعاملات.
+ */
 export async function getFinanceSummary(period: Period): Promise<FinanceSummary> {
-  const settlementDay = sql`coalesce(i.invoice_date, (i.uploaded_at at time zone 'UTC')::date)`;
-  const bankDay = sql`(i.bank_received_at at time zone 'UTC')::date`;
+  const from = period.from;
+  const to = period.to;
 
   const [bank, owed, differences, shipped, settled, expenses, [{ n: deliveredWithoutInvoice }]] =
     await Promise.all([
       sql<{ total: string | null; n: number }[]>`
         select coalesce(sum(i.bank_received_amount), 0) as total, count(*)::int as n
         from public.carrier_invoices i
-        where i.status = 'active' and i.bank_received_at is not null and ${inPeriod(period, bankDay)}
+        where i.status = 'active' and i.bank_received_at is not null
+          and (${from}::date is null or (i.bank_received_at at time zone 'UTC')::date >= ${from}::date)
+          and (${to}::date is null or (i.bank_received_at at time zone 'UTC')::date < ${to}::date)
       `,
       sql<{ id: number; invoice_number: string; carrier: string; invoice_date: string | null; total_net: string }[]>`
         select i.id, i.invoice_number, i.carrier, i.invoice_date::text as invoice_date, i.total_net
@@ -183,17 +186,23 @@ export async function getFinanceSummary(period: Period): Promise<FinanceSummary>
       >`
         select s.order_id, o.order_number, o.status as order_status, o.delivery_fee,
           s.outcome, s.cod_total, s.fee_total, s.parcel_count,
-          i.invoice_number, ${settlementDay}::text as invoice_day
+          i.invoice_number, x.day::text as invoice_day
         from public.carrier_order_settlements s
         join public.carrier_invoices i on i.id = s.invoice_id
+        cross join lateral (
+          select coalesce(i.invoice_date, (i.uploaded_at at time zone 'UTC')::date) as day
+        ) x
         left join public.orders o on o.id = s.order_id
-        where s.reverted_at is null and ${inPeriod(period, settlementDay)}
-        order by ${settlementDay}, s.id
+        where s.reverted_at is null
+          and (${from}::date is null or x.day >= ${from}::date)
+          and (${to}::date is null or x.day < ${to}::date)
+        order by x.day, s.id
       `,
       sql<{ category: string; total: string }[]>`
         select category, coalesce(sum(amount_mad), 0) as total
         from public.operating_expenses
-        where ${inPeriod(period, sql`spent_on`)}
+        where (${from}::date is null or spent_on >= ${from}::date)
+          and (${to}::date is null or spent_on < ${to}::date)
         group by category
         order by sum(amount_mad) desc
       `,
