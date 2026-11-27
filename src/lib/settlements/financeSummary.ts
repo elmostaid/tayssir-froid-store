@@ -167,7 +167,6 @@ export async function getFinanceSummary(period: Period): Promise<FinanceSummary>
     from public.carrier_invoices i
     where i.status = 'active' and i.bank_received_at is not null
       and i.bank_received_amount <> i.total_net
-      and not (i.total_net < 0 and i.bank_received_amount = 0)
     order by i.id
   `;
   const shipped = await sql<{ n: number; expected: string | null; oldest: string | null }[]>`

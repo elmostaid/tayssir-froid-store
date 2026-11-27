@@ -3,7 +3,7 @@ import Link from "@/components/Link";
 import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
 import { formatMad } from "@/lib/format";
 import { listInvoices } from "@/lib/settlements/settlementStore";
-import { ApplyButton, SelectAll } from "@/components/admin/settlements/SelectionControls";
+import { ApplyButton, SelectAll, SelectedTotal } from "@/components/admin/settlements/SelectionControls";
 import { SafeActionForm } from "@/components/admin/settlements/SafeActionForm";
 import { markBankBulkAction } from "../actions";
 
@@ -28,7 +28,8 @@ export default async function BankPage({ searchParams }: { searchParams: Promise
 
   const invoices = (await listInvoices(400)).filter((i) => i.status === "active");
   const owed = invoices
-    .filter((i) => !i.bankReceivedAt && i.totalNet > 0)
+    // الكشوفات السالبة (غير رسوم) داخلين: الشركة كتخصمهم من التحويل.
+    .filter((i) => !i.bankReceivedAt)
     .sort((a, b) => (a.invoiceDate ?? "").localeCompare(b.invoiceDate ?? ""));
   const received = invoices.filter((i) => i.bankReceivedAt);
   const owedTotal = owed.reduce((s, i) => s + i.totalNet, 0);
@@ -74,7 +75,13 @@ export default async function BankPage({ searchParams }: { searchParams: Promise
               {owed.map((inv) => (
                 <li key={inv.id}>
                   <label className="flex cursor-pointer items-center gap-3 px-3 py-2">
-                    <input type="checkbox" name="inv" value={inv.id} className="h-5 w-5 shrink-0 accent-brand-turquoise" />
+                    <input
+                      type="checkbox"
+                      name="inv"
+                      value={inv.id}
+                      data-cents={Math.round(inv.totalNet * 100)}
+                      className="h-5 w-5 shrink-0 accent-brand-turquoise"
+                    />
                     <span className="min-w-0 flex-1 text-xs">
                       <span className="block truncate font-semibold text-neutral-800" dir="ltr">
                         {inv.invoiceNumber}
@@ -82,9 +89,12 @@ export default async function BankPage({ searchParams }: { searchParams: Promise
                       <span className="text-neutral-500">
                         {inv.carrierLabel} · {inv.invoiceDate ?? "—"}
                         {inv.carrierStatus && ` · الشركة: ${inv.carrierStatus}`}
+                        {inv.totalNet < 0 && " · غير رسوم: كتخصم من التحويل"}
                       </span>
                     </span>
-                    <span className="shrink-0 text-sm font-bold tabular-nums">{formatMad(inv.totalNet)}</span>
+                    <span className={`shrink-0 text-sm font-bold tabular-nums ${inv.totalNet < 0 ? "text-red-700" : ""}`}>
+                      {formatMad(inv.totalNet)}
+                    </span>
                   </label>
                 </li>
               ))}
@@ -101,8 +111,11 @@ export default async function BankPage({ searchParams }: { searchParams: Promise
               defaultValue={today}
               className="mt-1 min-h-11 w-full rounded-lg border border-neutral-300 px-3 text-sm"
             />
+            <p className="mt-2 rounded-lg bg-white p-2 text-sm">
+              المختار: <SelectedTotal name="inv" /> — خاصو يكون هو المبلغ اللي وصل للحساب.
+            </p>
             <p className="mt-1 text-[11px] text-neutral-500">
-              المبلغ = صافي كل كشف. وصل مبلغ آخر؟ سجّلو من صفحة الكشف.
+              كل كشف كيتسجل بالصافي ديالو (السالب = خصم). وصل مبلغ آخر؟ سجّلو من صفحة الكشف.
             </p>
             <div className="sticky bottom-0 z-10 -mx-4 mt-3 border-t border-neutral-200 bg-white/95 px-4 py-3 backdrop-blur">
               <ApplyButton idle="اختار الكشوفات أولاً" template="وصلات فلوس {n} كشف" />

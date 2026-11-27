@@ -49,6 +49,35 @@ export function SelectAll({ name, label }: { name: string; label: string }) {
   );
 }
 
+/**
+ * مجموع المختار (data-cents على كل خانة) — فشاشة البنك: كيتقارن مع التحويل اللي
+ * وصل للحساب. الكشوفات السالبة (خصم) كتنقص منو.
+ */
+export function SelectedTotal({ name }: { name: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [cents, setCents] = useState(0);
+  useEffect(() => {
+    const form = ref.current?.closest("form");
+    if (!form) return;
+    const sync = () =>
+      setCents(
+        [...form.querySelectorAll<HTMLInputElement>(`input[name="${name}"]:checked`)].reduce(
+          (s, b) => s + Number(b.dataset.cents ?? 0),
+          0
+        )
+      );
+    sync();
+    form.addEventListener("change", sync);
+    return () => form.removeEventListener("change", sync);
+  }, [name]);
+  const formatted = new Intl.NumberFormat("ar-MA", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(cents / 100);
+  return (
+    <span ref={ref} className="font-bold tabular-nums" data-testid="selected-total">
+      {formatted} درهم
+    </span>
+  );
+}
+
 const APPLY_INPUTS = ["ready", "quick_cost", "quick_round", "approve", "return", "inv"]
   .map((n) => `input[name="${n}"]:checked`)
   .join(", ");

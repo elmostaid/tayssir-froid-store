@@ -810,6 +810,8 @@ export async function markInvoiceBankReceived(
 /**
  * «وصلات للبنك» لعدة كشوفات دفعة وحدة: المبلغ هو صافي كل كشف كما كتبو الشركة
  * (total_net)، والتاريخ هو تاريخ الوصول اللي دخل المالك. كشف سبق تعليمو ما كيتبدلش.
+ * كشف صافيه سالب (غير رسوم) كيتسجل بالسالب: خصم من التحويل، فمجموع المختار =
+ * المبلغ اللي وصل فعلاً للحساب.
  */
 export async function markInvoicesBankReceived(
   invoiceIds: number[],
@@ -821,8 +823,7 @@ export async function markInvoicesBankReceived(
   const r = await sql`
     update public.carrier_invoices
     set bank_received_at = coalesce((${receivedOn}::date)::timestamp at time zone 'UTC', now()),
-      -- كشف صافيه سالب (غير رسوم كرطونة زايدة): ما كيوصل حتى درهم، كيتسجل 0.
-      bank_received_amount = greatest(total_net, 0), bank_marked_by = ${actor}
+      bank_received_amount = total_net, bank_marked_by = ${actor}
     where id = any(${ids}) and status = 'active' and bank_received_at is null
   `;
   return r.count;

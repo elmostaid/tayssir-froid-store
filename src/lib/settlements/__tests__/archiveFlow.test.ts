@@ -210,11 +210,20 @@ describe("أرشيف: رفع، ملخص، موافقة", () => {
       from public.carrier_invoices where id = any(${invoiceIds.slice(0, 2)})
     `;
     for (const r of rows) {
-      expect(Number(r.got)).toBe(Math.max(Number(r.net), 0));
+      // الكشف السالب (رسوم الكرطونة الزايدة) كيتسجل بالسالب: خصم، ماشي 0.
+      expect(r.got).toBe(r.net);
       expect(new Date(r.at).toISOString().slice(0, 10)).toBe("2033-02-20");
     }
     const f = await getFinanceSummary(FEB);
-    expect(f.realized.orders.find((o) => o.orderId === orders.A)!.banked).toBe(true);
+    const a = f.realized.orders.find((o) => o.orderId === orders.A)!;
+    expect(a.banked).toBe(true);
+    // المصاريف ما كتضيعش: تكلفة الكرطونة الزايدة باقية فالربح بعد التعليم.
+    expect(a.deliveryRealCents).toBe(5500);
+    // الكاش: اللي وصل = مجموع الصافيين (الخصم داخل)، وما كاين حتى «فرق» مخبّي.
+    const nets = rows.reduce((s, r) => s + Math.round(Number(r.net) * 100), 0);
+    expect(f.cash.bankReceivedCents).toBeGreaterThanOrEqual(nets);
+    expect(f.cash.bankDifferences.filter((d) => invoiceIds.includes(d.id))).toEqual([]);
+    expect(f.cash.owedInvoices.filter((i) => invoiceIds.slice(0, 2).includes(i.id))).toEqual([]);
     expect(await state("D")).toMatchObject({ status: "shipped" });
   });
 

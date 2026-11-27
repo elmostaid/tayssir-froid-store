@@ -103,14 +103,22 @@ export async function markBankAction(formData: FormData) {
   if (!Number.isInteger(invoiceId) || invoiceId <= 0) redirect("/admin/settlements");
   const clear = formData.get("clear") === "1";
   const cents = clear ? null : parseMadToCents(String(formData.get("amount") ?? ""));
-  if (!clear && (cents === null || cents < 0)) {
+  if (!clear && cents === null) {
     redirect(`/admin/settlements/${invoiceId}?error=${encodeURIComponent("المبلغ غير صالح.")}`);
   }
   const day = clear ? null : parseReceivedDay(String(formData.get("receivedOn") ?? ""));
   if (!clear && day === "invalid") {
     redirect(`/admin/settlements/${invoiceId}?error=${encodeURIComponent("التاريخ غير صالح أو فالمستقبل.")}`);
   }
-  await markInvoiceBankReceived(invoiceId, cents, admin.email, day === "invalid" ? null : day);
+  try {
+    await markInvoiceBankReceived(invoiceId, cents, admin.email, day === "invalid" ? null : day);
+  } catch (error) {
+    // القيد فالقاعدة: مبلغ سالب كيتقبل غير لكشف صافيه سالب، وماشي أقل من الصافي.
+    console.error("markBankAction", error);
+    redirect(
+      `/admin/settlements/${invoiceId}?error=${encodeURIComponent("المبلغ غير صالح: السالب كيتقبل غير لكشف صافيه سالب.")}`
+    );
+  }
   revalidatePath("/admin/finance");
   revalidatePath("/admin/settlements");
   revalidatePath(`/admin/settlements/${invoiceId}`);
