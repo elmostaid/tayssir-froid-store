@@ -56,7 +56,8 @@ function OrderLine({
         )}
       </p>
       <p className="text-xs text-neutral-600">
-        التوصيل: <span className="font-semibold tabular-nums">{mad(v.feeCents)}</span>
+        {v.kind === "return" ? "خسارة التوصيل" : "التوصيل"}:{" "}
+        <span className="font-semibold tabular-nums">{mad(v.feeCents)}</span>
         {v.order.deliveryFeeCents !== null && (
           <span className="text-neutral-400"> (الزبون خلّص {mad(v.order.deliveryFeeCents)})</span>
         )}
@@ -79,9 +80,11 @@ function OrderLine({
       {(v.kind === "ready" || v.kind === "decide") && v.confidenceNotes.length > 0 && (
         <p className="mt-1 text-[11px] text-amber-800">{v.confidenceNotes.join(" ")}</p>
       )}
-      {(v.kind === "ready" || v.kind === "decide") && (
+      {(v.kind === "ready" || v.kind === "decide" || v.kind === "return") && (
         <details className="mt-1 text-[11px] text-neutral-500">
-          <summary className="cursor-pointer select-none">علاش تطابقات؟</summary>
+          <summary className="cursor-pointer select-none">
+            {v.kind === "return" ? "علاش هاد الطلبية؟" : "علاش تطابقات؟"}
+          </summary>
           <ul className="mt-1 list-disc ps-4">
             {v.evidence.map((e) => (
               <li key={e}>{e}</li>
@@ -125,6 +128,7 @@ export default async function SettlementsPage({ searchParams }: { searchParams: 
   const decide = board.orders.filter((v) => v.kind === "decide");
   const waiting = board.orders.filter((v) => v.kind === "waiting");
   const blocked = board.orders.filter((v) => v.kind === "blocked");
+  const returns = board.orders.filter((v) => v.kind === "return");
 
   const profitLines = await loadProfitLines([...ready, ...decide].map((v) => v.order.id));
   const profitOf = (v: OrderVerdict): number | null => {
@@ -206,9 +210,10 @@ export default async function SettlementsPage({ searchParams }: { searchParams: 
           ما اخترتي حتى طلبية.
         </div>
       )}
-      {applied && (
+      {applied !== undefined && (
         <div className="mt-4 rounded-xl border border-green-200 bg-green-50 p-3 text-sm text-green-800">
           تطبّقات على {applied} طلبية.
+          {one(sp.returned) && one(sp.returned) !== "0" && <> تسجلات {one(sp.returned)} رجعة كخسارة.</>}
           {one(sp.skipped) && one(sp.skipped) !== "0" && (
             <> {one(sp.skipped)} ما تطبقاتش حيت تبدلات حالتها من بعد العرض.</>
           )}
@@ -278,7 +283,24 @@ export default async function SettlementsPage({ searchParams }: { searchParams: 
           </section>
         )}
 
-        {(ready.length > 0 || decide.length > 0) && (
+        {returns.length > 0 && (
+          <section className="mt-4 rounded-xl border border-red-200 bg-red-50/40 p-4">
+            <h2 className="text-base font-bold text-neutral-800">
+              رجعات <span className="text-neutral-400">({returns.length})</span>
+            </h2>
+            <p className="mt-1 text-xs leading-relaxed text-neutral-600">
+              الشركة كتقول هاد الكرطونات رجعات وخصمات رسومها. إلا أكدتي، كتتسجل الرسوم خسارة حقيقية على
+              الطلبية. الحالة ما كتبدلش: ملي توصلك السلعة، بدّلها لـ«راجعة» من صفحة الطلبية باش يرجع المخزون.
+            </p>
+            <ul className="mt-2">
+              {returns.map((v) => (
+                <OrderLine key={v.order.id} v={v} profit={null} input={{ name: "return", checked: false }} />
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {(ready.length > 0 || decide.length > 0 || returns.length > 0) && (
           <div className="sticky bottom-0 z-10 -mx-4 mt-4 border-t border-neutral-200 bg-white/95 px-4 py-3 backdrop-blur">
             <ApplyButton />
           </div>

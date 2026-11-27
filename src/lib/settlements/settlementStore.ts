@@ -20,6 +20,7 @@ import { centsToDb, dbMoneyToCents, type Cents } from "./money";
  *    منهما في هذا الملف، والاختبارات تتجسّس على المرسِل لتتأكد.
  * 2. **لا يُمسّ إلا عمودان موجودان:** `status` (shipped/confirmed/preparing →
  *    delivered فقط، لا ملغاة ولا راجعة، فلا حركة مخزون) و`actual_delivery_cost`.
+ *    الرجعة المؤكَّدة تكتب التكلفة وحدها، ولا تلمس الحالة أبداً.
  *    لا أثمنة ولا سطور ولا مخزون. كل كتابة لها صفّ في سجل التغييرات.
  * 3. **عملية واحدة في كل لحظة.** رفع/تطبيق/تراجع كلها داخل معاملة تأخذ قفلاً
  *    استشارياً واحداً، فلا يتقاطع ضغطتان على «طبّق» أو تطبيق مع تراجع.
@@ -267,11 +268,19 @@ export type ApplyInput = {
   readyOrderIds: number[];
   /** من «تحتاج قرارك» — كل واحدة وافق عليها المالك صراحةً. */
   approvedOrderIds: number[];
+  /** من «رجعات» — تأكيد المالك أن الكرطونات رجعات، فتُسجَّل رسومها خسارة. */
+  returnOrderIds?: number[];
   actor: string;
 };
 
 export type ApplyResult = {
-  applied: { orderId: number; orderNumber: string; statusChanged: boolean; costSet: boolean }[];
+  applied: {
+    orderId: number;
+    orderNumber: string;
+    outcome: "delivered" | "returned";
+    statusChanged: boolean;
+    costSet: boolean;
+  }[];
   skipped: { orderId: number; reason: string }[];
 };
 
@@ -283,6 +292,7 @@ export type ApplyResult = {
 export async function applySettlements(input: ApplyInput): Promise<ApplyResult> {
   const ready = new Set(input.readyOrderIds);
   const approved = new Set(input.approvedOrderIds);
+  const returns = new Set(input.returnOrderIds ?? []);
   return sql.begin(async (trx) => {
     await LOCK_SQL(trx);
     const board = await computeBoard(trx, true);
@@ -291,15 +301,17 @@ export async function applySettlements(input: ApplyInput): Promise<ApplyResult> 
 
     for (const v of board.orders) {
       const id = v.order.id;
+      // الرجعة لا تُقبل إلا من خانتها: «اختار الجميع» على الجاهزة لا يمكن أن يسجّل رجعة.
       const eligible =
         (v.kind === "ready" && (ready.has(id) || approved.has(id))) ||
-        (v.kind === "decide" && approved.has(id));
+        (v.kind === "decide" && approved.has(id)) ||
+        (v.kind === "return" && returns.has(id));
       if (!eligible) continue;
       handled.add(id);
       applied.push(await applyOne(trx, v, input.actor, v.kind === "ready" ? "auto" : "approved"));
     }
 
-    const skipped = [...new Set([...ready, ...approved])]
+    const skipped = [...new Set([...ready, ...approved, ...returns])]
       .filter((id) => !handled.has(id))
       .map((id) => ({
         orderId: id,
@@ -317,12 +329,15 @@ async function applyOne(
 ): Promise<ApplyResult["applied"][number]> {
   const parcelIds = v.parcels.map((p) => p.id);
   const lastInvoice = v.parcels.reduce((a, p) => (p.invoiceId > a.invoiceId ? p : a), v.parcels[0]);
+  const outcome = v.kind === "return" ? "returned" : "delivered";
   const settlement = await trx<{ id: number }[]>`
     insert into public.carrier_order_settlements (
-      order_id, invoice_id, parcel_ids, parcel_count, cod_total, fee_total, confidence, decision, settled_by
+      order_id, invoice_id, parcel_ids, parcel_count, cod_total, fee_total, confidence, decision,
+      settled_by, outcome
     ) values (
       ${v.order.id}, ${lastInvoice.invoiceId}, ${parcelIds}, ${parcelIds.length},
-      ${centsToDb(v.codCents)}, ${centsToDb(v.feeCents)}, ${v.confidence}, ${decision}, ${actor}
+      ${centsToDb(v.codCents)}, ${centsToDb(v.feeCents)}, ${v.confidence}, ${decision}, ${actor},
+      ${outcome}
     ) returning id
   `;
   const settlementId = settlement[0].id;
@@ -336,7 +351,7 @@ async function applyOne(
   }
 
   let statusChanged = false;
-  if (v.willSetDelivered) {
+  if (v.willSetDelivered && outcome === "delivered") {
     const changed = await trx`
       update public.orders set status = 'delivered'
       where id = ${v.order.id} and status = ${v.order.status}
@@ -368,7 +383,20 @@ async function applyOne(
     costSet = true;
   }
 
-  return { orderId: v.order.id, orderNumber: v.order.orderNumber, statusChanged, costSet };
+  if (outcome === "returned") {
+    const invoices = [...new Set(v.parcels.map((p) => p.invoiceNumber))].join(" + ");
+    // ملاحظة في سجل الطلبية بنفس حالتها الحالية: الأثر مكتوب، والحالة ما تبدلاتش.
+    await trx`
+      insert into public.order_status_history (order_id, status, note, changed_by)
+      values (
+        ${v.order.id}, ${v.order.status},
+        ${`رجعة مؤكَّدة من فاتورة التوصيل ${invoices}: رسوم ${centsToDb(v.feeCents)} درهم خسارة — تسوية رقم ${settlementId}. الحالة ما تبدلاتش.`},
+        ${actor}
+      )
+    `;
+  }
+
+  return { orderId: v.order.id, orderNumber: v.order.orderNumber, outcome, statusChanged, costSet };
 }
 
 async function logChange(
@@ -539,10 +567,15 @@ async function skipRevert(trx: Db, changeId: number, why: string) {
 // البنك والقراءة
 // ---------------------------------------------------------------------------
 
+/**
+ * الحالة الثالثة: الفلوس وصلات للبنك. المالك يُدخل المبلغ كما ظهر في الحساب،
+ * وتاريخ وصوله (لا تاريخ الضغط على الزر) — هو ما يحدّد الشهر في الملخص المالي.
+ */
 export async function markInvoiceBankReceived(
   invoiceId: number,
   amountCents: Cents | null,
-  actor: string
+  actor: string,
+  receivedOn: string | null = null
 ): Promise<boolean> {
   const r =
     amountCents === null
@@ -553,7 +586,8 @@ export async function markInvoiceBankReceived(
         `
       : await sql`
           update public.carrier_invoices
-          set bank_received_at = now(), bank_received_amount = ${centsToDb(amountCents)}, bank_marked_by = ${actor}
+          set bank_received_at = ${receivedOn === null ? sql`now()` : sql`(${receivedOn}::date)::timestamp at time zone 'UTC'`},
+            bank_received_amount = ${centsToDb(amountCents)}, bank_marked_by = ${actor}
           where id = ${invoiceId} and status = 'active'
         `;
   return r.count === 1;
@@ -718,6 +752,7 @@ export async function getOrderSettlement(orderId: number): Promise<{
   feeTotal: number;
   settledAt: string;
   confidence: string;
+  outcome: "delivered" | "returned";
 } | null> {
   const rows = await sql<
     {
@@ -727,9 +762,10 @@ export async function getOrderSettlement(orderId: number): Promise<{
       settled_at: Date;
       confidence: string;
       parcel_ids: number[];
+      outcome: "delivered" | "returned";
     }[]
   >`
-    select id, parcel_count, fee_total, settled_at, confidence, parcel_ids
+    select id, parcel_count, fee_total, settled_at, confidence, parcel_ids, outcome
     from public.carrier_order_settlements
     where order_id = ${orderId} and reverted_at is null
   `;
@@ -754,6 +790,7 @@ export async function getOrderSettlement(orderId: number): Promise<{
     feeTotal: Number(s.fee_total),
     settledAt: new Date(s.settled_at).toISOString(),
     confidence: s.confidence,
+    outcome: s.outcome,
   };
 }
 

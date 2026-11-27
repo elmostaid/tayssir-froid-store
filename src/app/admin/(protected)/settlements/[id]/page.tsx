@@ -102,18 +102,30 @@ export default async function InvoicePage({
             </PendingSubmit>
           </SafeActionForm>
         ) : active ? (
-          <SafeActionForm action={markBankAction} className="mt-2 flex gap-2">
+          <SafeActionForm action={markBankAction} className="mt-2 grid grid-cols-2 gap-2">
             <input type="hidden" name="invoiceId" value={inv.id} />
-            <input
-              name="amount"
-              inputMode="decimal"
-              defaultValue={String(inv.totalNet)}
-              className="min-h-11 w-32 rounded-lg border border-neutral-300 px-3 text-sm tabular-nums"
-              aria-label="المبلغ اللي وصل"
-            />
+            <label className="text-xs text-neutral-600">
+              المبلغ اللي وصل
+              <input
+                name="amount"
+                inputMode="decimal"
+                defaultValue={String(inv.totalNet)}
+                className="mt-1 block min-h-11 w-full rounded-lg border border-neutral-300 px-3 text-sm tabular-nums"
+              />
+            </label>
+            <label className="text-xs text-neutral-600">
+              نهار الوصول
+              <input
+                name="receivedOn"
+                type="date"
+                defaultValue={new Date().toISOString().slice(0, 10)}
+                max={new Date().toISOString().slice(0, 10)}
+                className="mt-1 block min-h-11 w-full rounded-lg border border-neutral-300 px-3 text-sm"
+              />
+            </label>
             <PendingSubmit
               pendingText="…"
-              className="min-h-11 flex-1 rounded-full bg-green-700 px-4 text-sm font-bold text-white disabled:bg-neutral-300"
+              className="col-span-2 min-h-11 rounded-full bg-green-700 px-4 text-sm font-bold text-white disabled:bg-neutral-300"
             >
               وصلات الفلوس للبنك
             </PendingSubmit>

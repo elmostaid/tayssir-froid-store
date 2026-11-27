@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getAdminUser, isOwnerAdmin } from "@/lib/auth/requireAdmin";
-import { parseMadToCents } from "@/lib/settlements/money";
+import { parseMadToCents, parseReceivedDay } from "@/lib/settlements/money";
 import {
   applySettlements,
   markInvoiceBankReceived,
@@ -36,21 +36,25 @@ function revalidateOrders() {
   revalidatePath("/admin/settlements");
   revalidatePath("/admin/orders");
   revalidatePath("/admin/reports");
+  revalidatePath("/admin/finance");
 }
 
 export async function applySettlementsAction(formData: FormData) {
   const admin = await requireOwner();
   const readyOrderIds = ids(formData, "ready");
   const approvedOrderIds = ids(formData, "approve");
-  if (readyOrderIds.length === 0 && approvedOrderIds.length === 0) {
+  const returnOrderIds = ids(formData, "return");
+  if (readyOrderIds.length === 0 && approvedOrderIds.length === 0 && returnOrderIds.length === 0) {
     redirect("/admin/settlements?notice=none");
   }
   let applied = 0;
+  let returned = 0;
   let skipped = 0;
   let failure: string | null = null;
   try {
-    const res = await applySettlements({ readyOrderIds, approvedOrderIds, actor: admin.email });
-    applied = res.applied.length;
+    const res = await applySettlements({ readyOrderIds, approvedOrderIds, returnOrderIds, actor: admin.email });
+    returned = res.applied.filter((a) => a.outcome === "returned").length;
+    applied = res.applied.length - returned;
     skipped = res.skipped.length;
   } catch (error) {
     console.error("applySettlementsAction", error);
@@ -58,7 +62,7 @@ export async function applySettlementsAction(formData: FormData) {
   }
   revalidateOrders();
   if (failure) redirect(`/admin/settlements?error=${encodeURIComponent(failure)}`);
-  redirect(`/admin/settlements?applied=${applied}&skipped=${skipped}`);
+  redirect(`/admin/settlements?applied=${applied}&returned=${returned}&skipped=${skipped}`);
 }
 
 export async function rollbackInvoiceAction(formData: FormData) {
@@ -84,7 +88,12 @@ export async function markBankAction(formData: FormData) {
   if (!clear && (cents === null || cents < 0)) {
     redirect(`/admin/settlements/${invoiceId}?error=${encodeURIComponent("المبلغ غير صالح.")}`);
   }
-  await markInvoiceBankReceived(invoiceId, cents, admin.email);
+  const day = clear ? null : parseReceivedDay(String(formData.get("receivedOn") ?? ""));
+  if (!clear && day === "invalid") {
+    redirect(`/admin/settlements/${invoiceId}?error=${encodeURIComponent("التاريخ غير صالح أو فالمستقبل.")}`);
+  }
+  await markInvoiceBankReceived(invoiceId, cents, admin.email, day === "invalid" ? null : day);
+  revalidatePath("/admin/finance");
   revalidatePath("/admin/settlements");
   revalidatePath(`/admin/settlements/${invoiceId}`);
   redirect(`/admin/settlements/${invoiceId}`);

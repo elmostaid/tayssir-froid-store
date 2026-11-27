@@ -18,8 +18,10 @@ import type { Cents } from "./money";
  * - المبلغ يتطابق بالسنتيم أو لا تطابق. لا هامش.
  * - طلبية واحدة مرشّحة، أو مجموعة كرطونات واحدة فقط تساوي مبلغ طلبية واحدة.
  *   غير ذلك = غامض = لا شيء يُطبَّق تلقائياً.
- * - كرطونة مرجوعة أو مرفوضة لا تُطبَّق تلقائياً أبداً («returned» في الموقع
- *   يُرجع المخزون، فلا يقرّره إلا المالك).
+ * - كرطونة مرجوعة أو مرفوضة لا تُطبَّق تلقائياً أبداً. حين ترجع **كل** كرطونات
+ *   الطلبية تصير «رجعة» (return): تُعرَض على المالك ليؤكّدها، فتُسجَّل رسومها
+ *   خسارةً حقيقية على الطلبية، **دون** تغيير حالتها («returned» في الموقع يُرجع
+ *   المخزون، فلا يقرّره إلا المالك من صفحة الطلبية ملي توصلو السلعة).
  * - مجموع المبالغ وحده لا يثبت وصول كل الكرطونات حين يكون عددها غير مسجَّل:
  *   الطلبية تبقى «جاهزة» لكن بثقة «متوسطة» معلنة، لا «عالية».
  */
@@ -61,8 +63,10 @@ export type Confidence = "high" | "medium";
  *          مختلفة، مدينة مختلفة، حالة مؤكَّدة لم تُرسَل). تُطبَّق فقط إن وافق عليها.
  * blocked  لا تُطبَّق من هنا أصلاً (إرجاع، مبلغ زائد، طلبية ملغاة…).
  * waiting  ناقصها كرطونات — تكتمل وحدها مع فاتورة لاحقة.
+ * return   كل كرطوناتها رجعات/ترفضات: تُسجَّل رسومها خسارةً بتأكيد المالك وحده
+ *          (لا تُعلَّم مسبقاً أبداً، ولا تمرّ بالموافقة الجماعية).
  */
-export type OrderVerdictKind = "ready" | "decide" | "blocked" | "waiting";
+export type OrderVerdictKind = "ready" | "decide" | "blocked" | "waiting" | "return";
 
 export type OrderVerdict = {
   kind: OrderVerdictKind;
@@ -102,6 +106,13 @@ export type MatchingResult = {
 const AUTO_STATUSES = new Set(["shipped", "delivered"]);
 /** مؤكَّدة تجارياً لكن لم تُعلَّم «مُرسَلة»: تُطبَّق بموافقة صريحة فقط. */
 const DECIDE_STATUSES = new Set(["confirmed", "preparing"]);
+/**
+ * الحالات التي تقبل تسجيل رجعة: خرجت السلعة فعلاً مع شركة التوصيل (أو سبق
+ * للمالك أن علّمها راجعة/ملغاة). «جديدة» أو «تحتاج مراجعة» لم تُؤكَّد أصلاً،
+ * و«مسلَّمة» تناقض الفاتورة — كلاهما يُصحَّح باليد.
+ */
+const RETURN_STATUSES = new Set(["shipped", "confirmed", "preparing", "returned", "cancelled"]);
+const RETURNED_PARCEL = new Set(["returned", "refused"]);
 
 const STATUS_LABELS: Record<string, string> = {
   new: "جديدة",
@@ -218,6 +229,9 @@ export function judgeOrder(order: CandidateOrder, parcels: OpenParcel[]): OrderV
   };
 
   const notDelivered = parcels.filter((p) => p.status !== "delivered");
+  if (notDelivered.length > 0 && notDelivered.length === parcels.length && parcels.every((p) => RETURNED_PARCEL.has(p.status))) {
+    return judgeReturn(base, order, parcels, codCents, feeCents);
+  }
   if (notDelivered.length > 0) {
     for (const p of notDelivered)
       reasons.push(`الكرطونة ${p.trackingCode} حالتها «${p.statusRaw ?? p.status}» — ماشي «Livré».`);
@@ -301,6 +315,45 @@ export function judgeOrder(order: CandidateOrder, parcels: OpenParcel[]): OrderV
     confidence,
     preselect: kind === "ready" && confidence === "high",
     willSetDelivered: order.status !== "delivered",
+    willSetCost: order.actualDeliveryCostCents === null || costConflict,
+    costConflict,
+  };
+}
+
+/** كل كرطونات الطلبية رجعات: خسارة الرسوم تُسجَّل بتأكيد المالك، والحالة لا تُمسّ. */
+function judgeReturn(
+  base: Omit<OrderVerdict, "kind" | "confidence">,
+  order: CandidateOrder,
+  parcels: OpenParcel[],
+  codCents: Cents,
+  feeCents: Cents
+): OrderVerdict {
+  const reasons = base.reasons;
+  if (codCents !== 0) {
+    const raw = [...new Set(parcels.map((p) => p.statusRaw ?? p.status))].join("/");
+    reasons.push(`الكرطونات «${raw}» وفيها تحصيل ${mad(codCents)} — هادشي ماشي عادي، صحّحها بيدك.`);
+    return { ...base, kind: "blocked", confidence: "medium" };
+  }
+  if (!RETURN_STATUSES.has(order.status)) {
+    reasons.push(
+      order.status === "delivered"
+        ? "الطلبية «مسلَّمة» فالموقع والشركة كتقول رجعات — صحّحها بيدك."
+        : `الطلبية مازال «${STATUS_LABELS[order.status] ?? order.status}» فالموقع — صحّحها بيدك.`
+    );
+    return { ...base, kind: "blocked", confidence: "medium" };
+  }
+  const costConflict =
+    order.actualDeliveryCostCents !== null && order.actualDeliveryCostCents !== feeCents;
+  if (costConflict)
+    reasons.push(
+      `تكلفة التوصيل المسجلة بيدك ${mad(order.actualDeliveryCostCents!)} والفاتورة ${mad(feeCents)} — إلا أكدتي كتولي ديال الفاتورة.`
+    );
+  return {
+    ...base,
+    kind: "return",
+    confidence: "medium",
+    preselect: false,
+    willSetDelivered: false,
     willSetCost: order.actualDeliveryCostCents === null || costConflict,
     costConflict,
   };

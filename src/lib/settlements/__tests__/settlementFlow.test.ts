@@ -167,7 +167,7 @@ describe("تسوية فواتير التوصيل — المسار الكامل �
     expect(await verdictFor(orders.A)).toMatchObject({ kind: "ready", confidence: "medium" });
     expect(await verdictFor(orders.B)).toMatchObject({ kind: "waiting", missingCents: 28000 });
     expect(await verdictFor(orders.C)).toMatchObject({ kind: "decide", costConflict: true, feeCents: 12500 });
-    expect(await verdictFor(orders.D)).toMatchObject({ kind: "blocked" });
+    expect(await verdictFor(orders.D)).toMatchObject({ kind: "return", feeCents: 2000, preselect: false });
     expect(await verdictFor(orders.E)).toMatchObject({ kind: "ready", confidence: "high", feeCents: 21000 });
   });
 
@@ -216,10 +216,42 @@ describe("تسوية فواتير التوصيل — المسار الكامل �
     expect(c).toEqual({ old_value: "20.00", new_value: "125.00" });
   });
 
-  test("الكرطونة الراجعة لا تُطبَّق حتى لو طُلبت صراحةً", async () => {
-    const res = await store.applySettlements({ readyOrderIds: [], approvedOrderIds: [orders.D], actor: ACTOR });
+  test("الرجعة لا تُطبَّق من «جاهزة» ولا من «تحتاج قرارك» — غير من خانة الرجعات", async () => {
+    const res = await store.applySettlements({ readyOrderIds: [orders.D], approvedOrderIds: [orders.D], actor: ACTOR });
     expect(res.applied).toHaveLength(0);
-    expect((await orderState(orders.D)).status).toBe("shipped");
+    expect(await orderState(orders.D)).toMatchObject({ status: "shipped", actual_delivery_cost: null });
+  });
+
+  test("تأكيد الرجعة يسجّل رسومها خسارة ولا يبدّل الحالة ولا المخزون", async () => {
+    const stockNow = await stock();
+    const res = await store.applySettlements({
+      readyOrderIds: [],
+      approvedOrderIds: [],
+      returnOrderIds: [orders.D],
+      actor: ACTOR,
+    });
+    expect(res.applied).toEqual([
+      expect.objectContaining({ orderId: orders.D, outcome: "returned", statusChanged: false, costSet: true }),
+    ]);
+    expect(await orderState(orders.D)).toMatchObject({ status: "shipped", actual_delivery_cost: "20.00" });
+    expect(await stock()).toBe(stockNow);
+
+    const [settlement] = await sql<{ outcome: string; fee_total: string; cod_total: string }[]>`
+      select outcome, fee_total, cod_total from public.carrier_order_settlements
+      where order_id = ${orders.D} and reverted_at is null
+    `;
+    expect(settlement).toEqual({ outcome: "returned", fee_total: "20.00", cod_total: "0.00" });
+    const changes = await sql`select field, old_value, new_value from public.carrier_settlement_changes where order_id = ${orders.D}`;
+    expect(changes).toEqual([{ field: "actual_delivery_cost", old_value: null, new_value: "20.00" }]);
+    const [hist] = await sql<{ status: string; note: string }[]>`
+      select status, note from public.order_status_history where order_id = ${orders.D}
+    `;
+    expect(hist.status).toBe("shipped");
+    expect(hist.note).toMatch(/رجعة مؤكَّدة/);
+
+    // مرة ثانية: لا رجعة مزدوجة.
+    const again = await store.applySettlements({ readyOrderIds: [], approvedOrderIds: [], returnOrderIds: [orders.D], actor: ACTOR });
+    expect(again.applied).toHaveLength(0);
   });
 
   test("إعادة رفع نفس الملف لا تُسجّل شيئاً جديداً", async () => {
@@ -278,11 +310,12 @@ describe("تسوية فواتير التوصيل — المسار الكامل �
     const inv1 = invoiceIds[0];
     const r = await store.rollbackInvoice(inv1, ACTOR);
     expect(r.ok).toBe(true);
-    expect(r.revertedOrders).toHaveLength(4); // A, B, C, E
+    expect(r.revertedOrders).toHaveLength(5); // A, B, C, D (رجعة), E
 
     expect(await orderState(orders.A)).toMatchObject({ status: "shipped", actual_delivery_cost: null });
     expect(await orderState(orders.B)).toMatchObject({ status: "shipped", actual_delivery_cost: null });
     expect(await orderState(orders.C)).toMatchObject({ status: "shipped", actual_delivery_cost: "20.00" });
+    expect(await orderState(orders.D)).toMatchObject({ status: "shipped", actual_delivery_cost: null });
     // الحالة رجعت، والتكلفة التي عدّلها المالك بعدنا بقيت.
     expect(await orderState(orders.E)).toMatchObject({ status: "shipped", actual_delivery_cost: "199.00" });
     expect(r.kept.map((k) => k.detail).join()).toMatch(/تكلفة التوصيل تبدلات/);
@@ -343,6 +376,7 @@ describe("تسوية فواتير التوصيل — المسار الكامل �
     expect(r.kind).toBe("reactivated");
     expect(await verdictFor(orders.B)).toMatchObject({ kind: "ready", feeCents: 10500 });
     expect(await verdictFor(orders.A)).toMatchObject({ kind: "ready" });
+    expect(await verdictFor(orders.D)).toMatchObject({ kind: "return" });
   });
 
   test("ضغطتان متزامنتان على «طبّق» (ضغط مزدوج أو إعادة بعد انقطاع) ⇒ تسوية واحدة فقط", async () => {

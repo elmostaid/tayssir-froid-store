@@ -114,6 +114,53 @@ describe("محرّك المطابقة", () => {
     expect(r.orders[0].reasons.join()).toMatch(/Retourné/);
   });
 
+  it("كل كرطونات الطلبية راجعة → «رجعة» بتأكيد المالك وحده، لا تغيير حالة", () => {
+    const o = order({ finalTotalCents: 63500 });
+    const r = matchParcels([parcel({ codCents: 0, feeCents: 2000, status: "returned", statusRaw: "Retourné" })], [o]);
+    expect(r.orders[0]).toMatchObject({
+      kind: "return",
+      feeCents: 2000,
+      preselect: false,
+      willSetDelivered: false,
+      willSetCost: true,
+    });
+  });
+
+  it("كرطونة مرفوضة كتعامل بحال الراجعة", () => {
+    const o = order({ finalTotalCents: 63500 });
+    const r = matchParcels([parcel({ codCents: 0, feeCents: 1500, status: "refused", statusRaw: "Refusé" })], [o]);
+    expect(r.orders[0].kind).toBe("return");
+  });
+
+  it("وحدة تسلّمات ووحدة رجعات فنفس الطلبية → محجوبة (ماشي رجعة كاملة)", () => {
+    const o = order({ finalTotalCents: 140000 });
+    const r = matchParcels(
+      [parcel({ codCents: 70000 }), parcel({ codCents: 0, feeCents: 2000, status: "returned", statusRaw: "Retourné" })],
+      [o]
+    );
+    expect(r.orders[0].kind).toBe("blocked");
+  });
+
+  it("رجعة فيها تحصيل، أو على طلبية جديدة أو مسلَّمة → محجوبة", () => {
+    const returned = (cod: number) => parcel({ codCents: cod, feeCents: 2000, status: "returned", statusRaw: "Retourné" });
+    expect(matchParcels([returned(5000)], [order({ finalTotalCents: 63500 })]).orders[0].kind).toBe("blocked");
+    expect(matchParcels([returned(0)], [order({ finalTotalCents: 63500, status: "new" })]).orders[0].kind).toBe("blocked");
+    expect(matchParcels([returned(0)], [order({ finalTotalCents: 63500, status: "delivered" })]).orders[0].kind).toBe("blocked");
+  });
+
+  it("رجعة على طلبية سبق للمالك يعلّمها «راجعة» → كتقبل تسجيل الخسارة", () => {
+    const o = order({ finalTotalCents: 63500, status: "returned" });
+    const r = matchParcels([parcel({ codCents: 0, feeCents: 2000, status: "returned", statusRaw: "Retourné" })], [o]);
+    expect(r.orders[0].kind).toBe("return");
+  });
+
+  it("رجعة وتكلفة يدوية مختلفة → كتبان، وإلا أكد المالك كتولي ديال الفاتورة", () => {
+    const o = order({ finalTotalCents: 63500, actualDeliveryCostCents: 3500 });
+    const r = matchParcels([parcel({ codCents: 0, feeCents: 2000, status: "returned", statusRaw: "Retourné" })], [o]);
+    expect(r.orders[0]).toMatchObject({ kind: "return", costConflict: true, willSetCost: true });
+    expect(r.orders[0].reasons.join()).toMatch(/35/);
+  });
+
   it("تكلفة توصيل مسجلة بيد المالك ومختلفة → تحتاج قرار، والتكلفة اليدوية محفوظة", () => {
     const o = order({ finalTotalCents: 140000, actualDeliveryCostCents: 2000 });
     const r = matchParcels([parcel({ codCents: 70000 }), parcel({ codCents: 70000, feeCents: 9000 })], [o]);

@@ -38,3 +38,17 @@ export function phoneKey(raw: string | null | undefined): string | null {
   const digits = raw.replace(/\D/g, "");
   return digits.length >= 9 ? digits.slice(-9) : null;
 }
+
+/**
+ * تاريخ وصول الفلوس للبنك كما يُدخله المالك: «2026-11-27» ← نفس النص؛ فارغ ←
+ * null (اليوم)؛ غير صالح أو فالمستقبل ← "invalid".
+ */
+export function parseReceivedDay(raw: string, today = new Date()): string | null | "invalid" {
+  const value = raw.trim();
+  if (value === "") return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return "invalid";
+  const time = Date.parse(`${value}T00:00:00Z`);
+  if (!Number.isFinite(time) || new Date(time).toISOString().slice(0, 10) !== value) return "invalid";
+  if (value > today.toISOString().slice(0, 10)) return "invalid";
+  return value;
+}
